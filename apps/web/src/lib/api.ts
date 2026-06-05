@@ -130,7 +130,11 @@ export const productsApi = {
     if (params.query) qs.set('query', params.query);
     if (params.category) qs.set('category', params.category);
     if (params.limit) qs.set('limit', String(params.limit));
-    return request<{ items: Product[]; total: number }>(`/products${qs.toString() ? `?${qs}` : ''}`).then((r) => r.items);
+    // Backend returns a bare array; companiesApi returns { items, total }.
+    // Accept either shape so the list works regardless of which the API speaks.
+    return request<{ items: Product[]; total: number } | Product[]>(`/products${qs.toString() ? `?${qs}` : ''}`).then((r) =>
+      Array.isArray(r) ? r : r.items
+    );
   },
   get: (id: string) => request<Product>(`/products/${id}`),
 };
@@ -193,7 +197,9 @@ export const quotationsApi = {
     if (params.companyId) qs.set('companyId', params.companyId);
     if (params.status) qs.set('status', params.status);
     if (params.limit) qs.set('limit', String(params.limit));
-    return request<{ items: Quotation[]; total: number }>(`/quotations${qs.toString() ? `?${qs}` : ''}`).then((r) => r.items);
+    return request<{ items: Quotation[]; total: number } | Quotation[]>(`/quotations${qs.toString() ? `?${qs}` : ''}`).then((r) =>
+      Array.isArray(r) ? r : r.items
+    );
   },
   get: (id: string) => request<Quotation>(`/quotations/${id}`),
   create: (data: {
@@ -236,7 +242,9 @@ export const dealsApi = {
     if (params.status) qs.set('status', params.status);
     if (params.companyId) qs.set('companyId', params.companyId);
     if (params.limit) qs.set('limit', String(params.limit));
-    return request<{ items: Deal[]; total: number }>(`/deals${qs.toString() ? `?${qs}` : ''}`).then((r) => r.items);
+    return request<{ items: Deal[]; total: number } | Deal[]>(`/deals${qs.toString() ? `?${qs}` : ''}`).then((r) =>
+      Array.isArray(r) ? r : r.items
+    );
   },
   create: (data: { title: string; companyId: string; value: number; stageId: string; ownerId?: string; probability?: number }) =>
     request<Deal>('/deals', { method: 'POST', body: JSON.stringify(data) }),
