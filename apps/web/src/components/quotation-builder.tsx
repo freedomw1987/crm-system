@@ -48,8 +48,8 @@ function emptyLine(): DraftLine {
   };
 }
 
-function linesFromQuotation(q: Quotation): DraftLine[] {
-  if (!q.items?.length) return [emptyLine()];
+function linesFromQuotation(q?: Quotation): DraftLine[] {
+  if (!q?.items?.length) return [emptyLine()];
   return q.items.map((it: QuotationItem) => ({
     key: it.id ?? crypto.randomUUID(),
     itemId: it.id,
@@ -79,7 +79,7 @@ export function QuotationBuilder({ existing, onSaved, onCancel }: QuotationBuild
   const [validUntil, setValidUntil] = useState<string>(
     existing?.validUntil ? existing.validUntil.slice(0, 10) : ''
   );
-  const [lines, setLines] = useState<DraftLine[]>(linesFromQuotation(existing as Quotation));
+  const [lines, setLines] = useState<DraftLine[]>(linesFromQuotation(existing));
 
   const [companies, setCompanies] = useState<Company[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
