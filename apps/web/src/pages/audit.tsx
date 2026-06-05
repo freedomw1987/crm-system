@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { History, Search } from 'lucide-react';
+import { History } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, Label } from '@/components/ui/select';
@@ -59,13 +59,13 @@ export function AuditPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <div className="space-y-1.5">
+          <Label htmlFor="search">Resource ID</Label>
           <Input
-            placeholder="Resource ID 搜尋..."
+            id="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
+            placeholder="resource id 篩選"
           />
         </div>
         <div className="space-y-1.5">
