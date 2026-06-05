@@ -141,18 +141,28 @@ export interface QuotationItem {
   productId?: string | null;
   sku?: string | null;
   name: string;
+  description?: string | null;
   quantity: number;
   unitPrice: number;
   discount: number;
   lineTotal: number;
 }
+export type QuotationStatus = 'DRAFT' | 'SENT' | 'VIEWED' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED' | 'INVOICED';
 export interface Quotation {
   id: string;
   number: string;
   title?: string | null;
-  status: 'DRAFT' | 'SENT' | 'VIEWED' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED' | 'INVOICED';
+  status: QuotationStatus;
   companyId: string;
-  company?: { id: string; name: string };
+  // Detail response: full company object. List response: { id, name }.
+  company?: {
+    id: string;
+    name: string;
+    email?: string | null;
+    phone?: string | null;
+    address?: string | null;
+  };
+  createdBy?: { id: string; name: string; email: string };
   subtotal: number;
   taxRate: number;
   taxAmount: number;
@@ -161,9 +171,21 @@ export interface Quotation {
   generatedByAi: boolean;
   aiPrompt?: string | null;
   validUntil?: string | null;
+  sentAt?: string | null;
+  acceptedAt?: string | null;
   createdAt: string;
+  updatedAt?: string;
   items: QuotationItem[];
   _count?: { items: number };
+}
+export interface QuotationItemInput {
+  productId?: string;
+  sku?: string;
+  name: string;
+  description?: string;
+  quantity: number;
+  unitPrice: number;
+  discount?: number;
 }
 export const quotationsApi = {
   list: (params: { companyId?: string; status?: string; limit?: number } = {}) => {
@@ -179,10 +201,20 @@ export const quotationsApi = {
     title?: string;
     notes?: string;
     taxRate?: number;
-    items: { productId?: string; sku?: string; name: string; quantity: number; unitPrice: number; discount?: number }[];
+    validUntil?: string;
+    items: QuotationItemInput[];
   }) => request<Quotation>('/quotations', { method: 'POST', body: JSON.stringify(data) }),
-  update: (id: string, data: Partial<Quotation>) =>
+  update: (id: string, data: Partial<Pick<Quotation, 'title' | 'notes' | 'taxRate' | 'status' | 'validUntil'>>) =>
     request<Quotation>(`/quotations/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  remove: (id: string) => request<{ success: boolean }>(`/quotations/${id}`, { method: 'DELETE' }),
+  addItem: (quotationId: string, item: QuotationItemInput) =>
+    request<QuotationItem>(`/quotations/${quotationId}/items`, { method: 'POST', body: JSON.stringify(item) }),
+  updateItem: (quotationId: string, itemId: string, item: Partial<QuotationItemInput>) =>
+    request<QuotationItem>(`/quotations/${quotationId}/items/${itemId}`, { method: 'PATCH', body: JSON.stringify(item) }),
+  removeItem: (quotationId: string, itemId: string) =>
+    request<{ success: boolean }>(`/quotations/${quotationId}/items/${itemId}`, { method: 'DELETE' }),
+  setStatus: (id: string, status: Quotation['status']) =>
+    request<Quotation>(`/quotations/${id}/status`, { method: 'POST', body: JSON.stringify({ status }) }),
 };
 
 // ---------- Deals ----------

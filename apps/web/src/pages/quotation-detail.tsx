@@ -1,44 +1,227 @@
-import { useParams, Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, Sparkles, User } from 'lucide-react';
+import { useState } from 'react';
+import { useParams, Link, useSearchParams } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { ArrowLeft, Sparkles, User, Printer, Edit, Send, Check, X, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { quotationsApi } from '@/lib/api';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { QuotationBuilder } from '@/components/quotation-builder';
+import { quotationsApi, type Quotation, type QuotationStatus } from '@/lib/api';
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils';
 
 export function QuotationDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const isPrintMode = searchParams.get('print') === '1';
+  const queryClient = useQueryClient();
   const { data: quotation, isLoading } = useQuery({
     queryKey: ['quotation', id],
     queryFn: () => quotationsApi.get(id!),
     enabled: !!id,
   });
 
+  const [editOpen, setEditOpen] = useState(false);
+  const [actionLoading, setActionLoading] = useState<QuotationStatus | null>(null);
+
   if (isLoading) return <p>載入中...</p>;
   if (!quotation) return <p>搵唔到呢張報價單</p>;
 
-  return (
-    <div className="space-y-6 max-w-4xl">
-      <div className="flex items-center gap-3">
-        <Button asChild variant="ghost" size="icon">
-          <Link to="/quotations">
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
-        </Button>
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold font-mono">{quotation.number}</h1>
-            {quotation.generatedByAi && (
-              <Badge variant="info">
-                <Sparkles className="h-3 w-3 mr-1" />
-                AI Generated
-              </Badge>
-            )}
+  async function transition(status: QuotationStatus) {
+    if (!id) return;
+    setActionLoading(status);
+    try {
+      await quotationsApi.setStatus(id, status);
+      queryClient.invalidateQueries({ queryKey: ['quotation', id] });
+      queryClient.invalidateQueries({ queryKey: ['quotations'] });
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  async function handleDelete() {
+    if (!id) return;
+    if (!window.confirm('確定刪除呢張報價單?')) return;
+    try {
+      await quotationsApi.remove(id);
+      queryClient.invalidateQueries({ queryKey: ['quotations'] });
+      window.history.back();
+    } catch (err) {
+      window.alert(`刪除失敗: ${(err as Error).message}`);
+    }
+  }
+
+  function handleBuilderSaved() {
+    setEditOpen(false);
+    queryClient.invalidateQueries({ queryKey: ['quotation', id] });
+    queryClient.invalidateQueries({ queryKey: ['quotations'] });
+  }
+
+  function handlePrint() {
+    // Open print-friendly route in same tab, then trigger window.print
+    setSearchParams({ print: '1' });
+    setTimeout(() => window.print(), 200);
+  }
+
+  // --- Print-mode layout ---
+  if (isPrintMode) {
+    return (
+      <div className="bg-white text-black p-8 max-w-3xl mx-auto print:p-0">
+        <div className="flex justify-between items-start border-b pb-4 mb-6">
+          <div>
+            <h1 className="text-3xl font-bold">報價單 / Quotation</h1>
+            <p className="font-mono text-sm text-gray-600 mt-1">{quotation.number}</p>
           </div>
-          <p className="text-muted-foreground text-sm">
-            {quotation.company?.name} · 建立於 {formatDate(quotation.createdAt)}
-          </p>
+          <div className="text-right text-sm">
+            <p><span className="text-gray-500">Issue date:</span> {formatDate(quotation.createdAt)}</p>
+            {quotation.validUntil && (
+              <p><span className="text-gray-500">Valid until:</span> {formatDate(quotation.validUntil)}</p>
+            )}
+            <p><span className="text-gray-500">Status:</span> {quotation.status}</p>
+          </div>
+        </div>
+
+        <div className="mb-6">
+          <p className="text-xs text-gray-500 uppercase tracking-wide">To</p>
+          <p className="font-semibold text-lg">{quotation.company?.name}</p>
+          {quotation.company?.email && <p className="text-sm">{quotation.company.email}</p>}
+          {quotation.company?.phone && <p className="text-sm">{quotation.company.phone}</p>}
+        </div>
+
+        {quotation.title && (
+          <p className="text-lg font-medium mb-4">{quotation.title}</p>
+        )}
+
+        <table className="w-full text-sm border-t border-b mb-4">
+          <thead>
+            <tr className="border-b text-left">
+              <th className="py-2">Item</th>
+              <th className="py-2 text-right">Qty</th>
+              <th className="py-2 text-right">Unit</th>
+              <th className="py-2 text-right">Disc</th>
+              <th className="py-2 text-right">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {quotation.items.map((item) => (
+              <tr key={item.id ?? item.name} className="border-b last:border-0">
+                <td className="py-2">
+                  <div className="font-medium">{item.name}</div>
+                  {item.sku && <div className="text-xs text-gray-500">SKU: {item.sku}</div>}
+                </td>
+                <td className="py-2 text-right tabular-nums">{item.quantity}</td>
+                <td className="py-2 text-right tabular-nums">{formatCurrency(item.unitPrice)}</td>
+                <td className="py-2 text-right tabular-nums">
+                  {item.discount > 0 ? `${item.discount}%` : '—'}
+                </td>
+                <td className="py-2 text-right tabular-nums font-semibold">{formatCurrency(item.lineTotal)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        <div className="flex justify-end">
+          <div className="w-64 text-sm space-y-1">
+            <div className="flex justify-between"><span>Subtotal</span><span className="tabular-nums">{formatCurrency(quotation.subtotal)}</span></div>
+            <div className="flex justify-between"><span>Tax ({quotation.taxRate}%)</span><span className="tabular-nums">{formatCurrency(quotation.taxAmount)}</span></div>
+            <div className="flex justify-between border-t pt-2 mt-2 text-base font-bold">
+              <span>Total</span>
+              <span className="tabular-nums">{formatCurrency(quotation.total)}</span>
+            </div>
+          </div>
+        </div>
+
+        {quotation.notes && (
+          <div className="mt-6 text-sm">
+            <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Notes</p>
+            <p className="whitespace-pre-wrap">{quotation.notes}</p>
+          </div>
+        )}
+
+        <div className="mt-8 pt-4 border-t text-xs text-gray-500 flex justify-between print:hidden">
+          <Button variant="outline" onClick={() => setSearchParams({})}>
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            返回
+          </Button>
+          <Button onClick={() => window.print()}>
+            <Printer className="h-4 w-4 mr-2" />
+            列印
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // --- Normal mode ---
+  const isDraft = quotation.status === 'DRAFT';
+  const isSent = ['SENT', 'VIEWED'].includes(quotation.status);
+  const isAccepted = quotation.status === 'ACCEPTED';
+
+  return (
+    <div className="space-y-6 max-w-5xl">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-3">
+          <Button asChild variant="ghost" size="icon">
+            <Link to="/quotations">
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
+          </Button>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold font-mono">{quotation.number}</h1>
+              {quotation.generatedByAi && (
+                <Badge variant="info">
+                  <Sparkles className="h-3 w-3 mr-1" />
+                  AI Generated
+                </Badge>
+              )}
+              <QuotationStatusBadge status={quotation.status} />
+            </div>
+            <p className="text-muted-foreground text-sm">
+              {quotation.company?.name} · 建立於 {formatDate(quotation.createdAt)}
+              {quotation.title && ` · ${quotation.title}`}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex gap-2 flex-wrap">
+          <Button variant="outline" size="sm" onClick={handlePrint}>
+            <Printer className="h-4 w-4 mr-2" />
+            列印
+          </Button>
+          {isDraft && (
+            <>
+              <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
+                <Edit className="h-4 w-4 mr-2" />
+                編輯
+              </Button>
+              <Button size="sm" onClick={() => transition('SENT')} disabled={actionLoading === 'SENT'}>
+                <Send className="h-4 w-4 mr-2" />
+                發送
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleDelete} className="text-destructive hover:text-destructive">
+                <Trash2 className="h-4 w-4 mr-2" />
+                刪除
+              </Button>
+            </>
+          )}
+          {isSent && (
+            <>
+              <Button size="sm" onClick={() => transition('ACCEPTED')} disabled={actionLoading === 'ACCEPTED'}>
+                <Check className="h-4 w-4 mr-2" />
+                標記接受
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => transition('REJECTED')} disabled={actionLoading === 'REJECTED'}>
+                <X className="h-4 w-4 mr-2" />
+                拒絕
+              </Button>
+            </>
+          )}
+          {isAccepted && (
+            <Button size="sm" onClick={() => transition('INVOICED')} disabled={actionLoading === 'INVOICED'}>
+              轉成發票
+            </Button>
+          )}
         </div>
       </div>
 
@@ -137,20 +320,57 @@ export function QuotationDetailPage() {
             <CardContent className="p-4 text-sm space-y-2">
               <div className="flex items-center gap-2 text-muted-foreground">
                 <User className="h-3 w-3" />
-                <span>Status: {quotation.status}</span>
+                <span>建立人: {quotation.createdBy?.name ?? '—'}</span>
               </div>
               {quotation.validUntil && (
                 <p className="text-xs text-muted-foreground">
-                  Valid until: {formatDate(quotation.validUntil)}
+                  有效至: {formatDate(quotation.validUntil)}
                 </p>
               )}
               <p className="text-xs text-muted-foreground">
                 建立: {formatDateTime(quotation.createdAt)}
               </p>
+              {quotation.sentAt && (
+                <p className="text-xs text-muted-foreground">
+                  發送: {formatDateTime(quotation.sentAt)}
+                </p>
+              )}
+              {quotation.acceptedAt && (
+                <p className="text-xs text-muted-foreground">
+                  接受: {formatDateTime(quotation.acceptedAt)}
+                </p>
+              )}
             </CardContent>
           </Card>
         </div>
       </div>
+
+      {/* Edit Dialog */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>編輯報價單 {quotation.number}</DialogTitle>
+          </DialogHeader>
+          <QuotationBuilder
+            existing={quotation}
+            onSaved={handleBuilderSaved}
+            onCancel={() => setEditOpen(false)}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   );
+}
+
+function QuotationStatusBadge({ status }: { status: string }) {
+  const map: Record<string, 'default' | 'secondary' | 'info' | 'success' | 'warning' | 'destructive'> = {
+    DRAFT: 'secondary',
+    SENT: 'info',
+    VIEWED: 'info',
+    ACCEPTED: 'success',
+    REJECTED: 'destructive',
+    EXPIRED: 'warning',
+    INVOICED: 'success',
+  };
+  return <Badge variant={map[status] ?? 'default'}>{status}</Badge>;
 }

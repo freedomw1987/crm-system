@@ -1,5 +1,6 @@
-import { Elysia } from 'elysia';
+import { Elysia, t } from 'elysia';
 import { prisma } from '@crm/db';
+import { authContext } from '../lib/context';
 
 // Quotation number generator (Q-YYYY-NNNN)
 async function nextQuotationNumber(): Promise<string> {
@@ -14,7 +15,27 @@ async function nextQuotationNumber(): Promise<string> {
   return `${prefix}${next}`;
 }
 
+// Recalculate quotation totals from its line items
+async function recalcQuotation(quotationId: string) {
+  const items = await prisma.quotationItem.findMany({ where: { quotationId } });
+  const q = await prisma.quotation.findUnique({ where: { id: quotationId } });
+  if (!q) return null;
+  const subtotal = items.reduce((s, it) => s + Number(it.lineTotal), 0);
+  const taxAmount = subtotal * (Number(q.taxRate) / 100);
+  const total = subtotal + taxAmount;
+  return prisma.quotation.update({
+    where: { id: quotationId },
+    data: { subtotal, taxAmount, total },
+  });
+}
+
+// Compute line total for an item
+function lineTotalOf(qty: number, price: number, disc: number) {
+  return qty * price * (1 - disc / 100);
+}
+
 export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quotations'] })
+  .use(authContext)
   .get('/', async ({ query }) => {
     const { companyId, status, createdById, limit = '50', offset = '0' } = query as {
       companyId?: string;
@@ -51,15 +72,31 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
     if (!q) { set.status = 404; return { error: 'Not found' }; }
     return q;
   })
-  .post('/', async ({ body, set }) => {
-    const data = body as { companyId: string; createdById: string; items: Array<{ productId?: string; sku?: string; name: string; quantity: number; unitPrice: number; discount?: number; description?: string }>; title?: string; notes?: string; validUntil?: string; taxRate?: number; generatedByAi?: boolean; aiPrompt?: string };
+  .post('/', async ({ body, userId, set }) => {
+    if (!userId) { set.status = 401; return { error: 'Unauthorized' }; }
+    const data = body as {
+      companyId: string;
+      title?: string;
+      notes?: string;
+      validUntil?: string;
+      taxRate?: number;
+      items: Array<{
+        productId?: string;
+        sku?: string;
+        name: string;
+        description?: string;
+        quantity: number;
+        unitPrice: number;
+        discount?: number;
+      }>;
+    };
     const number = await nextQuotationNumber();
     let subtotal = 0;
-    const items = data.items.map((it, idx) => {
+    const items = (data.items ?? []).map((it, idx) => {
       const qty = Number(it.quantity);
       const price = Number(it.unitPrice);
       const disc = Number(it.discount ?? 0);
-      const lineTotal = qty * price * (1 - disc / 100);
+      const lineTotal = lineTotalOf(qty, price, disc);
       subtotal += lineTotal;
       return {
         productId: it.productId,
@@ -80,7 +117,7 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
       data: {
         number,
         companyId: data.companyId,
-        createdById: data.createdById,
+        createdById: userId,
         title: data.title,
         notes: data.notes,
         validUntil: data.validUntil ? new Date(data.validUntil) : null,
@@ -88,35 +125,128 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
         taxRate,
         taxAmount,
         total,
-        generatedByAi: data.generatedByAi ?? false,
-        aiPrompt: data.aiPrompt,
         items: { create: items },
       },
       include: { items: true, company: true },
     });
     set.status = 201;
     return created;
+  }, {
+    body: t.Object({
+      companyId: t.String(),
+      title: t.Optional(t.String()),
+      notes: t.Optional(t.String()),
+      validUntil: t.Optional(t.String()),
+      taxRate: t.Optional(t.Number()),
+      items: t.Array(t.Object({
+        productId: t.Optional(t.String()),
+        sku: t.Optional(t.String()),
+        name: t.String(),
+        description: t.Optional(t.String()),
+        quantity: t.Number(),
+        unitPrice: t.Number(),
+        discount: t.Optional(t.Number()),
+      })),
+    }),
   })
-  .patch('/:id', async ({ params, body }) => {
-    return prisma.quotation.update({ where: { id: params.id }, data: body as never });
+  // Update header (title, notes, validUntil, taxRate, status)
+  .patch('/:id', async ({ params, body, set }) => {
+    const data = body as {
+      title?: string;
+      notes?: string;
+      validUntil?: string | null;
+      taxRate?: number;
+      status?: string;
+    };
+    const update: Record<string, unknown> = {};
+    if (data.title !== undefined) update.title = data.title;
+    if (data.notes !== undefined) update.notes = data.notes;
+    if (data.validUntil !== undefined) {
+      update.validUntil = data.validUntil ? new Date(data.validUntil) : null;
+    }
+    if (data.taxRate !== undefined) update.taxRate = Number(data.taxRate);
+    if (data.status !== undefined) {
+      const valid = ['DRAFT', 'SENT', 'VIEWED', 'ACCEPTED', 'REJECTED', 'EXPIRED', 'INVOICED'];
+      if (!valid.includes(data.status)) { set.status = 400; return { error: 'Invalid status' }; }
+      update.status = data.status;
+      if (data.status === 'SENT') update.sentAt = new Date();
+      if (data.status === 'ACCEPTED') update.acceptedAt = new Date();
+    }
+    const q = await prisma.quotation.update({ where: { id: params.id }, data: update as never });
+    // Recalc totals if tax rate changed
+    if (data.taxRate !== undefined) await recalcQuotation(params.id);
+    return prisma.quotation.findUnique({
+      where: { id: params.id },
+      include: { items: { include: { product: true } }, company: true },
+    });
   })
   .delete('/:id', async ({ params }) => {
     await prisma.quotation.delete({ where: { id: params.id } });
     return { success: true };
   })
-  // Update status (send / accept / reject)
+  // Status transition shortcut
   .post('/:id/status', async ({ params, body, set }) => {
     const { status } = body as { status: string };
-    const validStatuses = ['DRAFT', 'SENT', 'VIEWED', 'ACCEPTED', 'REJECTED', 'EXPIRED', 'INVOICED'];
-    if (!validStatuses.includes(status)) {
-      set.status = 400;
-      return { error: 'Invalid status' };
-    }
+    const valid = ['DRAFT', 'SENT', 'VIEWED', 'ACCEPTED', 'REJECTED', 'EXPIRED', 'INVOICED'];
+    if (!valid.includes(status)) { set.status = 400; return { error: 'Invalid status' }; }
     const data: Record<string, unknown> = { status };
     if (status === 'SENT') data.sentAt = new Date();
     if (status === 'ACCEPTED') data.acceptedAt = new Date();
-    return prisma.quotation.update({
-      where: { id: params.id },
-      data: data as never,
+    return prisma.quotation.update({ where: { id: params.id }, data: data as never });
+  })
+  // Add a line item
+  .post('/:id/items', async ({ params, body, set }) => {
+    const data = body as { productId?: string; sku?: string; name: string; description?: string; quantity: number; unitPrice: number; discount?: number };
+    const last = await prisma.quotationItem.findFirst({
+      where: { quotationId: params.id },
+      orderBy: { position: 'desc' },
     });
+    const position = (last?.position ?? -1) + 1;
+    const lineTotal = lineTotalOf(Number(data.quantity), Number(data.unitPrice), Number(data.discount ?? 0));
+    const item = await prisma.quotationItem.create({
+      data: {
+        quotationId: params.id,
+        productId: data.productId,
+        sku: data.sku,
+        name: data.name,
+        description: data.description,
+        quantity: Number(data.quantity),
+        unitPrice: Number(data.unitPrice),
+        discount: Number(data.discount ?? 0),
+        lineTotal,
+        position,
+      },
+    });
+    await recalcQuotation(params.id);
+    return item;
+  })
+  // Update a line item
+  .patch('/:id/items/:itemId', async ({ params, body, set }) => {
+    const data = body as { name?: string; description?: string; quantity?: number; unitPrice?: number; discount?: number };
+    const existing = await prisma.quotationItem.findUnique({ where: { id: params.itemId } });
+    if (!existing || existing.quotationId !== params.id) { set.status = 404; return { error: 'Item not found' }; }
+    const qty = data.quantity !== undefined ? Number(data.quantity) : Number(existing.quantity);
+    const price = data.unitPrice !== undefined ? Number(data.unitPrice) : Number(existing.unitPrice);
+    const disc = data.discount !== undefined ? Number(data.discount) : Number(existing.discount);
+    const item = await prisma.quotationItem.update({
+      where: { id: params.itemId },
+      data: {
+        name: data.name,
+        description: data.description,
+        quantity: qty,
+        unitPrice: price,
+        discount: disc,
+        lineTotal: lineTotalOf(qty, price, disc),
+      },
+    });
+    await recalcQuotation(params.id);
+    return item;
+  })
+  // Delete a line item
+  .delete('/:id/items/:itemId', async ({ params }) => {
+    const existing = await prisma.quotationItem.findUnique({ where: { id: params.itemId } });
+    if (!existing || existing.quotationId !== params.id) return { error: 'Item not found' };
+    await prisma.quotationItem.delete({ where: { id: params.itemId } });
+    await recalcQuotation(params.id);
+    return { success: true };
   });
