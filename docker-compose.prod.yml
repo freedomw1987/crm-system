@@ -1,0 +1,33 @@
+# ====================================================================
+# Production overrides for docker-compose.yml
+# Usage:  docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Differences from base:
+# - No adminer (use psql or external DB tool)
+# - No source bind mounts (rely on baked images)
+# - Stricter restart policy
+# - Read-only root filesystem where possible
+# ====================================================================
+
+services:
+  postgres:
+    restart: always
+    # In prod, you probably want a bind mount or external volume path
+    # volumes:
+    #   - /var/lib/crm/postgres:/var/lib/postgresql/data
+
+  api:
+    restart: always
+    # No source bind mounts; image is self-contained
+    read_only: false  # Prisma needs write access to temp dirs
+    security_opt:
+      - no-new-privileges:true
+
+  web:
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+
+  # adminer explicitly disabled in prod
+  adminer:
+    profiles: ["disabled"]  # never starts, regardless of CLI flags

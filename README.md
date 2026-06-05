@@ -3,120 +3,172 @@
 A modern CRM + quotation system with built-in AI Agent for sales teams.
 Rebuild of `erp.sme-boardpro.com` CRM with AI-powered quotation assistant, customer analysis, and tool calling.
 
-## Tech Stack
+---
 
-- **Backend**: Bun + Elysia + TypeScript + Prisma + PostgreSQL
-- **Frontend**: Vite + React + TypeScript + Tailwind CSS + shadcn/ui
-- **AI Agent**: OpenAI function calling (custom-built, lightweight)
-- **Infrastructure**: AWS CDK → ECS Fargate + RDS Postgres + S3/CloudFront
-- **Monorepo**: Bun workspaces
+## ⚡ Quick start (Docker)
 
-## Architecture
+The fastest way to run the whole stack locally:
+
+```bash
+git clone git@david-dev-env:freedomw1987/crm-system.git
+cd crm-system
+
+# Build + start (with seeded admin users)
+./scripts/docker-dev.sh --seed
+
+# Open http://localhost
+# Login: admin@crm.local / admin123
+```
+
+That's it — Postgres + API + Web (nginx) all running in containers.
+
+---
+
+## 🐳 Docker stack
+
+| Service | Port | Image | Notes |
+|---|---|---|---|
+| `web`   | 80   | Custom (nginx 1.27-alpine) | SPA + reverse proxy `/api` → api:3001 |
+| `api`   | 3001 (internal) | Custom (oven/bun:1.2) | Elysia + Prisma; not exposed to host |
+| `postgres` | — | postgres:16-alpine | Data in named volume `crm_pgdata` |
+| `adminer` | 8080 (opt-in) | adminer:4.8.1 | DB admin UI; only with `--profile with-adminer` |
+
+### Common commands
+
+```bash
+./scripts/docker-dev.sh           # Start stack + tail logs
+./scripts/docker-dev.sh --seed    # First-run: build + start + seed admin users
+./scripts/docker-dev.sh --reset   # ⚠️ DELETE all data
+./scripts/docker-dev.sh --logs    # Tail logs only
+./scripts/docker-dev.sh --adminer # Also start adminer on :8080
+```
+
+### Production deployment
+
+For a local "production-like" deployment (no adminer, stricter restart, baked images):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+```
+
+### Environment variables
+
+All set in `.env` at the project root (copy `.env.example`):
+
+| Var | Default | Notes |
+|---|---|---|
+| `POSTGRES_USER` | `crm` | DB user |
+| `POSTGRES_PASSWORD` | `crm_dev_password` | **Change for prod** |
+| `POSTGRES_DB` | `crm_system` | DB name |
+| `JWT_SECRET` | dev default | **Must be long random in prod** |
+| `OPENAI_API_KEY` | (empty) | Required for AI agent |
+| `OPENAI_MODEL` | `gpt-4o-mini` | Override to use GPT-4 etc. |
+| `WEB_PORT` | `80` | Host port for web |
+| `ADMINER_PORT` | `8080` | Host port for adminer (when profile enabled) |
+| `SEED_DB` | (empty) | Set to `true` to seed on first run |
+
+---
+
+## 🛠 Development (without Docker)
+
+If you want hot-reload:
+
+```bash
+# 1. Start Postgres
+docker compose up -d postgres
+
+# 2. Install deps
+bun install
+
+# 3. Migrate + seed
+cd packages/db && bunx prisma migrate dev && bunx prisma db seed
+
+# 4. Start API (terminal 1)
+cd apps/api && bun --env-file=../../.env --watch src/index.ts
+
+# 5. Start Web (terminal 2)
+cd apps/web && bun run dev
+# → http://localhost:5173 (proxies /api → :3001)
+```
+
+---
+
+## 🏗 Architecture
+
+```
+┌─────────────────────────────────────────┐
+│  Browser  →  http://localhost           │
+└──────────────┬──────────────────────────┘
+               │
+        ┌──────▼──────┐
+        │  crm-web    │  nginx 1.27
+        │  (port 80)  │  • serves SPA
+        │             │  • proxies /api → api:3001
+        └──────┬──────┘
+               │
+        ┌──────▼──────┐
+        │  crm-api    │  Bun + Elysia + Prisma
+        │  :3001      │  • REST endpoints
+        │             │  • JWT auth
+        │             │  • AI agent (OpenAI)
+        └──────┬──────┘
+               │
+        ┌──────▼──────┐
+        │  crm-postgres│  Postgres 16
+        │  (internal)  │  Volume: crm_pgdata
+        └─────────────┘
+```
+
+### Monorepo layout
 
 ```
 crm-system/
 ├── apps/
-│   ├── api/          # Elysia backend (REST API + AI Agent)
-│   └── web/          # React + Vite + Tailwind dashboard
+│   ├── api/         # Bun + Elysia REST API
+│   │   ├── src/
+│   │   ├── Dockerfile
+│   │   └── docker-entrypoint.sh
+│   └── web/         # Vite + React 19 SPA
+│       ├── src/
+│       ├── Dockerfile
+│       └── nginx.conf
 ├── packages/
-│   ├── db/           # Prisma schema + migrations
-│   ├── ai/           # AI Agent core (tools, prompts, memory, RAG)
-│   └── shared/       # Shared types / DTOs
-├── cdk/              # AWS CDK infrastructure
-├── docker/           # Dockerfiles
-├── scripts/          # Dev utility scripts
-└── docs/             # Development documentation
+│   ├── db/          # Prisma schema + client
+│   ├── ai/          # OpenAI function-calling agent + tools
+│   └── shared/      # Cross-package types/utils
+├── scripts/
+│   ├── docker-dev.sh
+│   └── docker-reset.sh
+├── docker-compose.yml
+├── docker-compose.prod.yml
+└── .env
 ```
 
-## Data Model
+---
 
-11 core entities (HubSpot/Pipedrive-inspired):
+## 🤖 AI Agent
 
-- **User** — System users with RBAC (Admin / Sales / Viewer)
-- **Company** — Customer companies
-- **Contact** — Customer contacts (multiple per company)
-- **Address** — Billing/shipping addresses
-- **Tag** — Flexible tags (companies, deals, quotations)
-- **Product** — Product catalog (SKU, price, cost, stock)
-- **Quotation** — Quotation header (links to company + line items)
-- **QuotationItem** — Quotation line items
-- **Pipeline** — Sales pipeline configuration
-- **Deal** — Sales opportunity (follows pipeline stages)
-- **ActivityLog** — All customer/deal interactions
-- **Conversation** — AI Agent conversation history
+The system has a built-in CRM-aware AI assistant (`/ai` page in web UI, or `POST /chat/send`).
 
-## Local Development
+**Available tools:**
+- `search_companies` / `get_company` — Find customer details
+- `search_products` — Product catalog lookup
+- `list_quotations` / `list_deals` — Recent activity
+- `draft_quotation` — Create a draft quotation from natural language
+- `log_activity` — Log calls/emails/meetings
+- `get_top_customers` — Revenue analysis
 
-### Prerequisites
+Example prompt:
+> 「幫 ACME 開個 5 個 HW-MON-001 同 2 個 SVC-CONS-001 嘅 quotation」
 
-- Bun 1.2+
-- Docker (for local Postgres)
-- Node 20+ (for CDK)
+The agent will:
+1. Search for ACME's company ID
+2. Look up HW-MON-001 and SVC-CONS-001 in the catalog
+3. Call `draft_quotation` with structured line items
+4. Return the new quotation ID
 
-### Quick Start
+---
 
-```bash
-# 1. Install dependencies
-bun install
+## 📚 Day-by-day progress
 
-# 2. Start Postgres
-docker compose up -d
-
-# 3. Copy environment variables
-cp .env.example .env
-# Edit .env with your OPENAI_API_KEY and other secrets
-
-# 4. Run Prisma migrations
-bun run db:migrate
-
-# 5. Seed database (optional)
-bun run db:seed
-
-# 6. Start dev servers (API + Web in parallel)
-bun run dev
-```
-
-### Access
-
-- **Web UI**: http://localhost:5173
-- **API**: http://localhost:3001
-- **Prisma Studio**: `bun run db:studio` (http://localhost:5555)
-
-## AI Agent Capabilities (Day 1)
-
-The AI Agent can perform these operations via natural language:
-
-1. **Quotation Assistant**
-   - "Draft a quotation for ACME Corp with 10 × Widget A"
-   - "Show me all open quotations for ABC Ltd"
-   - "Add 5 hours of consulting to Q-2024-042"
-
-2. **Customer Analysis**
-   - "What's the total revenue from TechCorp in Q4?"
-   - "Show top 5 customers by deal value"
-   - "Which customers haven't ordered in 6 months?"
-
-3. **Product Recommendations**
-   - "What products does ABC Ltd usually buy?"
-   - "Suggest upsell opportunities for this deal"
-
-4. **Activity Logging**
-   - "I just called John at ACME, he wants a callback tomorrow"
-   - "Log an email to Mary about the new pricing"
-
-## Development Status
-
-🚧 **Phase 1: Scaffolding** (in progress)
-
-- [x] Monorepo structure
-- [ ] Prisma schema + migrations
-- [ ] Elysia API (auth + CRUD)
-- [ ] AI Agent core
-- [ ] React frontend
-- [ ] CDK infrastructure
-- [ ] CI/CD
-- [ ] QA: Vitest + Playwright
-
-## License
-
-Private — David Chu
+See `docs/PROGRESS.md` for the development log.
