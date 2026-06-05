@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
   Building2, FileText, KanbanSquare, MessageSquare, LogOut,
-  LayoutDashboard, Menu, X, Users, History, Briefcase, Shield,
+  LayoutDashboard, Menu, X, Users, History, Briefcase, Shield, Package,
 } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '@/lib/auth';
@@ -12,6 +12,7 @@ const navItems = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/companies', label: 'Companies', icon: Building2 },
   { to: '/quotations', label: 'Quotations', icon: FileText },
+  { to: '/products', label: 'Products', icon: Package },
   { to: '/services', label: 'Services', icon: Briefcase },
   { to: '/deals', label: 'Deals', icon: KanbanSquare },
   { to: '/ai', label: 'AI Assistant', icon: MessageSquare },

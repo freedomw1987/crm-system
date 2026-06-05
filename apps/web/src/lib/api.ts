@@ -118,18 +118,41 @@ export interface Product {
   id: string;
   sku: string;
   name: string;
+  /** Long-form product description. */
   description?: string | null;
   category?: string | null;
+  /** Selling price per unit. */
   unitPrice: number;
+  /** Cost basis (admin-only visibility). */
+  costPrice?: number | null;
   currency: string;
-  stockQuantity: number;
+  trackInventory: boolean;
+  stockQuantity: number | null;
+  lowStockThreshold: number | null;
+  status: 'ACTIVE' | 'ARCHIVED' | 'OUT_OF_STOCK';
+  imageUrl?: string | null;
+  metadata?: unknown;
+  createdAt: string;
+  updatedAt?: string;
+}
+export interface ProductInput {
+  sku: string;
+  name: string;
+  description?: string;
+  category?: string;
+  unitPrice: number;
+  costPrice?: number;
+  currency?: string;
+  trackInventory?: boolean;
+  stockQuantity?: number;
+  lowStockThreshold?: number;
+  status?: 'ACTIVE' | 'ARCHIVED' | 'OUT_OF_STOCK';
+  imageUrl?: string;
 }
 export const productsApi = {
-  list: (params: { query?: string; category?: string; limit?: number } = {}) => {
+  list: (params: { query?: string; category?: string; status?: string; limit?: number } = {}) => {
     const qs = new URLSearchParams();
-    if (params.query) qs.set('query', params.query);
-    if (params.category) qs.set('category', params.category);
-    if (params.limit) qs.set('limit', String(params.limit));
+    Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') qs.set(k, String(v)); });
     // Backend returns a bare array; companiesApi returns { items, total }.
     // Accept either shape so the list works regardless of which the API speaks.
     return request<{ items: Product[]; total: number } | Product[]>(`/products${qs.toString() ? `?${qs}` : ''}`).then((r) =>
@@ -137,6 +160,10 @@ export const productsApi = {
     );
   },
   get: (id: string) => request<Product>(`/products/${id}`),
+  create: (data: ProductInput) => request<Product>('/products', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: string, data: Partial<ProductInput>) =>
+    request<Product>(`/products/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  remove: (id: string) => request<{ success: boolean }>(`/products/${id}`, { method: 'DELETE' }),
 };
 
 // ---------- Quotations ----------
