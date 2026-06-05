@@ -1,18 +1,33 @@
 import { Elysia, t } from 'elysia';
 import { prisma } from '@crm/db';
+import { authContext } from '../lib/context';
+import { logEvent } from '../middleware/audit';
 
 export const authRoutes = new Elysia({ prefix: '/auth', tags: ['auth'] })
+  .use(authContext)
   .post(
     '/login',
-    async ({ body, jwt, set }) => {
+    async ({ body, jwt, set, request }) => {
       const { email, password } = body as { email: string; password: string };
       const user = await prisma.user.findUnique({ where: { email } });
       if (!user || !user.isActive) {
+        await logEvent({
+          actorId: user?.id ?? null,
+          action: 'USER_LOGIN_FAILED',
+          description: `Login failed for ${email}: user not found or inactive`,
+          request,
+        });
         set.status = 401;
         return { error: 'Invalid credentials' };
       }
       const valid = await Bun.password.verify(password, user.passwordHash);
       if (!valid) {
+        await logEvent({
+          actorId: user.id,
+          action: 'USER_LOGIN_FAILED',
+          description: `Login failed for ${email}: wrong password`,
+          request,
+        });
         set.status = 401;
         return { error: 'Invalid credentials' };
       }
@@ -24,6 +39,14 @@ export const authRoutes = new Elysia({ prefix: '/auth', tags: ['auth'] })
       await prisma.user.update({
         where: { id: user.id },
         data: { lastLoginAt: new Date() },
+      });
+      await logEvent({
+        actorId: user.id,
+        action: 'USER_LOGIN',
+        resourceType: 'user',
+        resourceId: user.id,
+        description: `${user.email} signed in`,
+        request,
       });
       return {
         token,
@@ -42,7 +65,6 @@ export const authRoutes = new Elysia({ prefix: '/auth', tags: ['auth'] })
       }),
     }
   )
-
   .post(
     '/register',
     async ({ body, set }) => {
@@ -81,7 +103,6 @@ export const authRoutes = new Elysia({ prefix: '/auth', tags: ['auth'] })
       }),
     }
   )
-
   .get('/me', async ({ request, jwt, set }) => {
     const authHeader = request.headers.get('authorization');
     if (!authHeader?.startsWith('Bearer ')) {
@@ -111,4 +132,29 @@ export const authRoutes = new Elysia({ prefix: '/auth', tags: ['auth'] })
       role: user.role,
       avatarUrl: user.avatarUrl,
     };
+  })
+  // Self-service password change
+  .post('/change-password', async ({ body, request, jwt, userId, set }) => {
+    if (!userId) { set.status = 401; return { error: 'Unauthorized' }; }
+    const { currentPassword, newPassword } = body as { currentPassword: string; newPassword: string };
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) { set.status = 404; return { error: 'User not found' }; }
+    const valid = await Bun.password.verify(currentPassword, user.passwordHash);
+    if (!valid) { set.status = 400; return { error: 'Current password is wrong' }; }
+    const newHash = await Bun.password.hash(newPassword);
+    await prisma.user.update({ where: { id: userId }, data: { passwordHash: newHash } });
+    await logEvent({
+      actorId: userId,
+      action: 'PASSWORD_CHANGED',
+      resourceType: 'user',
+      resourceId: userId,
+      description: `${user.email} changed their own password`,
+      request,
+    });
+    return { success: true };
+  }, {
+    body: t.Object({
+      currentPassword: t.String({ minLength: 1 }),
+      newPassword: t.String({ minLength: 8 }),
+    }),
   });

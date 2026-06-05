@@ -2,15 +2,14 @@
  * CRM System API Entry Point
  *
  * Stack: Bun + Elysia + Prisma
- * Day 1: Health check + AI Agent chat endpoint
+ * Day 1-5: Health, Auth, AI chat, Companies, Contacts, Products,
+ *          Quotations, Deals, Users, Audit
  */
 
 import { Elysia, t } from 'elysia';
 import { cors } from '@elysiajs/cors';
 import { jwt } from '@elysiajs/jwt';
 import { prisma } from '@crm/db';
-import { runAgent } from '@crm/ai';
-import { getUserContext } from './lib/context';
 import { authRoutes } from './routes/auth';
 import { companyRoutes } from './routes/company';
 import { contactRoutes } from './routes/contact';
@@ -18,13 +17,15 @@ import { productRoutes } from './routes/product';
 import { quotationRoutes } from './routes/quotation';
 import { dealRoutes } from './routes/deal';
 import { chatRoutes } from './routes/chat';
+import { userRoutes } from './routes/users';
+import { auditRoutes } from './routes/audit';
+import { logEvent } from './middleware/audit';
 
 const PORT = Number(process.env.API_PORT ?? 3001);
 const HOST = process.env.API_HOST ?? '0.0.0.0';
 const CORS_ORIGIN = process.env.CORS_ORIGIN ?? 'http://localhost:5173';
 
 const app = new Elysia()
-  // CORS for frontend
   .use(
     cors({
       origin: CORS_ORIGIN.split(',').map((s) => s.trim()),
@@ -32,7 +33,6 @@ const app = new Elysia()
     })
   )
 
-  // JWT auth
   .use(
     jwt({
       name: 'jwt',
@@ -40,7 +40,6 @@ const app = new Elysia()
     })
   )
 
-  // Health check
   .get('/health', async () => {
     try {
       await prisma.$queryRaw`SELECT 1`;
@@ -58,7 +57,6 @@ const app = new Elysia()
     }
   })
 
-  // Routes
   .use(authRoutes)
   .use(companyRoutes)
   .use(contactRoutes)
@@ -66,8 +64,9 @@ const app = new Elysia()
   .use(quotationRoutes)
   .use(dealRoutes)
   .use(chatRoutes)
+  .use(userRoutes)
+  .use(auditRoutes)
 
-  // Error handler
   .onError(({ code, error, set }) => {
     console.error(`[Elysia Error] ${code}:`, error);
     if (code === 'VALIDATION') {

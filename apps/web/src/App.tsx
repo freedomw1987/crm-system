@@ -12,6 +12,9 @@ import { QuotationsPage } from '@/pages/quotations';
 import { QuotationDetailPage } from '@/pages/quotation-detail';
 import { DealsPage } from '@/pages/deals';
 import { AiChatPage } from '@/pages/ai-chat';
+import { UsersPage } from '@/pages/users';
+import { UserDetailPage } from '@/pages/user-detail';
+import { AuditPage } from '@/pages/audit';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -52,6 +55,9 @@ export function App() {
             <Route path="/quotations/:id" element={<QuotationDetailPage />} />
             <Route path="/deals" element={<DealsPage />} />
             <Route path="/ai" element={<AiChatPage />} />
+            <Route path="/users" element={<UsersPage />} />
+            <Route path="/users/:id" element={<UserDetailPage />} />
+            <Route path="/audit" element={<AuditPage />} />
           </Route>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

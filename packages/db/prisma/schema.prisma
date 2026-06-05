@@ -41,6 +41,7 @@ model User {
   ownedDeals         Deal[]        @relation("DealOwner")
   assignedActivities ActivityLog[] @relation("ActivityAssignedTo")
   conversations      Conversation[]
+  auditEvents        AuditLog[]    @relation("AuditActor")
 
   @@index([email])
   @@index([role])
@@ -479,4 +480,64 @@ model ConversationMessage {
 
   @@index([conversationId, createdAt])
   @@map("conversation_messages")
+}
+
+// ============================================================
+// 13. AUDIT LOG (Admin-visible system event trail)
+// ============================================================
+
+enum AuditAction {
+  // Auth
+  USER_LOGIN
+  USER_LOGIN_FAILED
+  USER_LOGOUT
+  PASSWORD_CHANGED
+  // User management
+  USER_CREATED
+  USER_UPDATED
+  USER_DEACTIVATED
+  USER_REACTIVATED
+  USER_DELETED
+  PASSWORD_RESET
+  // CRM resources — generic
+  QUOTATION_CREATED
+  QUOTATION_UPDATED
+  QUOTATION_DELETED
+  QUOTATION_STATUS_CHANGED
+  COMPANY_CREATED
+  COMPANY_UPDATED
+  COMPANY_DELETED
+  CONTACT_CREATED
+  CONTACT_UPDATED
+  CONTACT_DELETED
+  DEAL_CREATED
+  DEAL_UPDATED
+  DEAL_DELETED
+}
+
+model AuditLog {
+  id          String      @id @default(cuid())
+  // Actor
+  actorId     String?     // null = anonymous / system
+  // What happened
+  action      AuditAction
+  // Affected resource
+  resourceType String?    // e.g., "quotation", "user", "company"
+  resourceId   String?
+  // Free-form context
+  description  String?    @db.Text
+  metadata     Json?      // before/after diff, etc.
+  // Request context
+  ipAddress    String?
+  userAgent    String?    @db.Text
+  createdAt    DateTime   @default(now())
+
+  // Relations
+  actor User? @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([actorId, createdAt])
+  @@index([action, createdAt])
+  @@index([resourceType, resourceId])
+  @@index([createdAt])
+  @@map("audit_logs")
 }

@@ -242,6 +242,76 @@ export const dealsApi = {
     request<Deal>('/deals', { method: 'POST', body: JSON.stringify(data) }),
 };
 
+// ---------- Users (admin) ----------
+export interface UserSummary {
+  id: string;
+  email: string;
+  name: string;
+  role: 'ADMIN' | 'SALES' | 'VIEWER';
+  isActive: boolean;
+  lastLoginAt?: string | null;
+  createdAt: string;
+  updatedAt?: string;
+}
+export const usersApi = {
+  list: (params: { search?: string; role?: string; isActive?: string; limit?: number } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.search) qs.set('search', params.search);
+    if (params.role) qs.set('role', params.role);
+    if (params.isActive) qs.set('isActive', params.isActive);
+    if (params.limit) qs.set('limit', String(params.limit));
+    return request<{ items: UserSummary[]; total: number }>(`/users${qs.toString() ? `?${qs}` : ''}`);
+  },
+  get: (id: string) => request<UserSummary>(`/users/${id}`),
+  create: (data: { email: string; name: string; role: 'ADMIN' | 'SALES' | 'VIEWER'; password: string }) =>
+    request<UserSummary>('/users', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: string, data: Partial<Pick<UserSummary, 'name' | 'role' | 'isActive'>>) =>
+    request<UserSummary>(`/users/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  remove: (id: string) => request<{ success: boolean }>(`/users/${id}`, { method: 'DELETE' }),
+  resetPassword: (id: string, newPassword: string) =>
+    request<{ success: boolean }>(`/users/${id}/reset-password`, {
+      method: 'POST',
+      body: JSON.stringify({ newPassword }),
+    }),
+};
+export const authApiExtra = {
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<{ success: boolean }>('/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    }),
+};
+
+// ---------- Audit Log (admin) ----------
+export type AuditAction =
+  | 'USER_LOGIN' | 'USER_LOGIN_FAILED' | 'USER_LOGOUT' | 'PASSWORD_CHANGED'
+  | 'USER_CREATED' | 'USER_UPDATED' | 'USER_DEACTIVATED' | 'USER_REACTIVATED' | 'USER_DELETED' | 'PASSWORD_RESET'
+  | 'QUOTATION_CREATED' | 'QUOTATION_UPDATED' | 'QUOTATION_DELETED' | 'QUOTATION_STATUS_CHANGED'
+  | 'COMPANY_CREATED' | 'COMPANY_UPDATED' | 'COMPANY_DELETED'
+  | 'CONTACT_CREATED' | 'CONTACT_UPDATED' | 'CONTACT_DELETED'
+  | 'DEAL_CREATED' | 'DEAL_UPDATED' | 'DEAL_DELETED';
+export interface AuditLog {
+  id: string;
+  actorId: string | null;
+  action: AuditAction;
+  resourceType: string | null;
+  resourceId: string | null;
+  description: string | null;
+  metadata: unknown;
+  ipAddress: string | null;
+  userAgent: string | null;
+  createdAt: string;
+  actor: { id: string; name: string; email: string; role: string } | null;
+}
+export const auditApi = {
+  list: (params: { actorId?: string; action?: string; resourceType?: string; resourceId?: string; from?: string; to?: string; limit?: number; offset?: number } = {}) => {
+    const qs = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') qs.set(k, String(v)); });
+    return request<{ items: AuditLog[]; total: number }>(`/audit${qs.toString() ? `?${qs}` : ''}`);
+  },
+  actions: () => request<AuditAction[]>('/audit/actions'),
+};
+
 // ---------- AI Chat ----------
 export interface ConversationSummary {
   id: string;

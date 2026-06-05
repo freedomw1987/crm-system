@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
   Building2, FileText, KanbanSquare, MessageSquare, LogOut,
-  LayoutDashboard, Menu, X
+  LayoutDashboard, Menu, X, Users, History,
 } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '@/lib/auth';
@@ -14,6 +14,11 @@ const navItems = [
   { to: '/quotations', label: 'Quotations', icon: FileText },
   { to: '/deals', label: 'Deals', icon: KanbanSquare },
   { to: '/ai', label: 'AI Assistant', icon: MessageSquare },
+];
+
+const adminNavItems = [
+  { to: '/users', label: 'Users', icon: Users, adminOnly: true },
+  { to: '/audit', label: 'Audit Log', icon: History, adminOnly: true },
 ];
 
 export function AppLayout() {
@@ -79,6 +84,31 @@ export function AppLayout() {
               {item.label}
             </NavLink>
           ))}
+          {user?.role === 'ADMIN' && (
+            <>
+              <div className="px-3 pt-4 pb-1 text-xs uppercase tracking-wider text-muted-foreground font-semibold">
+                Admin
+              </div>
+              {adminNavItems.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  onClick={() => setOpen(false)}
+                  className={({ isActive }) =>
+                    cn(
+                      'flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors',
+                      isActive
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                    )
+                  }
+                >
+                  <item.icon className="h-4 w-4" />
+                  {item.label}
+                </NavLink>
+              ))}
+            </>
+          )}
         </nav>
 
         <div className="p-3 border-t">
