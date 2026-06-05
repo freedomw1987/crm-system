@@ -1,20 +1,22 @@
 import { Elysia } from 'elysia';
 import { prisma } from '@crm/db';
 import { runAgent } from '@crm/ai';
-import { jwt } from '@elysiajs/jwt';
+import { jwtVerify } from 'jose';
 
-// Shared JWT secret + verifier
 const SECRET = process.env.JWT_SECRET ?? 'dev-only-secret-please-change';
-const jwtApp = new Elysia().use(jwt({ name: 'jwt', secret: SECRET }));
+const secretKey = new TextEncoder().encode(SECRET);
 
 async function verifyToken(authHeader: string | null): Promise<string | null> {
   if (!authHeader?.startsWith('Bearer ')) return null;
   const token = authHeader.slice(7);
-  // @ts-expect-error — jwt decorator typing is loose across plugin boundaries
-  const payload = await jwtApp.decorator.jwt.verify(token);
-  if (!payload || typeof payload !== 'object') return null;
-  const sub = (payload as Record<string, unknown>).sub;
-  return typeof sub === 'string' ? sub : null;
+  try {
+    const { payload } = await jwtVerify(token, secretKey);
+    if (!payload || typeof payload !== 'object') return null;
+    const sub = (payload as Record<string, unknown>).sub;
+    return typeof sub === 'string' ? sub : null;
+  } catch {
+    return null;
+  }
 }
 
 export const chatRoutes = new Elysia({ prefix: '/chat', tags: ['ai-chat'] })

@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "types": ["vite/client", "node"],
+    "baseUrl": ".",
+    "paths": { "@/*": ["./src/*"] },
+    "noEmit": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx"
+  },
+  "include": ["src", "vite.config.ts"]
+}
