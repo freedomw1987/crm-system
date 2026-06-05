@@ -142,7 +142,10 @@ export const productsApi = {
 // ---------- Quotations ----------
 export interface QuotationItem {
   id?: string;
+  /** 'PRODUCT' (with productId) or 'SERVICE' (with serviceId + manDaySnapshot). */
+  itemType: 'PRODUCT' | 'SERVICE';
   productId?: string | null;
+  serviceId?: string | null;
   sku?: string | null;
   name: string;
   description?: string | null;
@@ -150,6 +153,10 @@ export interface QuotationItem {
   unitPrice: number;
   discount: number;
   lineTotal: number;
+  /** For SERVICE items: snapshot of the service's man-day structure at the
+   *  time the quotation was created. Used to display the SOW breakdown in the
+   *  quotation detail view even if the service template is later changed. */
+  manDaySnapshot?: Array<{ role: string; dayRate: number; days: number; subtotal: number }> | null;
 }
 export type QuotationStatus = 'DRAFT' | 'SENT' | 'VIEWED' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED' | 'INVOICED';
 export interface Quotation {
@@ -183,13 +190,18 @@ export interface Quotation {
   _count?: { items: number };
 }
 export interface QuotationItemInput {
+  /** 'PRODUCT' (with productId) or 'SERVICE' (with serviceId + manDaySnapshot). */
+  itemType: 'PRODUCT' | 'SERVICE';
   productId?: string;
+  serviceId?: string;
   sku?: string;
   name: string;
   description?: string;
   quantity: number;
   unitPrice: number;
   discount?: number;
+  /** For SERVICE items: snapshot of the chosen service's man-day structure. */
+  manDaySnapshot?: Array<{ role: string; dayRate: number; days: number; subtotal: number }>;
 }
 export const quotationsApi = {
   list: (params: { companyId?: string; status?: string; limit?: number } = {}) => {
@@ -355,4 +367,96 @@ export const chatApi = {
       body: JSON.stringify({ message, conversationId }),
     }),
   remove: (id: string) => request<{ success: boolean }>(`/chat/conversations/${id}`, { method: 'DELETE' }),
+};
+
+// ---------- Services (Day 7) ----------
+export interface ServiceManDay {
+  id?: string;
+  /** Free-text role name, e.g. "Senior Consultant", "Project Manager". */
+  role: string;
+  /** Per-day rate for this role in the service's currency. */
+  dayRate: number;
+  /** Number of days for this role. */
+  days: number;
+  /** Computed: dayRate × days. */
+  subtotal?: number;
+}
+export interface Service {
+  id: string;
+  name: string;
+  /** Service SOW (Statement of Work) — long-form description. */
+  description: string | null;
+  /** Total quoted price for this service (sum of man-day subtotals). */
+  unitPrice: number;
+  currency: string;
+  isActive: boolean;
+  sortOrder: number;
+  manDays: ServiceManDay[];
+  createdAt: string;
+  updatedAt?: string;
+}
+export const servicesApi = {
+  list: (params: { isActive?: string; limit?: number } = {}) => {
+    const qs = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') qs.set(k, String(v)); });
+    return request<{ items: Service[]; total: number } | Service[]>(`/services${qs.toString() ? `?${qs}` : ''}`).then((r) =>
+      Array.isArray(r) ? r : r.items
+    );
+  },
+  get: (id: string) => request<Service>(`/services/${id}`),
+  create: (data: {
+    name: string;
+    description?: string;
+    unitPrice?: number;
+    currency?: string;
+    isActive?: boolean;
+    sortOrder?: number;
+    manDays?: Array<{ role: string; dayRate: number; days: number }>;
+  }) => request<Service>('/services', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: string, data: Partial<{
+    name: string;
+    description: string;
+    unitPrice: number;
+    currency: string;
+    isActive: boolean;
+    sortOrder: number;
+    manDays: Array<{ role: string; dayRate: number; days: number }>;
+  }>) => request<Service>(`/services/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  remove: (id: string) => request<{ success: boolean }>(`/services/${id}`, { method: 'DELETE' }),
+};
+
+// ---------- Roles (Day 7) ----------
+// The backend has two shapes for Role depending on the endpoint:
+//   - GET /roles (list):        { name, displayName, description, isSystem,
+//                                 _count: { users, permissions }, ... }
+//   - GET /roles/:id (detail):  { ...same..., permissions: string[] }
+// The union below covers both; consumers should treat either as optional.
+export interface Role {
+  id: string;
+  name: string;
+  /** Optional human-friendly label (Chinese label set in seed). */
+  displayName?: string | null;
+  description: string | null;
+  isSystem: boolean;
+  /** Present on GET /roles/:id (full list of granted permission keys). */
+  permissions?: string[];
+  /** Counts come from the include on the list endpoint. */
+  _count?: { users?: number; permissions?: number };
+  createdAt: string;
+  updatedAt?: string;
+}
+export const rolesApi = {
+  list: () => request<{ items: Role[]; total: number }>('/roles'),
+  // Backend returns a plain string[] of permission keys (not a map). The roles
+  // page receives this array and uses it as both the list of all permissions
+  // and (joined with the permission enum labels from /api/roles/permissions)
+  // for the human-readable matrix display. We accept the array and let the
+  // page extract the labels from a separate call.
+  permissions: () => request<string[]>('/roles/permissions'),
+  get: (id: string) => request<Role>(`/roles/${id}`),
+  create: (data: { name: string; description?: string; permissions: string[] }) =>
+    request<Role>('/roles', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: string, data: Partial<{ name: string; description: string; permissions: string[] }>) =>
+    request<Role>(`/roles/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  remove: (id: string) => request<{ success: boolean }>(`/roles/${id}`, { method: 'DELETE' }),
 };

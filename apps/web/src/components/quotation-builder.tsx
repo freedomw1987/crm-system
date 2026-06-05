@@ -175,6 +175,7 @@ export function QuotationBuilder({ existing, onSaved, onCancel }: QuotationBuild
         await Promise.all([
           ...toDelete.map((itemId) => quotationsApi.removeItem(existing.id, itemId)),
           ...toAdd.map((l) => quotationsApi.addItem(existing.id, {
+            itemType: 'PRODUCT' as const,
             productId: l.productId,
             name: l.name,
             description: l.description,
@@ -183,6 +184,7 @@ export function QuotationBuilder({ existing, onSaved, onCancel }: QuotationBuild
             discount: Number(l.discount) || 0,
           })),
           ...toUpdate.map((l) => quotationsApi.updateItem(existing.id, l.itemId!, {
+            itemType: 'PRODUCT' as const,
             productId: l.productId,
             name: l.name,
             description: l.description,
@@ -202,6 +204,7 @@ export function QuotationBuilder({ existing, onSaved, onCancel }: QuotationBuild
           taxRate,
           validUntil: validUntil || undefined,
           items: validLines.map((l) => ({
+            itemType: 'PRODUCT' as const,
             productId: l.productId,
             name: l.name,
             description: l.description,

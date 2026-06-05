@@ -15,6 +15,9 @@ import { AiChatPage } from '@/pages/ai-chat';
 import { UsersPage } from '@/pages/users';
 import { UserDetailPage } from '@/pages/user-detail';
 import { AuditPage } from '@/pages/audit';
+import { ServicesPage } from '@/pages/services';
+import { ServiceDetailPage } from '@/pages/service-detail';
+import { RolesPage } from '@/pages/roles';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -58,6 +61,9 @@ export function App() {
             <Route path="/users" element={<UsersPage />} />
             <Route path="/users/:id" element={<UserDetailPage />} />
             <Route path="/audit" element={<AuditPage />} />
+            <Route path="/services" element={<ServicesPage />} />
+            <Route path="/services/:id" element={<ServiceDetailPage />} />
+            <Route path="/roles" element={<RolesPage />} />
           </Route>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
