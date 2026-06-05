@@ -1,39 +1,53 @@
 /**
- * QuotationBuilder
+ * QuotationBuilder — Day 8 enhanced
  *
- * Form used for both creating a new quotation and editing an existing DRAFT.
- * - Picks a company + product from dropdowns
+ * - Picks a company + optional deal (link quotation to pipeline opportunity)
+ * - Each line is polymorphic: Product OR Service
+ *   - Autocomplete combobox for picking an existing Product or Service
+ *   - Quick-create buttons to add a new Product or Service on the fly
+ *   - Service items snapshot manDay breakdown at the time of creation
  * - Live subtotal / tax / total recompute as you type
  * - Add / remove line items freely
  * - Saves via quotationsApi.create / .update
- *
- * `existing` is the quotation to edit; when undefined, the component starts
- * with one empty line item and is in create mode.
  */
 
-import { useEffect, useMemo, useState } from 'react';
-import { Loader2, Plus, Trash2 } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Loader2, Plus, Trash2, X, Package, Briefcase, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input, Textarea } from '@/components/ui/input';
 import { Select, Label } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { productsApi, companiesApi, quotationsApi, type Company, type Product, type Quotation, type QuotationItem } from '@/lib/api';
+import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import {
+  productsApi, companiesApi, servicesApi, quotationsApi,
+  type Company, type Product, type Service, type ServiceManDay,
+  type Quotation, type QuotationItem, type Deal,
+} from '@/lib/api';
 import { formatCurrency } from '@/lib/utils';
 
 interface DraftLine {
-  // For UI: each row is either linked to a product (with productId) or freeform
-  key: string;            // local React key
+  key: string;
+  itemType: 'PRODUCT' | 'SERVICE';
+  // PRODUCT
   productId?: string;
+  sku?: string;
+  // SERVICE
+  serviceId?: string;
+  manDaySnapshot?: Array<{ role: string; dayRate: number; days: number; subtotal: number }>;
+  // common
   name: string;
   description?: string;
   quantity: number;
   unitPrice: number;
-  discount: number;       // percent
-  itemId?: string;        // set when editing an existing item
+  discount: number;     // percent
+  itemId?: string;      // set when editing an existing item
 }
 
 interface QuotationBuilderProps {
   existing?: Quotation;
+  /** Optional preset dealId (when builder is opened from a deal detail page). */
+  initialDealId?: string;
   onSaved: (q: Quotation) => void;
   onCancel: () => void;
 }
@@ -41,6 +55,7 @@ interface QuotationBuilderProps {
 function emptyLine(): DraftLine {
   return {
     key: crypto.randomUUID(),
+    itemType: 'PRODUCT',
     quantity: 1,
     unitPrice: 0,
     discount: 0,
@@ -53,12 +68,16 @@ function linesFromQuotation(q?: Quotation): DraftLine[] {
   return q.items.map((it: QuotationItem) => ({
     key: it.id ?? crypto.randomUUID(),
     itemId: it.id,
+    itemType: it.itemType,
     productId: it.productId ?? undefined,
+    serviceId: it.serviceId ?? undefined,
+    sku: it.sku ?? undefined,
     name: it.name,
     description: it.description ?? undefined,
     quantity: Number(it.quantity),
     unitPrice: Number(it.unitPrice),
     discount: Number(it.discount ?? 0),
+    manDaySnapshot: it.manDaySnapshot ?? undefined,
   }));
 }
 
@@ -69,7 +88,7 @@ function lineTotal(line: DraftLine): number {
   return qty * price * (1 - disc / 100);
 }
 
-export function QuotationBuilder({ existing, onSaved, onCancel }: QuotationBuilderProps) {
+export function QuotationBuilder({ existing, initialDealId, onSaved, onCancel }: QuotationBuilderProps) {
   const isEdit = !!existing;
 
   const [companyId, setCompanyId] = useState<string>(existing?.companyId ?? '');
@@ -79,26 +98,31 @@ export function QuotationBuilder({ existing, onSaved, onCancel }: QuotationBuild
   const [validUntil, setValidUntil] = useState<string>(
     existing?.validUntil ? existing.validUntil.slice(0, 10) : ''
   );
+  const [dealId, setDealId] = useState<string>(initialDealId ?? '');
   const [lines, setLines] = useState<DraftLine[]>(linesFromQuotation(existing));
 
   const [companies, setCompanies] = useState<Company[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [services, setServices] = useState<Service[]>([]);
+  const [companyDeals, setCompanyDeals] = useState<Deal[]>([]);
   const [loadingRefs, setLoadingRefs] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load companies + products for dropdowns
+  // Load companies + products + services for dropdowns
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        const [c, p] = await Promise.all([
+        const [c, p, s] = await Promise.all([
           companiesApi.list({ limit: 200 }),
           productsApi.list({ limit: 200 }),
+          servicesApi.list({ limit: 200 }),
         ]);
         if (alive) {
           setCompanies(c);
           setProducts(p);
+          setServices(s);
         }
       } catch (err) {
         if (alive) setError(`載入 dropdown 失敗: ${(err as Error).message}`);
@@ -109,10 +133,24 @@ export function QuotationBuilder({ existing, onSaved, onCancel }: QuotationBuild
     return () => { alive = false; };
   }, []);
 
-  // Pre-fill company if existing has it but the dropdown list hasn't loaded yet
+  // Load deals whenever companyId changes (for deal link dropdown)
   useEffect(() => {
-    if (!companyId && existing?.company) setCompanyId(existing.company.id);
-  }, [existing, companies, companyId]);
+    if (!companyId) { setCompanyDeals([]); return; }
+    let alive = true;
+    (async () => {
+      try {
+        const token = localStorage.getItem('crm:token');
+        const r = await fetch(`/api/deals?companyId=${companyId}&limit=50`, {
+          headers: { Authorization: `Bearer ${token ?? ''}` },
+        });
+        const d = await r.json();
+        if (alive) setCompanyDeals(Array.isArray(d) ? d : d.items ?? []);
+      } catch {
+        if (alive) setCompanyDeals([]);
+      }
+    })();
+    return () => { alive = false; };
+  }, [companyId]);
 
   // Live totals
   const subtotal = useMemo(() => lines.reduce((s, l) => s + lineTotal(l), 0), [lines]);
@@ -123,21 +161,54 @@ export function QuotationBuilder({ existing, onSaved, onCancel }: QuotationBuild
     setLines((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
   }
 
+  function switchItemType(idx: number, newType: 'PRODUCT' | 'SERVICE') {
+    setLines((prev) => prev.map((l, i) =>
+      i === idx ? { ...l, itemType: newType, productId: undefined, serviceId: undefined, manDaySnapshot: undefined } : l
+    ));
+  }
+
   function applyProduct(idx: number, productId: string) {
     const product = products.find((p) => p.id === productId);
     if (!product) {
-      updateLine(idx, { productId: undefined });
+      updateLine(idx, { productId: undefined, sku: undefined });
       return;
     }
     updateLine(idx, {
       productId: product.id,
+      sku: product.sku,
       name: product.name,
+      description: product.description ?? undefined,
       unitPrice: Number(product.unitPrice),
+      quantity: 1,
     });
   }
 
-  function addLine() {
-    setLines((prev) => [...prev, emptyLine()]);
+  function applyService(idx: number, serviceId: string) {
+    const service = services.find((s) => s.id === serviceId);
+    if (!service) {
+      updateLine(idx, { serviceId: undefined, manDaySnapshot: undefined });
+      return;
+    }
+    // Build the man-day snapshot at apply time so the quotation captures the
+    // SOW breakdown even if the service is later edited.
+    const snapshot = (service.manDays ?? []).map((m: ServiceManDay) => ({
+      role: m.role,
+      dayRate: Number(m.dayRate),
+      days: Number(m.days),
+      subtotal: Number(m.subtotal ?? Number(m.dayRate) * Number(m.days)),
+    }));
+    updateLine(idx, {
+      serviceId: service.id,
+      name: service.name,
+      description: service.description ?? undefined,
+      unitPrice: Number(service.unitPrice),
+      quantity: 1,
+      manDaySnapshot: snapshot,
+    });
+  }
+
+  function addLine(type: 'PRODUCT' | 'SERVICE' = 'PRODUCT') {
+    setLines((prev) => [...prev, { ...emptyLine(), itemType: type }]);
   }
 
   function removeLine(idx: number) {
@@ -175,17 +246,22 @@ export function QuotationBuilder({ existing, onSaved, onCancel }: QuotationBuild
         await Promise.all([
           ...toDelete.map((itemId) => quotationsApi.removeItem(existing.id, itemId)),
           ...toAdd.map((l) => quotationsApi.addItem(existing.id, {
-            itemType: 'PRODUCT' as const,
+            itemType: l.itemType,
             productId: l.productId,
+            serviceId: l.serviceId,
+            sku: l.sku,
             name: l.name,
             description: l.description,
             quantity: Number(l.quantity),
             unitPrice: Number(l.unitPrice),
             discount: Number(l.discount) || 0,
+            manDaySnapshot: l.manDaySnapshot,
           })),
           ...toUpdate.map((l) => quotationsApi.updateItem(existing.id, l.itemId!, {
-            itemType: 'PRODUCT' as const,
+            itemType: l.itemType,
             productId: l.productId,
+            serviceId: l.serviceId,
+            sku: l.sku,
             name: l.name,
             description: l.description,
             quantity: Number(l.quantity),
@@ -193,24 +269,27 @@ export function QuotationBuilder({ existing, onSaved, onCancel }: QuotationBuild
             discount: Number(l.discount) || 0,
           })),
         ]);
-        // 3. refetch latest
         q = await quotationsApi.get(existing.id);
         onSaved(q);
       } else {
         const created = await quotationsApi.create({
           companyId,
+          dealId: dealId || undefined,
           title: title || undefined,
           notes: notes || undefined,
           taxRate,
           validUntil: validUntil || undefined,
           items: validLines.map((l) => ({
-            itemType: 'PRODUCT' as const,
+            itemType: l.itemType,
             productId: l.productId,
+            serviceId: l.serviceId,
+            sku: l.sku,
             name: l.name,
             description: l.description,
             quantity: Number(l.quantity),
             unitPrice: Number(l.unitPrice),
             discount: Number(l.discount) || 0,
+            manDaySnapshot: l.manDaySnapshot,
           })),
         });
         onSaved(created);
@@ -223,7 +302,7 @@ export function QuotationBuilder({ existing, onSaved, onCancel }: QuotationBuild
   }
 
   if (loadingRefs) {
-    return <p className="text-sm text-muted-foreground p-4">載入公司 / 產品...</p>;
+    return <p className="text-sm text-muted-foreground p-4">載入公司 / 產品 / 服務...</p>;
   }
 
   return (
@@ -235,7 +314,20 @@ export function QuotationBuilder({ existing, onSaved, onCancel }: QuotationBuild
           <Select id="company" value={companyId} onChange={(e) => setCompanyId(e.target.value)}>
             <option value="">-- 揀客戶 --</option>
             {companies.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
+              <option key={c.id} value={c.id}>
+                {c.name} {c.region ? `(${c.region})` : ''}
+              </option>
+            ))}
+          </Select>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="deal">關聯 Deal (可選)</Label>
+          <Select id="deal" value={dealId} onChange={(e) => setDealId(e.target.value)} disabled={!companyId}>
+            <option value="">-- 無 --</option>
+            {companyDeals.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.title} · {formatCurrency(d.value)} · {d.stage?.name ?? d.status}
+              </option>
             ))}
           </Select>
         </div>
@@ -247,7 +339,7 @@ export function QuotationBuilder({ existing, onSaved, onCancel }: QuotationBuild
           <Label htmlFor="valid">有效至</Label>
           <Input id="valid" type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} />
         </div>
-        <div className="space-y-1.5">
+        <div className="space-y-1.5 md:col-span-2">
           <Label htmlFor="tax">稅率 (%)</Label>
           <Input
             id="tax"
@@ -265,89 +357,39 @@ export function QuotationBuilder({ existing, onSaved, onCancel }: QuotationBuild
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
           <CardTitle className="text-base">Line Items</CardTitle>
-          <Button size="sm" variant="outline" onClick={addLine}>
-            <Plus className="h-4 w-4 mr-1" />
-            加行
-          </Button>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={() => addLine('PRODUCT')}>
+              <Plus className="h-3 w-3 mr-1" /> 加 Product
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => addLine('SERVICE')}>
+              <Plus className="h-3 w-3 mr-1" /> 加 Service
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-2">
           {lines.map((line, idx) => (
-            <div key={line.key} className="grid grid-cols-12 gap-2 items-start p-2 rounded border bg-muted/20">
-              {/* Product picker */}
-              <div className="col-span-12 md:col-span-4 space-y-1">
-                <Label className="text-xs text-muted-foreground">產品</Label>
-                <Select
-                  value={line.productId ?? ''}
-                  onChange={(e) => applyProduct(idx, e.target.value)}
-                >
-                  <option value="">-- 自訂 --</option>
-                  {products.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.sku} — {p.name} ({formatCurrency(Number(p.unitPrice))})
-                    </option>
-                  ))}
-                </Select>
-              </div>
-              {/* Name */}
-              <div className="col-span-12 md:col-span-3 space-y-1">
-                <Label className="text-xs text-muted-foreground">名稱 *</Label>
-                <Input
-                  value={line.name}
-                  onChange={(e) => updateLine(idx, { name: e.target.value })}
-                  placeholder="Item name"
-                />
-              </div>
-              {/* Qty */}
-              <div className="col-span-4 md:col-span-1 space-y-1">
-                <Label className="text-xs text-muted-foreground">數量</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  value={line.quantity}
-                  onChange={(e) => updateLine(idx, { quantity: Number(e.target.value) || 0 })}
-                />
-              </div>
-              {/* Unit price */}
-              <div className="col-span-4 md:col-span-2 space-y-1">
-                <Label className="text-xs text-muted-foreground">單價</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  value={line.unitPrice}
-                  onChange={(e) => updateLine(idx, { unitPrice: Number(e.target.value) || 0 })}
-                />
-              </div>
-              {/* Discount */}
-              <div className="col-span-3 md:col-span-1 space-y-1">
-                <Label className="text-xs text-muted-foreground">折扣%</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  max={100}
-                  step="0.01"
-                  value={line.discount}
-                  onChange={(e) => updateLine(idx, { discount: Number(e.target.value) || 0 })}
-                />
-              </div>
-              {/* Line total + remove */}
-              <div className="col-span-1 flex flex-col items-end justify-between h-full pt-5">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => removeLine(idx)}
-                  disabled={lines.length === 1}
-                  aria-label="移除"
-                >
-                  <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
-                </Button>
-              </div>
-              <div className="col-span-12 md:col-span-11 text-right text-sm font-semibold tabular-nums -mt-1 pr-2">
-                = {formatCurrency(lineTotal(line))}
-              </div>
-            </div>
+            <LineItemRow
+              key={line.key}
+              line={line}
+              products={products}
+              services={services}
+              onSwitchType={(t) => switchItemType(idx, t)}
+              onApplyProduct={(id) => applyProduct(idx, id)}
+              onApplyService={(id) => applyService(idx, id)}
+              onChange={(patch) => updateLine(idx, patch)}
+              onRemove={() => removeLine(idx)}
+              canRemove={lines.length > 1}
+              onCreateProduct={async (p) => {
+                const created = await productsApi.create(p);
+                setProducts((prev) => [created, ...prev]);
+                return created;
+              }}
+              onCreateService={async (s) => {
+                const created = await servicesApi.create(s);
+                setServices((prev) => [created, ...prev]);
+                return created;
+              }}
+            />
           ))}
         </CardContent>
       </Card>
@@ -404,5 +446,472 @@ export function QuotationBuilder({ existing, onSaved, onCancel }: QuotationBuild
         </Button>
       </div>
     </div>
+  );
+}
+
+// ============================================================================
+// LineItemRow — single product or service row
+// ============================================================================
+
+function LineItemRow({
+  line,
+  products,
+  services,
+  onSwitchType,
+  onApplyProduct,
+  onApplyService,
+  onChange,
+  onRemove,
+  canRemove,
+  onCreateProduct,
+  onCreateService,
+}: {
+  line: DraftLine;
+  products: Product[];
+  services: Service[];
+  onSwitchType: (t: 'PRODUCT' | 'SERVICE') => void;
+  onApplyProduct: (id: string) => void;
+  onApplyService: (id: string) => void;
+  onChange: (patch: Partial<DraftLine>) => void;
+  onRemove: () => void;
+  canRemove: boolean;
+  onCreateProduct: (p: { name: string; sku: string; unitPrice: number }) => Promise<Product>;
+  onCreateService: (s: { name: string; unitPrice: number }) => Promise<Service>;
+}) {
+  const isProduct = line.itemType === 'PRODUCT';
+  return (
+    <div className="p-3 rounded border bg-muted/20 space-y-2">
+      {/* Type toggle + remove */}
+      <div className="flex items-center justify-between">
+        <div className="flex gap-1 p-0.5 bg-muted rounded-md">
+          <button
+            type="button"
+            onClick={() => onSwitchType('PRODUCT')}
+            className={`px-2.5 py-1 text-xs rounded transition-colors flex items-center gap-1 ${
+              isProduct ? 'bg-background shadow font-medium' : 'text-muted-foreground'
+            }`}
+          >
+            <Package className="h-3 w-3" /> Product
+          </button>
+          <button
+            type="button"
+            onClick={() => onSwitchType('SERVICE')}
+            className={`px-2.5 py-1 text-xs rounded transition-colors flex items-center gap-1 ${
+              !isProduct ? 'bg-background shadow font-medium' : 'text-muted-foreground'
+            }`}
+          >
+            <Briefcase className="h-3 w-3" /> Service
+          </button>
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={onRemove}
+          disabled={!canRemove}
+          aria-label="移除"
+        >
+          <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-12 gap-2 items-start">
+        {isProduct ? (
+          <ProductAutocomplete
+            className="col-span-12 md:col-span-4"
+            products={products}
+            value={line.productId}
+            onChange={onApplyProduct}
+            onCreate={onCreateProduct}
+            label="產品"
+          />
+        ) : (
+          <ServiceAutocomplete
+            className="col-span-12 md:col-span-4"
+            services={services}
+            value={line.serviceId}
+            onChange={onApplyService}
+            onCreate={onCreateService}
+            label="服務"
+          />
+        )}
+        <div className="col-span-12 md:col-span-3 space-y-1">
+          <Label className="text-xs text-muted-foreground">名稱 *</Label>
+          <Input
+            value={line.name}
+            onChange={(e) => onChange({ name: e.target.value })}
+            placeholder="Item name"
+          />
+        </div>
+        <div className="col-span-4 md:col-span-1 space-y-1">
+          <Label className="text-xs text-muted-foreground">數量</Label>
+          <Input
+            type="number"
+            min={0}
+            step="0.01"
+            value={line.quantity}
+            onChange={(e) => onChange({ quantity: Number(e.target.value) || 0 })}
+          />
+        </div>
+        <div className="col-span-4 md:col-span-2 space-y-1">
+          <Label className="text-xs text-muted-foreground">單價</Label>
+          <Input
+            type="number"
+            min={0}
+            step="0.01"
+            value={line.unitPrice}
+            onChange={(e) => onChange({ unitPrice: Number(e.target.value) || 0 })}
+          />
+        </div>
+        <div className="col-span-3 md:col-span-1 space-y-1">
+          <Label className="text-xs text-muted-foreground">折扣%</Label>
+          <Input
+            type="number"
+            min={0}
+            max={100}
+            step="0.01"
+            value={line.discount}
+            onChange={(e) => onChange({ discount: Number(e.target.value) || 0 })}
+          />
+        </div>
+        <div className="col-span-1 flex flex-col items-end justify-end h-full pt-5">
+          <span className="text-xs font-semibold tabular-nums">
+            {formatCurrency(lineTotal(line))}
+          </span>
+        </div>
+      </div>
+
+      {/* Service SOW snapshot preview */}
+      {!isProduct && line.manDaySnapshot && line.manDaySnapshot.length > 0 && (
+        <details className="text-xs">
+          <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+            SOW · {line.manDaySnapshot.length} 個 role breakdown
+          </summary>
+          <div className="mt-1.5 space-y-0.5 pl-3 border-l-2 border-primary/30">
+            {line.manDaySnapshot.map((m, i) => (
+              <div key={i} className="flex justify-between text-muted-foreground">
+                <span>{m.role} · {m.days}d × {formatCurrency(m.dayRate)}</span>
+                <span className="tabular-nums">{formatCurrency(m.subtotal)}</span>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// ProductAutocomplete — typeahead combobox over the products catalogue
+// ============================================================================
+
+function ProductAutocomplete({
+  products, value, onChange, onCreate, label, className,
+}: {
+  products: Product[];
+  value?: string;
+  onChange: (id: string) => void;
+  onCreate: (p: { name: string; sku: string; unitPrice: number }) => Promise<Product>;
+  label: string;
+  className?: string;
+}) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  const selected = products.find((p) => p.id === value);
+  useEffect(() => {
+    if (selected) setQuery(`${selected.sku} — ${selected.name}`);
+  }, [selected?.id]);
+
+  const filtered = useMemo(() => {
+    if (!query) return products.slice(0, 10);
+    const q = query.toLowerCase();
+    return products
+      .filter((p) => p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q))
+      .slice(0, 10);
+  }, [products, query]);
+
+  // Close on outside click
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, []);
+
+  return (
+    <div className={className}>
+      <Label className="text-xs text-muted-foreground">{label}</Label>
+      <div className="relative" ref={wrapRef}>
+        <Input
+          value={query}
+          onChange={(e) => { setQuery(e.target.value); setOpen(true); if (value) onChange(''); }}
+          onFocus={() => setOpen(true)}
+          placeholder="搜尋 SKU 或名稱..."
+        />
+        {open && (
+          <div className="absolute z-50 top-full mt-1 left-0 right-0 max-h-60 overflow-y-auto bg-popover border rounded shadow-lg">
+            {filtered.length === 0 ? (
+              <div className="p-2 text-sm text-muted-foreground text-center">搵唔到</div>
+            ) : (
+              filtered.map((p) => (
+                <button
+                  type="button"
+                  key={p.id}
+                  onClick={() => { onChange(p.id); setOpen(false); }}
+                  className="w-full text-left px-2 py-1.5 text-sm hover:bg-muted flex justify-between items-center"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium truncate">{p.name}</div>
+                    <div className="text-xs text-muted-foreground font-mono">{p.sku} · {p.category ?? '—'}</div>
+                  </div>
+                  <span className="text-xs tabular-nums shrink-0 ml-2">{formatCurrency(Number(p.unitPrice))}</span>
+                </button>
+              ))
+            )}
+            <div className="border-t p-1">
+              <button
+                type="button"
+                onClick={() => { setCreateOpen(true); setOpen(false); }}
+                className="w-full text-left px-2 py-1.5 text-sm text-primary hover:bg-muted rounded flex items-center gap-1"
+              >
+                <Plus className="h-3 w-3" /> 新增 Product「{query}」
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+      <QuickCreateProductDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        defaultName={query}
+        onCreate={onCreate}
+        onCreated={(p) => { onChange(p.id); setCreateOpen(false); }}
+      />
+    </div>
+  );
+}
+
+// ============================================================================
+// ServiceAutocomplete — same pattern for services
+// ============================================================================
+
+function ServiceAutocomplete({
+  services, value, onChange, onCreate, label, className,
+}: {
+  services: Service[];
+  value?: string;
+  onChange: (id: string) => void;
+  onCreate: (s: { name: string; unitPrice: number }) => Promise<Service>;
+  label: string;
+  className?: string;
+}) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  const selected = services.find((s) => s.id === value);
+  useEffect(() => {
+    if (selected) setQuery(selected.name);
+  }, [selected?.id]);
+
+  const filtered = useMemo(() => {
+    if (!query) return services.slice(0, 10);
+    const q = query.toLowerCase();
+    return services
+      .filter((s) => s.name.toLowerCase().includes(q) || (s.description ?? '').toLowerCase().includes(q))
+      .slice(0, 10);
+  }, [services, query]);
+
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, []);
+
+  return (
+    <div className={className}>
+      <Label className="text-xs text-muted-foreground">{label}</Label>
+      <div className="relative" ref={wrapRef}>
+        <Input
+          value={query}
+          onChange={(e) => { setQuery(e.target.value); setOpen(true); if (value) onChange(''); }}
+          onFocus={() => setOpen(true)}
+          placeholder="搜尋服務名..."
+        />
+        {open && (
+          <div className="absolute z-50 top-full mt-1 left-0 right-0 max-h-60 overflow-y-auto bg-popover border rounded shadow-lg">
+            {filtered.length === 0 ? (
+              <div className="p-2 text-sm text-muted-foreground text-center">搵唔到</div>
+            ) : (
+              filtered.map((s) => (
+                <button
+                  type="button"
+                  key={s.id}
+                  onClick={() => { onChange(s.id); setOpen(false); }}
+                  className="w-full text-left px-2 py-1.5 text-sm hover:bg-muted flex justify-between items-center"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium truncate">{s.name}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {(s as Service & { category?: string }).category ?? '—'} · {s.manDays?.length ?? 0} roles
+                    </div>
+                  </div>
+                  <span className="text-xs tabular-nums shrink-0 ml-2">{formatCurrency(Number(s.unitPrice))}</span>
+                </button>
+              ))
+            )}
+            <div className="border-t p-1">
+              <button
+                type="button"
+                onClick={() => { setCreateOpen(true); setOpen(false); }}
+                className="w-full text-left px-2 py-1.5 text-sm text-primary hover:bg-muted rounded flex items-center gap-1"
+              >
+                <Plus className="h-3 w-3" /> 新增 Service「{query}」
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+      <QuickCreateServiceDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        defaultName={query}
+        onCreate={onCreate}
+        onCreated={(s) => { onChange(s.id); setCreateOpen(false); }}
+      />
+    </div>
+  );
+}
+
+// ============================================================================
+// Quick create dialogs
+// ============================================================================
+
+function QuickCreateProductDialog({
+  open, onOpenChange, defaultName, onCreate, onCreated,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  defaultName: string;
+  onCreate: (p: { name: string; sku: string; unitPrice: number }) => Promise<Product>;
+  onCreated: (p: Product) => void;
+}) {
+  const [name, setName] = useState(defaultName);
+  const [sku, setSku] = useState('');
+  const [unitPrice, setUnitPrice] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => { if (open) { setName(defaultName); setSku(''); setUnitPrice(''); setError(null); } }, [open, defaultName]);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!sku.trim()) { setError('SKU 必填'); return; }
+    setSubmitting(true);
+    try {
+      const p = await onCreate({ name, sku: sku.toUpperCase(), unitPrice: Number(unitPrice) || 0 });
+      onCreated(p);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>快速新增 Product</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div>
+            <Label htmlFor="np-name">名稱 *</Label>
+            <Input id="np-name" value={name} onChange={(e) => setName(e.target.value)} required />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <Label htmlFor="np-sku">SKU *</Label>
+              <Input id="np-sku" value={sku} onChange={(e) => setSku(e.target.value)} placeholder="例: WDG-001" required />
+            </div>
+            <div>
+              <Label htmlFor="np-price">單價 (HKD) *</Label>
+              <Input id="np-price" type="number" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} required />
+            </div>
+          </div>
+          {error && <p className="text-sm text-destructive">{error}</p>}
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>取消</Button>
+            <Button type="submit" disabled={submitting}>{submitting ? '建立中...' : '建立'}</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function QuickCreateServiceDialog({
+  open, onOpenChange, defaultName, onCreate, onCreated,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  defaultName: string;
+  onCreate: (s: { name: string; unitPrice: number }) => Promise<Service>;
+  onCreated: (s: Service) => void;
+}) {
+  const [name, setName] = useState(defaultName);
+  const [unitPrice, setUnitPrice] = useState('');
+  const [description, setDescription] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => { if (open) { setName(defaultName); setUnitPrice(''); setDescription(''); setError(null); } }, [open, defaultName]);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      const s = await onCreate({ name, unitPrice: Number(unitPrice) || 0 });
+      onCreated(s);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>快速新增 Service</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div>
+            <Label htmlFor="ns-name">名稱 *</Label>
+            <Input id="ns-name" value={name} onChange={(e) => setName(e.target.value)} required />
+          </div>
+          <div>
+            <Label htmlFor="ns-price">總價 (HKD) *</Label>
+            <Input id="ns-price" type="number" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} required />
+            <p className="text-xs text-muted-foreground mt-1">
+              之後可以喺 Services 頁面加詳細嘅 SOW / man-day breakdown。
+            </p>
+          </div>
+          {error && <p className="text-sm text-destructive">{error}</p>}
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>取消</Button>
+            <Button type="submit" disabled={submitting}>{submitting ? '建立中...' : '建立'}</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -97,20 +97,62 @@ export interface Company {
   email?: string | null;
   phone?: string | null;
   website?: string | null;
+  /** Day 8: regional segmentation (HK/MO/CN/OTHER). */
+  region?: 'HK' | 'MO' | 'CN' | 'OTHER';
+  /** Day 8: free-form region label, populated when region === 'OTHER'. */
+  customRegion?: string | null;
   _count?: { contacts: number; quotations: number; deals: number };
 }
 export const companiesApi = {
-  list: (params: { query?: string; status?: string; limit?: number } = {}) => {
+  list: (params: { query?: string; status?: string; region?: string; limit?: number } = {}) => {
     const qs = new URLSearchParams();
     if (params.query) qs.set('query', params.query);
     if (params.status) qs.set('status', params.status);
+    if (params.region) qs.set('region', params.region);
     if (params.limit) qs.set('limit', String(params.limit));
     return request<{ items: Company[]; total: number } | Company[]>(`/companies${qs.toString() ? `?${qs}` : ''}`).then((r) =>
       Array.isArray(r) ? r : r.items
     );
   },
-  get: (id: string) => request<Company>(`/companies/${id}`),
-  create: (data: Partial<Company>) => request<Company>('/companies', { method: 'POST', body: JSON.stringify(data) }),
+  get: (id: string) => request<Company & {
+    contacts: Contact[];
+    quotations: Array<{ id: string; number: string; status: string; total: number; createdAt: string }>;
+    deals: Array<{ id: string; title: string; value: number; status: string; stage: { name: string; color: string } }>;
+  }>(`/companies/${id}`),
+  create: (data: Partial<Company> & { region?: 'HK' | 'MO' | 'CN' | 'OTHER'; customRegion?: string }) =>
+    request<Company>('/companies', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: string, data: Partial<Company> & { region?: 'HK' | 'MO' | 'CN' | 'OTHER'; customRegion?: string }) =>
+    request<Company>(`/companies/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  remove: (id: string) => request<{ success: boolean }>(`/companies/${id}`, { method: 'DELETE' }),
+};
+
+// ---------- Contacts (Day 8) ----------
+export interface Contact {
+  id: string;
+  /** Always present on list response. On company-detail response, omitted (companyId is implicit). */
+  companyId?: string;
+  firstName: string;
+  lastName: string;
+  title?: string | null;
+  department?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  mobile?: string | null;
+  isPrimary: boolean;
+}
+export const contactsApi = {
+  list: (params: { companyId?: string; limit?: number } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.companyId) qs.set('companyId', params.companyId);
+    if (params.limit) qs.set('limit', String(params.limit));
+    return request<{ items: Contact[]; total: number } | Contact[]>(`/contacts${qs.toString() ? `?${qs}` : ''}`).then((r) =>
+      Array.isArray(r) ? r : r.items
+    );
+  },
+  create: (data: Partial<Contact>) => request<Contact>('/contacts', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: string, data: Partial<Contact>) =>
+    request<Contact>(`/contacts/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  remove: (id: string) => request<{ success: boolean }>(`/contacts/${id}`, { method: 'DELETE' }),
 };
 
 // ---------- Products ----------
@@ -231,18 +273,20 @@ export interface QuotationItemInput {
   manDaySnapshot?: Array<{ role: string; dayRate: number; days: number; subtotal: number }>;
 }
 export const quotationsApi = {
-  list: (params: { companyId?: string; status?: string; limit?: number } = {}) => {
+  list: (params: { companyId?: string; status?: string; dealId?: string; limit?: number } = {}) => {
     const qs = new URLSearchParams();
     if (params.companyId) qs.set('companyId', params.companyId);
     if (params.status) qs.set('status', params.status);
+    if (params.dealId) qs.set('dealId', params.dealId);
     if (params.limit) qs.set('limit', String(params.limit));
     return request<{ items: Quotation[]; total: number } | Quotation[]>(`/quotations${qs.toString() ? `?${qs}` : ''}`).then((r) =>
       Array.isArray(r) ? r : r.items
     );
   },
-  get: (id: string) => request<Quotation>(`/quotations/${id}`),
+  get: (id: string) => request<Quotation & { deal?: { id: string; title: string; stage: { name: string; color: string } } }>(`/quotations/${id}`),
   create: (data: {
     companyId: string;
+    dealId?: string;
     title?: string;
     notes?: string;
     taxRate?: number;
@@ -263,6 +307,13 @@ export const quotationsApi = {
 };
 
 // ---------- Deals ----------
+export interface PipelineStage {
+  id: string;
+  name: string;
+  position: number;
+  probability: number;
+  color: string;
+}
 export interface Deal {
   id: string;
   title: string;
@@ -271,22 +322,43 @@ export interface Deal {
   status: 'OPEN' | 'WON' | 'LOST';
   probability: number;
   expectedCloseDate?: string | null;
-  company?: { id: string; name: string };
-  owner?: { id: string; name: string };
-  stage?: { id: string; name: string; probability: number };
+  closedAt?: string | null;
+  company?: { id: string; name: string; region?: string };
+  owner?: { id: string; name: string; email: string };
+  stage?: { id: string; name: string; probability: number; color: string };
+  /** Day 8: number of quotations linked to this deal. */
+  _count?: { quotations: number };
+}
+export interface KanbanBucket {
+  stage: PipelineStage;
+  deals: Deal[];
+}
+export interface KanbanData {
+  pipeline: { id: string; name: string; isDefault: boolean };
+  buckets: KanbanBucket[];
 }
 export const dealsApi = {
-  list: (params: { status?: string; companyId?: string; limit?: number } = {}) => {
+  list: (params: { status?: string; companyId?: string; stageId?: string; limit?: number } = {}) => {
     const qs = new URLSearchParams();
     if (params.status) qs.set('status', params.status);
     if (params.companyId) qs.set('companyId', params.companyId);
+    if (params.stageId) qs.set('stageId', params.stageId);
     if (params.limit) qs.set('limit', String(params.limit));
     return request<{ items: Deal[]; total: number } | Deal[]>(`/deals${qs.toString() ? `?${qs}` : ''}`).then((r) =>
       Array.isArray(r) ? r : r.items
     );
   },
-  create: (data: { title: string; companyId: string; value: number; stageId: string; ownerId?: string; probability?: number }) =>
+  get: (id: string) => request<Deal & { quotations: Array<{ id: string; number: string; status: string; total: number }> }>(`/deals/${id}`),
+  /** Day 8: Kanban view — returns stages with nested deals. */
+  kanban: () => request<KanbanData>('/deals/kanban'),
+  /** Day 8: Move deal to a new stage (drag-drop endpoint). */
+  moveStage: (id: string, stageId: string) =>
+    request<Deal>(`/deals/${id}/stage`, { method: 'PATCH', body: JSON.stringify({ stageId }) }),
+  create: (data: { title: string; companyId: string; value: number; stageId: string; ownerId?: string; probability?: number; expectedCloseDate?: string; description?: string }) =>
     request<Deal>('/deals', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: string, data: Partial<{ title: string; value: number; probability: number; expectedCloseDate: string; description: string }>) =>
+    request<Deal>(`/deals/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  remove: (id: string) => request<{ success: boolean }>(`/deals/${id}`, { method: 'DELETE' }),
 };
 
 // ---------- Users (admin) ----------

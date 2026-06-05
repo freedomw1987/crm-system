@@ -95,6 +95,16 @@ model RolePermission {
 // 2. COMPANY (Customer companies)
 // ============================================================
 
+// Day 8: regional segmentation for HK/MO/CN primary markets + free-form for "other"
+// Region enum ensures data integrity for the 3 primary regions; customRegion captures
+// free-form labels (e.g., "Taiwan", "Singapore") chosen when region = OTHER.
+enum Region {
+  HK
+  MO
+  CN
+  OTHER
+}
+
 model Company {
   id          String   @id @default(cuid())
   name        String
@@ -109,6 +119,9 @@ model Company {
   // CRM metadata
   source      String?  // e.g., "Website", "Referral", "Cold Call"
   status      String   @default("active") // active / inactive / blacklisted
+  // Region (Day 8) — primary 3 are enum-locked; OTHER falls through to customRegion
+  region      Region   @default(HK)
+  customRegion String?  // populated only when region = OTHER
   // Financial
   creditLimit Decimal? @db.Decimal(12, 2)
   paymentTerms String?  // e.g., "Net 30", "Net 60"
@@ -341,6 +354,10 @@ model Quotation {
   number        String          @unique // e.g., "Q-2026-0001"
   companyId     String
   createdById   String
+  // Day 8: link to a Deal (sales pipeline opportunity). Optional — a quote can exist
+  // standalone, but typically every quote is part of a deal. Reverse relation on Deal
+  // lets the Deal show all its quotations (revisions, alternatives).
+  dealId        String?
   // Status
   status        QuotationStatus @default(DRAFT)
   // Dates
@@ -369,12 +386,14 @@ model Quotation {
   // Relations
   company   Company         @relation(fields: [companyId], references: [id])
   createdBy User            @relation("QuotationCreatedBy", fields: [createdById], references: [id])
+  deal      Deal?           @relation(fields: [dealId], references: [id], onDelete: SetNull)
   items     QuotationItem[]
 
   @@index([companyId])
   @@index([status])
   @@index([issueDate])
   @@index([createdById])
+  @@index([dealId])
   @@map("quotations")
 }
 
@@ -493,10 +512,11 @@ model Deal {
   updatedAt   DateTime   @updatedAt
 
   // Relations
-  company   Company        @relation(fields: [companyId], references: [id])
-  owner     User           @relation("DealOwner", fields: [ownerId], references: [id])
-  pipeline  Pipeline       @relation(fields: [pipelineId], references: [id])
-  stage     PipelineStage  @relation(fields: [stageId], references: [id])
+  company    Company        @relation(fields: [companyId], references: [id])
+  owner      User           @relation("DealOwner", fields: [ownerId], references: [id])
+  pipeline   Pipeline       @relation(fields: [pipelineId], references: [id])
+  stage      PipelineStage  @relation(fields: [stageId], references: [id])
+  quotations Quotation[]   // Day 8: a deal can have multiple quotations (revisions)
   activities ActivityLog[]
 
   @@index([companyId])

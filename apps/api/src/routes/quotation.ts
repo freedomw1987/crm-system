@@ -38,10 +38,11 @@ function lineTotalOf(qty: number, price: number, disc: number) {
 export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quotations'] })
   .use(authContext)
   .get('/', async ({ query }) => {
-    const { companyId, status, createdById, limit = '50', offset = '0' } = query as {
+    const { companyId, status, createdById, dealId, limit = '50', offset = '0' } = query as {
       companyId?: string;
       status?: string;
       createdById?: string;
+      dealId?: string;
       limit?: string;
       offset?: string;
     };
@@ -49,6 +50,7 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
     if (companyId) where.companyId = companyId;
     if (status) where.status = status;
     if (createdById) where.createdById = createdById;
+    if (dealId) where.dealId = dealId;
     return prisma.quotation.findMany({
       where,
       take: Number(limit),
@@ -57,6 +59,7 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
       include: {
         company: { select: { id: true, name: true } },
         createdBy: { select: { id: true, name: true, email: true } },
+        deal: { select: { id: true, title: true, stage: { select: { name: true, color: true } } } },
         _count: { select: { items: true } },
       },
     });
@@ -67,7 +70,8 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
       include: {
         company: true,
         createdBy: { select: { id: true, name: true, email: true } },
-        items: { include: { product: true }, orderBy: { position: 'asc' } },
+        deal: { select: { id: true, title: true, stage: { select: { name: true, color: true } } } },
+        items: { include: { product: true, service: { include: { manDayLines: true } } }, orderBy: { position: 'asc' } },
       },
     });
     if (!q) { set.status = 404; return { error: 'Not found' }; }
@@ -77,18 +81,21 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
     if (!userId) { set.status = 401; return { error: 'Unauthorized' }; }
     const data = body as {
       companyId: string;
+      dealId?: string;
       title?: string;
       notes?: string;
       validUntil?: string;
       taxRate?: number;
       items: Array<{
         productId?: string;
+        serviceId?: string;
         sku?: string;
         name: string;
         description?: string;
         quantity: number;
         unitPrice: number;
         discount?: number;
+        manDaySnapshot?: unknown;
       }>;
     };
     const number = await nextQuotationNumber();
@@ -125,6 +132,7 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
       data: {
         number,
         companyId: data.companyId,
+        dealId: data.dealId ?? null,
         createdById: userId,
         title: data.title,
         notes: data.notes,
@@ -144,19 +152,21 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
       resourceType: 'quotation',
       resourceId: created.id,
       description: `Created quotation ${created.number} for ${created.company?.name ?? data.companyId} (total ${created.total})`,
-      metadata: { number: created.number, total: Number(created.total), itemCount: items.length },
+      metadata: { number: created.number, total: Number(created.total), itemCount: items.length, dealId: data.dealId ?? null },
       request,
     });
     return created;
   }, {
     body: t.Object({
       companyId: t.String(),
+      dealId: t.Optional(t.String()),
       title: t.Optional(t.String()),
       notes: t.Optional(t.String()),
       validUntil: t.Optional(t.String()),
       taxRate: t.Optional(t.Number()),
       items: t.Array(t.Object({
         productId: t.Optional(t.String()),
+        serviceId: t.Optional(t.String()),
         sku: t.Optional(t.String()),
         name: t.String(),
         description: t.Optional(t.String()),

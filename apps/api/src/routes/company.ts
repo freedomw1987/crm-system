@@ -5,14 +5,16 @@ import { logEvent } from '../middleware/audit';
 export const companyRoutes = new Elysia({ prefix: '/companies', tags: ['companies'] })
   // List companies
   .get('/', async ({ query }) => {
-    const { search, status, limit = '20', offset = '0' } = query as {
+    const { search, status, region, limit = '20', offset = '0' } = query as {
       search?: string;
       status?: string;
+      region?: string;
       limit?: string;
       offset?: string;
     };
     const where: Record<string, unknown> = {};
     if (status) where.status = status;
+    if (region) where.region = region;
     if (search) {
       where.OR = [
         { name: { contains: search, mode: 'insensitive' } },
@@ -79,6 +81,13 @@ export const companyRoutes = new Elysia({ prefix: '/companies', tags: ['companie
       email: t.Optional(t.String({ format: 'email' })),
       notes: t.Optional(t.String()),
       source: t.Optional(t.String()),
+      region: t.Optional(t.Union([
+        t.Literal('HK'),
+        t.Literal('MO'),
+        t.Literal('CN'),
+        t.Literal('OTHER'),
+      ])),
+      customRegion: t.Optional(t.String()),
       creditLimit: t.Optional(t.Number()),
       paymentTerms: t.Optional(t.String()),
     }),
