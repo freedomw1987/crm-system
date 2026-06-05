@@ -1,6 +1,7 @@
 import { Elysia, t } from 'elysia';
 import { prisma } from '@crm/db';
 import { authContext } from '../lib/context';
+import { logEvent } from '../middleware/audit';
 
 // Quotation number generator (Q-YYYY-NNNN)
 async function nextQuotationNumber(): Promise<string> {
@@ -72,7 +73,7 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
     if (!q) { set.status = 404; return { error: 'Not found' }; }
     return q;
   })
-  .post('/', async ({ body, userId, set }) => {
+  .post('/', async ({ body, userId, set, request }) => {
     if (!userId) { set.status = 401; return { error: 'Unauthorized' }; }
     const data = body as {
       companyId: string;
@@ -130,6 +131,15 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
       include: { items: true, company: true },
     });
     set.status = 201;
+    await logEvent({
+      actorId: userId,
+      action: 'QUOTATION_CREATED',
+      resourceType: 'quotation',
+      resourceId: created.id,
+      description: `Created quotation ${created.number} for ${created.company?.name ?? data.companyId} (total ${created.total})`,
+      metadata: { number: created.number, total: Number(created.total), itemCount: items.length },
+      request,
+    });
     return created;
   }, {
     body: t.Object({
@@ -150,7 +160,7 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
     }),
   })
   // Update header (title, notes, validUntil, taxRate, status)
-  .patch('/:id', async ({ params, body, set }) => {
+  .patch('/:id', async ({ params, body, set, userId, request }) => {
     const data = body as {
       title?: string;
       notes?: string;
@@ -175,24 +185,69 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
     const q = await prisma.quotation.update({ where: { id: params.id }, data: update as never });
     // Recalc totals if tax rate changed
     if (data.taxRate !== undefined) await recalcQuotation(params.id);
-    return prisma.quotation.findUnique({
+    const refreshed = await prisma.quotation.findUnique({
       where: { id: params.id },
       include: { items: { include: { product: true } }, company: true },
     });
+    if (data.status && data.status !== q.status) {
+      await logEvent({
+        actorId: userId ?? null,
+        action: 'QUOTATION_STATUS_CHANGED',
+        resourceType: 'quotation',
+        resourceId: params.id,
+        description: `${q.number} status: ${q.status} -> ${data.status}`,
+        metadata: { from: q.status, to: data.status, number: q.number },
+        request,
+      });
+    } else {
+      await logEvent({
+        actorId: userId ?? null,
+        action: 'QUOTATION_UPDATED',
+        resourceType: 'quotation',
+        resourceId: params.id,
+        description: `Updated quotation ${q.number} (${q.company?.name ?? ''})`,
+        metadata: { number: q.number, fields: Object.keys(data) },
+        request,
+      });
+    }
+    return refreshed;
   })
-  .delete('/:id', async ({ params }) => {
+  .delete('/:id', async ({ params, userId, request }) => {
+    const before = await prisma.quotation.findUnique({ where: { id: params.id }, include: { company: { select: { name: true } } } });
     await prisma.quotation.delete({ where: { id: params.id } });
+    if (before) {
+      await logEvent({
+        actorId: userId ?? null,
+        action: 'QUOTATION_DELETED',
+        resourceType: 'quotation',
+        resourceId: params.id,
+        description: `Deleted quotation ${before.number} (${before.company?.name ?? ''})`,
+        metadata: { number: before.number, total: Number(before.total) },
+        request,
+      });
+    }
     return { success: true };
   })
   // Status transition shortcut
-  .post('/:id/status', async ({ params, body, set }) => {
+  .post('/:id/status', async ({ params, body, set, userId, request }) => {
     const { status } = body as { status: string };
     const valid = ['DRAFT', 'SENT', 'VIEWED', 'ACCEPTED', 'REJECTED', 'EXPIRED', 'INVOICED'];
     if (!valid.includes(status)) { set.status = 400; return { error: 'Invalid status' }; }
     const data: Record<string, unknown> = { status };
     if (status === 'SENT') data.sentAt = new Date();
     if (status === 'ACCEPTED') data.acceptedAt = new Date();
-    return prisma.quotation.update({ where: { id: params.id }, data: data as never });
+    const before = await prisma.quotation.findUnique({ where: { id: params.id }, select: { status: true, number: true } });
+    const updated = await prisma.quotation.update({ where: { id: params.id }, data: data as never });
+    await logEvent({
+      actorId: userId ?? null,
+      action: 'QUOTATION_STATUS_CHANGED',
+      resourceType: 'quotation',
+      resourceId: params.id,
+      description: `${before?.number ?? params.id} status: ${before?.status ?? '?'} -> ${status}`,
+      metadata: { from: before?.status, to: status, number: before?.number },
+      request,
+    });
+    return updated;
   })
   // Add a line item
   .post('/:id/items', async ({ params, body, set }) => {

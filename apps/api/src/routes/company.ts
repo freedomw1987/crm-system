@@ -1,5 +1,6 @@
 import { Elysia, t } from 'elysia';
 import { prisma } from '@crm/db';
+import { logEvent } from '../middleware/audit';
 
 export const companyRoutes = new Elysia({ prefix: '/companies', tags: ['companies'] })
   // List companies
@@ -53,10 +54,19 @@ export const companyRoutes = new Elysia({ prefix: '/companies', tags: ['companie
   })
 
   // Create company
-  .post('/', async ({ body, set }) => {
+  .post('/', async ({ body, set, userId, request }) => {
     const data = body as Record<string, unknown>;
     const company = await prisma.company.create({ data: data as never });
     set.status = 201;
+    await logEvent({
+      actorId: userId ?? null,
+      action: 'COMPANY_CREATED',
+      resourceType: 'company',
+      resourceId: company.id,
+      description: `Created company ${company.name}`,
+      metadata: { name: company.name, status: company.status },
+      request,
+    });
     return company;
   }, {
     body: t.Object({
@@ -75,12 +85,21 @@ export const companyRoutes = new Elysia({ prefix: '/companies', tags: ['companie
   })
 
   // Update company
-  .patch('/:id', async ({ params, body, set }) => {
+  .patch('/:id', async ({ params, body, set, userId, request }) => {
     try {
       const data = body as Record<string, unknown>;
       const company = await prisma.company.update({
         where: { id: params.id },
         data: data as never,
+      });
+      await logEvent({
+        actorId: userId ?? null,
+        action: 'COMPANY_UPDATED',
+        resourceType: 'company',
+        resourceId: params.id,
+        description: `Updated company ${company.name}`,
+        metadata: { name: company.name, fields: Object.keys(data) },
+        request,
       });
       return company;
     } catch {
@@ -90,9 +109,21 @@ export const companyRoutes = new Elysia({ prefix: '/companies', tags: ['companie
   })
 
   // Delete company
-  .delete('/:id', async ({ params, set }) => {
+  .delete('/:id', async ({ params, set, userId, request }) => {
     try {
+      const before = await prisma.company.findUnique({ where: { id: params.id }, select: { name: true } });
       await prisma.company.delete({ where: { id: params.id } });
+      if (before) {
+        await logEvent({
+          actorId: userId ?? null,
+          action: 'COMPANY_DELETED',
+          resourceType: 'company',
+          resourceId: params.id,
+          description: `Deleted company ${before.name}`,
+          metadata: { name: before.name },
+          request,
+        });
+      }
       return { success: true };
     } catch {
       set.status = 404;

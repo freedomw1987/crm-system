@@ -1,5 +1,6 @@
 import { Elysia } from 'elysia';
 import { prisma } from '@crm/db';
+import { logEvent } from '../middleware/audit';
 
 export const dealRoutes = new Elysia({ prefix: '/deals', tags: ['deals'] })
   .get('/', async ({ query }) => {
@@ -42,15 +43,46 @@ export const dealRoutes = new Elysia({ prefix: '/deals', tags: ['deals'] })
     if (!d) { set.status = 404; return { error: 'Not found' }; }
     return d;
   })
-  .post('/', async ({ body, set }) => {
+  .post('/', async ({ body, set, userId, request }) => {
     const created = await prisma.deal.create({ data: body as never });
     set.status = 201;
+    await logEvent({
+      actorId: userId ?? null,
+      action: 'DEAL_CREATED',
+      resourceType: 'deal',
+      resourceId: created.id,
+      description: `Created deal ${created.title} (value ${created.value})`,
+      metadata: { title: created.title, value: Number(created.value), status: created.status },
+      request,
+    });
     return created;
   })
-  .patch('/:id', async ({ params, body }) => {
-    return prisma.deal.update({ where: { id: params.id }, data: body as never });
+  .patch('/:id', async ({ params, body, userId, request }) => {
+    const updated = await prisma.deal.update({ where: { id: params.id }, data: body as never });
+    await logEvent({
+      actorId: userId ?? null,
+      action: 'DEAL_UPDATED',
+      resourceType: 'deal',
+      resourceId: params.id,
+      description: `Updated deal ${updated.title}`,
+      metadata: { title: updated.title, fields: Object.keys(body as object) },
+      request,
+    });
+    return updated;
   })
-  .delete('/:id', async ({ params }) => {
+  .delete('/:id', async ({ params, userId, request }) => {
+    const before = await prisma.deal.findUnique({ where: { id: params.id }, select: { title: true } });
     await prisma.deal.delete({ where: { id: params.id } });
+    if (before) {
+      await logEvent({
+        actorId: userId ?? null,
+        action: 'DEAL_DELETED',
+        resourceType: 'deal',
+        resourceId: params.id,
+        description: `Deleted deal ${before.title}`,
+        metadata: { title: before.title },
+        request,
+      });
+    }
     return { success: true };
   });

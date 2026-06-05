@@ -1,5 +1,6 @@
 import { Elysia } from 'elysia';
 import { prisma } from '@crm/db';
+import { logEvent } from '../middleware/audit';
 
 export const contactRoutes = new Elysia({ prefix: '/contacts', tags: ['contacts'] })
   .get('/', async ({ query }) => {
@@ -34,15 +35,46 @@ export const contactRoutes = new Elysia({ prefix: '/contacts', tags: ['contacts'
     if (!c) { set.status = 404; return { error: 'Not found' }; }
     return c;
   })
-  .post('/', async ({ body, set }) => {
+  .post('/', async ({ body, set, userId, request }) => {
     const created = await prisma.contact.create({ data: body as never });
     set.status = 201;
+    await logEvent({
+      actorId: userId ?? null,
+      action: 'CONTACT_CREATED',
+      resourceType: 'contact',
+      resourceId: created.id,
+      description: `Created contact ${created.firstName} ${created.lastName}`,
+      metadata: { name: `${created.firstName} ${created.lastName}`, companyId: created.companyId },
+      request,
+    });
     return created;
   })
-  .patch('/:id', async ({ params, body }) => {
-    return prisma.contact.update({ where: { id: params.id }, data: body as never });
+  .patch('/:id', async ({ params, body, userId, request }) => {
+    const updated = await prisma.contact.update({ where: { id: params.id }, data: body as never });
+    await logEvent({
+      actorId: userId ?? null,
+      action: 'CONTACT_UPDATED',
+      resourceType: 'contact',
+      resourceId: params.id,
+      description: `Updated contact ${updated.firstName} ${updated.lastName}`,
+      metadata: { name: `${updated.firstName} ${updated.lastName}`, fields: Object.keys(body as object) },
+      request,
+    });
+    return updated;
   })
-  .delete('/:id', async ({ params }) => {
+  .delete('/:id', async ({ params, userId, request }) => {
+    const before = await prisma.contact.findUnique({ where: { id: params.id }, select: { firstName: true, lastName: true } });
     await prisma.contact.delete({ where: { id: params.id } });
+    if (before) {
+      await logEvent({
+        actorId: userId ?? null,
+        action: 'CONTACT_DELETED',
+        resourceType: 'contact',
+        resourceId: params.id,
+        description: `Deleted contact ${before.firstName} ${before.lastName}`,
+        metadata: { name: `${before.firstName} ${before.lastName}` },
+        request,
+      });
+    }
     return { success: true };
   });
