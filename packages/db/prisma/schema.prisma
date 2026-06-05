@@ -18,10 +18,12 @@ datasource db {
 // 1. USER & AUTH
 // ============================================================
 
+// NOTE: UserRole enum kept for backwards compat + new Role table replaces it
+// in Day 7. The enum is no longer the source of truth — see Role model below.
 enum UserRole {
-  ADMIN       // Full system access
-  SALES       // Create/manage quotations, deals, customers
-  VIEWER      // Read-only access
+  ADMIN
+  SALES
+  VIEWER
 }
 
 model User {
@@ -29,7 +31,11 @@ model User {
   email         String    @unique
   name          String
   passwordHash  String
+  // Day 7: role moved to FK (Role table holds the actual permission set)
+  // We keep the enum column for now to ease the migration; new code reads roleId
+  // and the legacy column is set as a denormalized hint only.
   role          UserRole  @default(SALES)
+  roleId        String?
   avatarUrl     String?
   isActive      Boolean   @default(true)
   lastLoginAt   DateTime?
@@ -37,15 +43,52 @@ model User {
   updatedAt     DateTime  @updatedAt
 
   // Relations
-  createdQuotations  Quotation[]   @relation("QuotationCreatedBy")
-  ownedDeals         Deal[]        @relation("DealOwner")
-  assignedActivities ActivityLog[] @relation("ActivityAssignedTo")
+  roleRef          Role?              @relation(fields: [roleId], references: [id], onDelete: SetNull)
+  createdQuotations  Quotation[]      @relation("QuotationCreatedBy")
+  ownedDeals         Deal[]           @relation("DealOwner")
+  assignedActivities ActivityLog[]    @relation("ActivityAssignedTo")
   conversations      Conversation[]
-  auditEvents        AuditLog[]    @relation("AuditActor")
+  auditEvents        AuditLog[]       @relation("AuditActor")
 
   @@index([email])
   @@index([role])
+  @@index([roleId])
   @@map("users")
+}
+
+// ============================================================
+// 1b. ROLE & RBAC (Day 7: dynamic role management)
+// ============================================================
+// System roles (ADMIN/SALES/VIEWER) are seeded from packages/shared/src/permissions.ts.
+// isSystem=true means the role cannot be deleted and its name is locked.
+// Custom roles can be created freely with any subset of permissions.
+
+model Role {
+  id          String   @id @default(cuid())
+  name        String   @unique         // "ADMIN", "SALES", "Senior Sales" (custom)
+  displayName String                    // "Administrator", "Sales Rep", ...
+  description String?
+  isSystem    Boolean  @default(false) // system roles cannot be deleted
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  users       User[]
+  permissions RolePermission[]
+
+  @@map("roles")
+}
+
+model RolePermission {
+  roleId     String
+  permission String   // string from Permission enum in @crm/shared/permissions
+  createdAt  DateTime @default(now())
+
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permission])
+  @@index([permission])
+  @@map("role_permissions")
 }
 
 // ============================================================
@@ -223,6 +266,63 @@ model Product {
 }
 
 // ============================================================
+// 6b. SERVICE (Service catalog with man-day breakdown)
+// ============================================================
+// Day 7: Services are first-class catalogue items distinct from Products.
+// A service has a fixed unit price and an immutable man-day breakdown that
+// documents how the price is composed (for SOW purposes). When a service is
+// added to a quotation, its name/SOW/unitPrice are snapshotted into the
+// QuotationItem — the original service can be edited without breaking past
+// quotations.
+
+enum ServiceStatus {
+  ACTIVE
+  ARCHIVED
+  DRAFT
+}
+
+model Service {
+  id          String        @id @default(cuid())
+  name        String
+  description String?       @db.Text  // SOW (Statement of Work) — long form
+  category    String?                  // e.g., "Consulting", "Implementation", "Training"
+  // Pricing — locked-in total for the service; not derived from manDayLines
+  unitPrice   Decimal       @db.Decimal(12, 2)
+  currency    String        @default("HKD")
+  // Status
+  status      ServiceStatus @default(ACTIVE)
+  sortOrder   Int           @default(0)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  // Relations
+  manDayLines ServiceManDay[]
+  quotationItems QuotationItem[]
+
+  @@index([status])
+  @@index([category])
+  @@map("services")
+}
+
+model ServiceManDay {
+  id        String   @id @default(cuid())
+  serviceId String
+  role      String   // e.g., "Senior Consultant", "Junior Engineer" (free-form for now)
+  dayRate   Decimal  @db.Decimal(12, 2)
+  days      Decimal  @db.Decimal(6, 2)
+  // snapshot of line subtotal = dayRate * days, computed at write time
+  subtotal  Decimal  @db.Decimal(12, 2)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@index([serviceId])
+  @@map("service_man_days")
+}
+
+// ============================================================
 // 7. QUOTATION (Quotation header)
 // ============================================================
 
@@ -279,31 +379,47 @@ model Quotation {
 }
 
 // ============================================================
-// 8. QUOTATION ITEM (Line items)
+// 8. QUOTATION ITEM (Line items — polymorphic Product or Service)
 // ============================================================
+// Day 7: a line item is either a Product or a Service. Whichever it is, the
+// name/description/unitPrice are snapshotted at quotation time so the
+// historical quote doesn't drift when the catalogue changes.
+
+enum ItemType {
+  PRODUCT
+  SERVICE
+}
 
 model QuotationItem {
-  id          String  @id @default(cuid())
+  id          String   @id @default(cuid())
   quotationId String
+  // Polymorphic: exactly one of productId or serviceId is set
+  itemType    ItemType
   productId   String?
-  // Snapshot fields (in case product changes/deletes)
-  sku         String?
+  serviceId   String?
+  // Snapshot fields (immutable after creation)
+  sku         String?  // for products; null for services
   name        String
-  description String? @db.Text
-  quantity    Decimal @db.Decimal(10, 2)
-  unitPrice   Decimal @db.Decimal(12, 2)
-  discount    Decimal @default(0) @db.Decimal(5, 2) // percentage
-  // Calculated
-  lineTotal   Decimal @db.Decimal(12, 2)
-  // Ordering
-  position    Int     @default(0)
+  description String?  @db.Text
+  // SOW/breakdown snapshot for service items: { lines: [{role, dayRate, days, subtotal}], notes }
+  // For product items this stays null.
+  manDaySnapshot Json?
+  // Pricing
+  quantity    Decimal  @db.Decimal(10, 2)
+  unitPrice   Decimal  @db.Decimal(12, 2)   // service.unitPrice or product.unitPrice at snapshot
+  discount    Decimal  @default(0) @db.Decimal(5, 2) // percentage
+  lineTotal   Decimal  @db.Decimal(12, 2)   // = quantity * unitPrice * (1 - discount/100)
+  position    Int      @default(0)
 
   // Relations
   quotation Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
   product   Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
+  service   Service?  @relation(fields: [serviceId], references: [id], onDelete: SetNull)
 
   @@index([quotationId])
   @@index([productId])
+  @@index([serviceId])
+  @@index([itemType])
   @@map("quotation_items")
 }
 
@@ -499,7 +615,11 @@ enum AuditAction {
   USER_REACTIVATED
   USER_DELETED
   PASSWORD_RESET
-  // CRM resources — generic
+  // Role management (Day 7)
+  ROLE_CREATED
+  ROLE_UPDATED
+  ROLE_DELETED
+  // CRM resources
   QUOTATION_CREATED
   QUOTATION_UPDATED
   QUOTATION_DELETED
@@ -513,6 +633,14 @@ enum AuditAction {
   DEAL_CREATED
   DEAL_UPDATED
   DEAL_DELETED
+  // Service catalogue (Day 7)
+  SERVICE_CREATED
+  SERVICE_UPDATED
+  SERVICE_DELETED
+  // Product catalogue
+  PRODUCT_CREATED
+  PRODUCT_UPDATED
+  PRODUCT_DELETED
 }
 
 model AuditLog {

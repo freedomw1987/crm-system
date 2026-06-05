@@ -14,11 +14,13 @@ import { authRoutes } from './routes/auth';
 import { companyRoutes } from './routes/company';
 import { contactRoutes } from './routes/contact';
 import { productRoutes } from './routes/product';
+import { serviceRoutes } from './routes/service';
 import { quotationRoutes } from './routes/quotation';
 import { dealRoutes } from './routes/deal';
 import { chatRoutes } from './routes/chat';
 import { userRoutes } from './routes/users';
 import { auditRoutes } from './routes/audit';
+import { roleRoutes } from './routes/roles';
 import { logEvent } from './middleware/audit';
 
 const PORT = Number(process.env.API_PORT ?? 3001);
@@ -61,10 +63,12 @@ const app = new Elysia()
   .use(companyRoutes)
   .use(contactRoutes)
   .use(productRoutes)
+  .use(serviceRoutes)
   .use(quotationRoutes)
   .use(dealRoutes)
   .use(chatRoutes)
   .use(userRoutes)
+  .use(roleRoutes)
   .use(auditRoutes)
 
   .onError(({ code, error, set }) => {

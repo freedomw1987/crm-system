@@ -99,15 +99,22 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
       const disc = Number(it.discount ?? 0);
       const lineTotal = lineTotalOf(qty, price, disc);
       subtotal += lineTotal;
+      // Polymorphic item type — service items carry an optional man-day
+      // snapshot so the quotation stays self-contained even if the service
+      // is later archived or its pricing changes.
+      const itemType: string = (it as { serviceId?: string }).serviceId ? 'SERVICE' : 'PRODUCT';
       return {
-        productId: it.productId,
-        sku: it.sku,
+        itemType: itemType as never,
+        productId: itemType === 'PRODUCT' ? (it as { productId?: string }).productId : undefined,
+        serviceId: itemType === 'SERVICE' ? (it as { serviceId?: string }).serviceId : undefined,
+        sku: (it as { sku?: string }).sku,
         name: it.name,
         description: it.description,
         quantity: qty,
         unitPrice: price,
         discount: disc,
         lineTotal,
+        manDaySnapshot: ((it as { manDaySnapshot?: unknown }).manDaySnapshot ?? undefined) as never,
         position: idx,
       };
     });
@@ -251,17 +258,30 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
   })
   // Add a line item
   .post('/:id/items', async ({ params, body, set }) => {
-    const data = body as { productId?: string; sku?: string; name: string; description?: string; quantity: number; unitPrice: number; discount?: number };
+    const data = body as {
+      productId?: string;
+      serviceId?: string;
+      sku?: string;
+      name: string;
+      description?: string;
+      quantity: number;
+      unitPrice: number;
+      discount?: number;
+      manDaySnapshot?: unknown;
+    };
     const last = await prisma.quotationItem.findFirst({
       where: { quotationId: params.id },
       orderBy: { position: 'desc' },
     });
     const position = (last?.position ?? -1) + 1;
     const lineTotal = lineTotalOf(Number(data.quantity), Number(data.unitPrice), Number(data.discount ?? 0));
+    const itemType: string = data.serviceId ? 'SERVICE' : 'PRODUCT';
     const item = await prisma.quotationItem.create({
       data: {
         quotationId: params.id,
-        productId: data.productId,
+        itemType: itemType as never,
+        productId: itemType === 'PRODUCT' ? data.productId : null,
+        serviceId: itemType === 'SERVICE' ? data.serviceId : null,
         sku: data.sku,
         name: data.name,
         description: data.description,
@@ -269,6 +289,7 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
         unitPrice: Number(data.unitPrice),
         discount: Number(data.discount ?? 0),
         lineTotal,
+        manDaySnapshot: (data.manDaySnapshot ?? undefined) as never,
         position,
       },
     });
