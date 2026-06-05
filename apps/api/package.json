@@ -1,0 +1,26 @@
+{
+  "name": "@crm/api",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "bun --env-file=../../.env --watch src/index.ts",
+    "build": "bun build src/index.ts --target=bun --outdir=dist --minify",
+    "start": "bun --env-file=../../.env dist/index.js",
+    "typecheck": "tsc --noEmit --skipLibCheck --noResolve",
+    "lint": "echo 'lint: not configured yet'",
+    "test": "echo 'test: not configured yet'"
+  },
+  "dependencies": {
+    "@crm/db": "workspace:*",
+    "@crm/shared": "workspace:*",
+    "@crm/ai": "workspace:*",
+    "@elysiajs/cors": "^1.2.0",
+    "@elysiajs/jwt": "^1.2.0",
+    "elysia": "^1.2.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.1.13"
+  }
+}

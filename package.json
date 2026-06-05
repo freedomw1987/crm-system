@@ -1,0 +1,31 @@
+{
+  "name": "crm-system",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "bun run --filter '*' dev",
+    "dev:api": "bun --filter '@crm/api' dev",
+    "dev:web": "bun --filter '@crm/web' dev",
+    "build": "bun run --filter '*' build",
+    "typecheck": "bun run --filter '*' typecheck",
+    "lint": "bun run --filter '*' lint",
+    "test": "bun run --filter '*' test",
+    "db:generate": "bun --filter '@crm/db' generate",
+    "db:migrate": "bun --filter '@crm/db' migrate",
+    "db:seed": "bun --filter '@crm/db' seed",
+    "db:studio": "bun --filter '@crm/db' studio"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "@types/bun": "^1.1.13",
+    "prettier": "^3.3.3"
+  },
+  "engines": {
+    "bun": ">=1.2.0"
+  }
+}

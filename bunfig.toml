@@ -1,0 +1,6 @@
+[install]
+# Use exact versions in lockfile for reproducible builds
+exact = false
+
+[install.cache]
+disable = false
