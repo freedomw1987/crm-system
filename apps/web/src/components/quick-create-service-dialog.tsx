@@ -13,6 +13,11 @@
  *   - currency (HKD/USD/CNY/EUR/GBP)
  *   - unit price is AUTO-CALCULATED from the man-day sum
  *   - man-day rows: add/remove role + dayRate + days
+ *     - role is picked from the admin-managed ManDayRole catalogue
+ *       (`manDayRolesApi`). Picking a role auto-fills the dayRate from
+ *       the role's `price`. The user can override the dayRate (and
+ *       once they do, the row drops back to the free-form path so the
+ *       override is preserved through save).
  *
  * On submit: servicesApi.create() is called directly.
  *
@@ -40,7 +45,8 @@ import { Select, Label } from '@/components/ui/select';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
-import { servicesApi, type Service, type ServiceManDay } from '@/lib/api';
+import { useQuery } from '@tanstack/react-query';
+import { servicesApi, manDayRolesApi, type Service, type ServiceManDay, type ManDayRole } from '@/lib/api';
 import { formatCurrency } from '@/lib/utils';
 
 interface QuickCreateServiceDialogProps {
@@ -51,9 +57,19 @@ interface QuickCreateServiceDialogProps {
 }
 
 interface ManDayRow {
+  /** Free-text role label. Mirrors the backend ServiceManDay.role column. */
   role: string;
+  /** Day rate (CNY for catalogue roles; whatever currency the user picks
+   *  for free-form rows). Mirrors ServiceManDay.dayRate. */
   dayRate: number;
   days: number;
+  /** When set, the row was picked from the ManDayRole catalogue. The
+   *  backend uses this to snapshot the role's price/cost into the line. */
+  manDayRoleId?: string | null;
+  /** True when the user has manually edited the dayRate after the role
+   *  was picked. When set, the row is sent as free-form (no
+   *  manDayRoleId) so the override is preserved through save. */
+  dayRateDirty?: boolean;
 }
 
 type ServiceStatus = 'ACTIVE' | 'ARCHIVED' | 'DRAFT';
@@ -72,6 +88,21 @@ export function QuickCreateServiceDialog({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Active catalogue of man-day roles. `manDayRolesApi.list()` returns all
+  // roles (the backend route does not support `?activeOnly=`), so we
+  // filter client-side. The catalogue is small (< 50 rows in practice)
+  // and shared with the Man-day Roles admin page, so a single fetch is
+  // enough.
+  const { data: allRoles = [] } = useQuery<ManDayRole[]>({
+    queryKey: ['man-day-roles-active'],
+    queryFn: () => manDayRolesApi.list(),
+    select: (rows) => rows.filter((r) => r.isActive),
+    staleTime: 5 * 60_000,
+  });
+  // Map of roleId → role for the auto-fill handler. Rebuilt on every
+  // render because the catalogue is small and the change is O(n).
+  const roleById = new Map(allRoles.map((r) => [r.id, r]));
+
   useEffect(() => {
     if (open) {
       setName(defaultName);
@@ -88,6 +119,37 @@ export function QuickCreateServiceDialog({
 
   function updateRow(idx: number, patch: Partial<ManDayRow>) {
     setManDays((prev) => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+  }
+
+  function onPickRole(idx: number, roleId: string) {
+    if (!roleId) {
+      // User picked the empty option — clear the role binding but keep
+      // whatever dayRate / days they already typed.
+      updateRow(idx, { manDayRoleId: null, role: '', dayRateDirty: false });
+      return;
+    }
+    const role = roleById.get(roleId);
+    if (!role) {
+      updateRow(idx, { manDayRoleId: roleId });
+      return;
+    }
+    // Auto-fill the label + day rate from the catalogue. We do NOT mark
+    // dayRateDirty — the user can still override the dayRate, which will
+    // set the flag and switch the row to the free-form wire path.
+    updateRow(idx, {
+      manDayRoleId: role.id,
+      role: role.name,
+      dayRate: Number(role.price),
+      dayRateDirty: false,
+    });
+  }
+
+  function onChangeDayRate(idx: number, value: number) {
+    // Mark the row dirty so the submit path drops the role binding and
+    // sends the override as a free-form line.
+    setManDays((prev) => prev.map((r, i) =>
+      i === idx ? { ...r, dayRate: value, dayRateDirty: true } : r
+    ));
   }
 
   function addRow() {
@@ -111,6 +173,28 @@ export function QuickCreateServiceDialog({
       // we send the array under `manDayLines` so the validator accepts it
       // and the relations are created. `servicesApi.create` normalises the
       // response's `manDayLines` back to `manDays` for us.
+      //
+      // Man-day role binding: when a row has a manDayRoleId AND the user
+      // has not overridden the day rate, we send `{ manDayRoleId, days }`
+      // and the backend snapshots the role's current name/price/cost
+      // (apps/api/src/routes/service.ts:36-69). When the user has
+      // overridden the day rate, we drop the manDayRoleId and send the
+      // free-form `{ role, dayRate, days }` so the override survives.
+      //
+      // The frontend `servicesApi.create` type is `{ role, dayRate, days }`
+      // (added before the manDayRole feature), so we cast the array here
+      // — the wire format matches the backend's snapshotManDayLine
+      // contract exactly.
+      const lines: Array<{ role?: string; dayRate?: number; manDayRoleId?: string; days: number }> = manDays.map((m) => {
+        if (m.manDayRoleId && !m.dayRateDirty) {
+          return { manDayRoleId: m.manDayRoleId, days: Number(m.days) || 0 };
+        }
+        return {
+          role: m.role,
+          dayRate: Number(m.dayRate) || 0,
+          days: Number(m.days) || 0,
+        };
+      });
       const created = await servicesApi.create({
         name: name.trim(),
         description: description.trim() || undefined,
@@ -118,7 +202,7 @@ export function QuickCreateServiceDialog({
         status,
         currency,
         unitPrice: total,
-        manDayLines: manDays,
+        manDayLines: lines as unknown as Array<{ role: string; dayRate: number; days: number }>,
       });
       onCreated(created);
     } catch (e) {
@@ -219,18 +303,25 @@ export function QuickCreateServiceDialog({
             <div className="space-y-2">
               {manDays.map((m, idx) => (
                 <div key={idx} className="grid grid-cols-12 gap-2 items-center">
-                  <Input
+                  <Select
                     className="col-span-5"
-                    placeholder="Role (e.g. Senior Consultant)"
-                    value={m.role}
-                    onChange={(e) => updateRow(idx, { role: e.target.value })}
-                  />
+                    value={m.manDayRoleId ?? ''}
+                    onChange={(e) => onPickRole(idx, e.target.value)}
+                    title={m.role ? `已選: ${m.role}${m.dayRateDirty ? ' (day rate 已自訂)' : ''}` : undefined}
+                  >
+                    <option value="">— 自訂 role —</option>
+                    {allRoles.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.name} · ¥{Number(r.price).toLocaleString()}/天
+                      </option>
+                    ))}
+                  </Select>
                   <Input
                     className="col-span-3"
                     type="number"
                     placeholder="Day rate"
                     value={m.dayRate || ''}
-                    onChange={(e) => updateRow(idx, { dayRate: Number(e.target.value) })}
+                    onChange={(e) => onChangeDayRate(idx, Number(e.target.value))}
                   />
                   <Input
                     className="col-span-3"
