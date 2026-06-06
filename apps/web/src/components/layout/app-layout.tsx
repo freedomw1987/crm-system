@@ -1,21 +1,26 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
-  Building2, FileText, KanbanSquare, MessageSquare, LogOut,
+  Building2, FileText, KanbanSquare, LogOut,
   LayoutDashboard, Menu, X, Users, History, Briefcase, Shield, Package,
+  Sparkles,
 } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
+// Day 9: reordered to mirror the sales funnel — Dashboard (overview) →
+// Companies (accounts) → Deals (pipeline opportunities) → Quotations
+// (proposals) → Products / Services (catalogue). AI Assistant was moved
+// out of the nav and into a global FAB at the bottom-right of the page
+// (see AiFab below) so it's always one tap away from any screen.
 const navItems = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/companies', label: 'Companies', icon: Building2 },
-  { to: '/quotations', label: 'Quotations', icon: FileText },
-  { to: '/products', label: 'Products', icon: Package },
-  { to: '/services', label: 'Services', icon: Briefcase },
   { to: '/deals', label: 'Deals', icon: KanbanSquare },
-  { to: '/ai', label: 'AI Assistant', icon: MessageSquare },
+  { to: '/quotations', label: 'Quotation', icon: FileText },
+  { to: '/products', label: 'Product', icon: Package },
+  { to: '/services', label: 'Service', icon: Briefcase },
 ];
 
 const adminNavItems = [
@@ -145,6 +150,69 @@ export function AppLayout() {
           </div>
         </main>
       </div>
+
+      {/* Global AI Assistant FAB — bottom-right, visible on every page.
+          Renders outside <main> so the viewport-fixed positioning isn't
+          clipped by main's overflow-auto scroll container. Hides itself
+          when the user is already on /ai so it doesn't cover the chat. */}
+      <AiFab />
     </div>
+  );
+}
+
+/**
+ * AiFab — Floating Action Button that links to /ai (the AI Assistant page).
+ *
+ * Design notes (2026-06-09):
+ * - 56px circle (Material Design spec for FAB) — big enough for thumb tap,
+ *   small enough not to block content
+ * - bottom-6 right-6 = 24px margin from edges (Tailwind default)
+ * - z-50 to sit above main content and below modals (which use z-[100]+)
+ * - Sparkles icon + brand-primary background to read as "special" / "AI"
+ * - Pulse ring on the wrapper to draw the eye without being annoying
+ * - aria-label for screen readers; visual label only shows on hover
+ *   (via a tiny adjacent pill) so the icon stays clean by default
+ */
+function AiFab() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [showLabel, setShowLabel] = useState(false);
+  // Hide the FAB when the user is already on the AI chat page — it's
+  // distracting and would just cover the chat composer.
+  if (location.pathname === '/ai') return null;
+  return (
+    <button
+      type="button"
+      onClick={() => navigate('/ai')}
+      onMouseEnter={() => setShowLabel(true)}
+      onMouseLeave={() => setShowLabel(false)}
+      onFocus={() => setShowLabel(true)}
+      onBlur={() => setShowLabel(false)}
+      aria-label="開 AI Assistant"
+      className={cn(
+        'group fixed bottom-6 right-6 z-50',
+        'h-14 w-14 rounded-full',
+        'bg-primary text-primary-foreground shadow-lg hover:shadow-xl',
+        'flex items-center justify-center',
+        'transition-all hover:scale-105 active:scale-95',
+        'focus:outline-none focus:ring-4 focus:ring-primary/30'
+      )}
+    >
+      {/* Subtle pulse ring to catch the eye without being noisy */}
+      <span className="absolute inset-0 rounded-full bg-primary/40 animate-ping opacity-30" />
+      <Sparkles className="relative h-6 w-6" />
+      {/* Tooltip-style label appears on hover/focus, slides in from the right */}
+      <span
+        className={cn(
+          'absolute right-full mr-3 whitespace-nowrap',
+          'bg-foreground text-background text-xs font-medium px-2.5 py-1.5 rounded-md shadow-md',
+          'transition-opacity',
+          showLabel ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        )}
+        aria-hidden="true"
+      >
+        AI Assistant
+      </span>
+    </button>
   );
 }
