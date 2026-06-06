@@ -65,3 +65,4 @@ backups/
 # Hermes doc-html-preview generated artifacts (do not commit; MD is source of truth)
 docs/_html/
 docs/_meta/
+dev-task-state.md
