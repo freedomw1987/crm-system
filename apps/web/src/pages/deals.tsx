@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { dealsApi, companiesApi, type KanbanData, type Deal, type Company } from '@/lib/api';
 import { formatCurrency } from '@/lib/utils';
+import { CompanyAutocomplete } from '@/components/company-autocomplete';
 
 export function DealsPage() {
   const qc = useQueryClient();
@@ -450,21 +451,15 @@ function DealDialog({
           <div className="grid grid-cols-2 gap-2">
             <div>
               <Label htmlFor="company">公司 *</Label>
-              <select
-                id="company"
+              <CompanyAutocomplete
+                companies={companies}
                 value={companyId}
-                onChange={(e) => setCompanyId(e.target.value)}
-                className="w-full h-9 rounded border bg-background px-2 text-sm"
-                required
+                onChange={setCompanyId}
+                label=""
                 disabled={isEdit}
-              >
-                <option value="">— 揀公司 —</option>
-                {companies.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} ({c.region?.code ?? 'HK'})
-                  </option>
-                ))}
-              </select>
+                placeholder={isEdit ? '公司不可修改' : '搜尋客戶名稱...'}
+                allowCreate={!isEdit}
+              />
             </div>
             <div>
               <Label htmlFor="stage">Stage *</Label>

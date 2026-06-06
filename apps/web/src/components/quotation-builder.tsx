@@ -26,6 +26,7 @@ import {
 import { formatCurrency } from '@/lib/utils';
 import { QuickCreateServiceDialog } from './quick-create-service-dialog';
 import { ProductDialog } from './product-dialog';
+import { CompanyAutocomplete } from './company-autocomplete';
 
 interface DraftLine {
   key: string;
@@ -321,14 +322,14 @@ export function QuotationBuilder({ existing, initialDealId, initialCompanyId, on
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-1.5">
           <Label htmlFor="company">客戶 *</Label>
-          <Select id="company" value={companyId} onChange={(e) => setCompanyId(e.target.value)}>
-            <option value="">-- 揀客戶 --</option>
-            {companies.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name} {c.region ? `(${c.region})` : ''}
-              </option>
-            ))}
-          </Select>
+          <CompanyAutocomplete
+            companies={companies}
+            value={companyId}
+            onChange={setCompanyId}
+            onCreated={(c) => setCompanies((prev) => [c, ...prev])}
+            label=""
+            placeholder="搜尋客戶名稱..."
+          />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="deal">關聯 Deal (可選)</Label>
