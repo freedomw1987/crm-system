@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { companiesApi, quotationsApi, contactsApi, type Contact, type Region } from '@/lib/api';
 import { formatCurrency, formatDate } from '@/lib/utils';
+import { ActivityFeed } from '@/components/activity-feed';
 
 // Day 9: CompanyDetailRegionMeta is the fallback used while /api/regions
 // is still in flight (or if the request fails for offline browsing). It
@@ -279,6 +280,12 @@ export function CompanyDetailPage() {
               )}
             </CardContent>
           </Card>
+          {/* Day N: Activity feed — chronological record of all
+              follow-up activity for this company. Composer at the top
+              creates a NOTE and optionally uploads attachments. The
+              feed query is keyed on companyId so subsequent company
+              detail pages don't share cache. */}
+          <ActivityFeed companyId={id} />
         </div>
       </div>
 

@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { companiesApi, quotationsApi, dealsApi } from '@/lib/api';
 import { formatCurrency, formatDate } from '@/lib/utils';
+import { RecentActivitiesWidget } from '@/components/activity-feed';
 
 export function DashboardPage() {
   // Day 9 fix: Dashboard KPIs (Open Deals, Win Rate, Pipeline Value) need
@@ -78,7 +79,7 @@ export function DashboardPage() {
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <Card>
           <CardHeader>
             <CardTitle>Recent Quotations</CardTitle>
@@ -149,6 +150,10 @@ export function DashboardPage() {
             )}
           </CardContent>
         </Card>
+
+        {/* Day N: most-recent activity across the whole workspace. Read-only
+            here; full composer lives on each company/deal detail page. */}
+        <RecentActivitiesWidget limit={5} />
       </div>
     </div>
   );
