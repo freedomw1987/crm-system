@@ -390,13 +390,28 @@
     });
   }
 
+  // ----- Print / Export PDF button -----
+  // Calls window.print() — the existing @media print CSS hides the topbar
+  // and sidebar, so the user gets a clean printable view (or "Save as PDF"
+  // via the browser's print dialog).
+  function initPrintButton() {
+    const btn = document.getElementById('print-btn');
+    if (!btn) return;
+    btn.addEventListener('click', () => window.print());
+  }
+
   // ----- Boot -----
   function boot() {
     initTheme();
+    initPrintButton();
 
     const docs = buildIndex();
-    const initialId = (location.hash || '#root').slice(1);
-    const valid = docs.find((d) => d.id === initialId) ? initialId : 'root';
+    // Default landing: PRD (老闆版). The audience for this bundled file is
+    // the boss / decision-maker first; technical readers can navigate to
+    // the dev docs from the sidebar.
+    const PREFERRED_LANDING = 'prd';
+    const initialId = (location.hash || '').slice(1) || PREFERRED_LANDING;
+    const valid = docs.find((d) => d.id === initialId) ? initialId : PREFERRED_LANDING;
 
     document.getElementById('nav').innerHTML = renderSidebar(docs, valid);
     loadDoc(valid);

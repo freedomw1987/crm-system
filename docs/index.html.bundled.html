@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CRM System — Documentation</title>
+  <title>CRM 系統 — 項目文檔</title>
   <style>
 /* CRM System Docs — minimal, readable, dark-mode aware */
 
@@ -137,7 +137,8 @@ kbd {
 #search::placeholder { color: var(--topbar-text-soft); }
 #search:focus { border-color: var(--text-link); }
 
-#theme-toggle {
+#theme-toggle,
+#print-btn {
   background: transparent;
   border: 1px solid #444c56;
   border-radius: 6px;
@@ -146,7 +147,38 @@ kbd {
   font-size: 14px;
   cursor: pointer;
 }
-#theme-toggle:hover { background: rgba(255, 255, 255, 0.08); }
+#theme-toggle:hover,
+#print-btn:hover { background: rgba(255, 255, 255, 0.08); }
+
+/* Skip-to-content link (a11y) — hidden until focused */
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 8px;
+  z-index: 100;
+  padding: 8px 14px;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: top 0.15s ease;
+}
+.skip-link:focus { top: 8px; outline: 2px solid #fff; }
+
+/* Footer hint */
+.doc-footer {
+  border-top: 1px solid var(--border);
+  padding: 14px 24px;
+  margin-top: 24px;
+  font-size: 12.5px;
+  color: var(--text-soft);
+  background: var(--bg-soft);
+  text-align: center;
+}
+.doc-footer p { margin: 0; }
+.doc-footer kbd { font-size: 11.5px; }
 
 .layout {
   display: grid;
@@ -349,38 +381,56 @@ html { scroll-behavior: smooth; }
 
 /* Print styles */
 @media print {
-  .topbar, .sidebar { display: none; }
+  .topbar, .sidebar, .doc-footer { display: none; }
   .layout { grid-template-columns: 1fr; }
   .content { padding: 0; max-width: none; }
   .doc h1, .doc h2 { break-after: avoid; }
   .doc pre, .doc table { break-inside: avoid; }
+  .doc a { color: var(--text); text-decoration: underline; }
+  .doc a[href^="http"]::after {
+    content: " (" attr(href) ")";
+    font-size: 0.85em;
+    color: var(--text-soft);
+  }
 }
 
 </style>
 </head>
 <body>
+  <!-- 老闆 / 收件人提示:直接 double-click 個 file 就開到,無需 server / 安裝 -->
+  <a href="#doc" class="skip-link">跳到內容</a>
+
   <header class="topbar">
     <div class="topbar-inner">
-      <h1 class="brand">📋 CRM System</h1>
-      <span class="brand-sub">Documentation · Day 9 snapshot</span>
+      <h1 class="brand">📋 CRM 系統 — 項目文檔</h1>
+      <span class="brand-sub" id="brand-sub">最新版本: Day 9 · 2026-06-06</span>
       <div class="topbar-actions">
         <input id="search" type="search" placeholder="搜尋文件..." aria-label="搜尋" />
-        <button id="theme-toggle" aria-label="切換主題">🌙</button>
+        <button id="theme-toggle" aria-label="切換主題" title="切換深色 / 淺色模式">🌙</button>
+        <button id="print-btn" aria-label="列印 / 匯出 PDF" title="列印 / 匯出 PDF">🖨</button>
       </div>
     </div>
   </header>
 
   <div class="layout">
-    <aside class="sidebar" id="sidebar">
+    <aside class="sidebar" id="sidebar" aria-label="文件目錄">
       <nav id="nav"><!-- built by app.js --></nav>
     </aside>
 
-    <main class="content">
-      <article id="doc" class="doc">
+    <main class="content" id="doc" tabindex="-1">
+      <article class="doc">
         <div class="loading">載入中...</div>
       </article>
     </main>
   </div>
+
+  <footer class="doc-footer">
+    <p>
+      💡 提示:本文件係 self-contained HTML — Double-click 直接開,無需安裝 / 上網。
+      撳 <kbd>🖨</kbd> 可列印或匯出 PDF。
+      撳 <kbd>🌙</kbd> 切換深色模式。
+    </p>
+  </footer>
 
     <script type="text/markdown" id="doc-root" data-title="README" data-file="../README.md">
 # CRM System
@@ -4919,13 +4969,28 @@ Kanban 嘅拖拽有完整 visual feedback:
     });
   }
 
+  // ----- Print / Export PDF button -----
+  // Calls window.print() — the existing @media print CSS hides the topbar
+  // and sidebar, so the user gets a clean printable view (or "Save as PDF"
+  // via the browser's print dialog).
+  function initPrintButton() {
+    const btn = document.getElementById('print-btn');
+    if (!btn) return;
+    btn.addEventListener('click', () => window.print());
+  }
+
   // ----- Boot -----
   function boot() {
     initTheme();
+    initPrintButton();
 
     const docs = buildIndex();
-    const initialId = (location.hash || '#root').slice(1);
-    const valid = docs.find((d) => d.id === initialId) ? initialId : 'root';
+    // Default landing: PRD (老闆版). The audience for this bundled file is
+    // the boss / decision-maker first; technical readers can navigate to
+    // the dev docs from the sidebar.
+    const PREFERRED_LANDING = 'prd';
+    const initialId = (location.hash || '').slice(1) || PREFERRED_LANDING;
+    const valid = docs.find((d) => d.id === initialId) ? initialId : PREFERRED_LANDING;
 
     document.getElementById('nav').innerHTML = renderSidebar(docs, valid);
     loadDoc(valid);
