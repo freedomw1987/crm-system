@@ -1,0 +1,23 @@
+-- Day 9: Region enum → Region table; ItemType enum → text.
+--
+-- This migration is a no-op because the actual DDL was applied directly
+-- to the live database on 2026-06-06 to avoid data loss. The schema
+-- changes are:
+--
+--   1. New `regions` table (id, code, name, flag, isActive, sortOrder,
+--      createdAt, updatedAt) with unique(code).
+--   2. New column `companies.regionId TEXT` with FK to `regions.id`
+--      (ON DELETE SET NULL).
+--   3. Dropped column `companies.region` and the Postgres enum type
+--      `Region`.
+--   4. Companies previously set region='HK'/'MO'/'CN'/'OTHER' were
+--      backfilled to regionId pointing at the matching seed Region row.
+--   5. `quotation_items.itemType` is text (not an enum). The original
+--      migration `20260605030000_day7_dynamic_rbac_services` already
+--      created the column as text, but the Prisma schema declared it as
+--      an enum. The Day 9 schema change aligns the Prisma model with
+--      the actual database column type.
+--
+-- The corresponding Prisma client regeneration and application code
+-- changes are in the same commit series.
+SELECT 1;

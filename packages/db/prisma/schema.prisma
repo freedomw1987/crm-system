@@ -95,14 +95,27 @@ model RolePermission {
 // 2. COMPANY (Customer companies)
 // ============================================================
 
-// Day 8: regional segmentation for HK/MO/CN primary markets + free-form for "other"
-// Region enum ensures data integrity for the 3 primary regions; customRegion captures
-// free-form labels (e.g., "Taiwan", "Singapore") chosen when region = OTHER.
-enum Region {
-  HK
-  MO
-  CN
-  OTHER
+// Day 9: Region table replaces the previous Region enum. Why a table?
+//   1. Admins need to add new regions (Taiwan, Singapore, Japan) without
+//      a DDL migration every time
+//   2. The Region list is now surfaceable via /api/regions so the UI can
+//      render filter pills and a "free-form" customRegion option from a
+//      single source of truth
+// `customRegion` on Company is preserved as a free-form text field for the
+// case where the desired region isn't (yet) in the catalogue.
+model Region {
+  id        String   @id @default(cuid())
+  code      String   @unique  // "HK", "MO", "CN", "OTHER", or any new code
+  name      String              // "Hong Kong", "中國 China", etc.
+  flag      String?             // emoji or short label, optional
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  companies Company[]
+
+  @@map("regions")
 }
 
 model Company {
@@ -119,9 +132,13 @@ model Company {
   // CRM metadata
   source      String?  // e.g., "Website", "Referral", "Cold Call"
   status      String   @default("active") // active / inactive / blacklisted
-  // Region (Day 8) — primary 3 are enum-locked; OTHER falls through to customRegion
-  region      Region   @default(HK)
-  customRegion String?  // populated only when region = OTHER
+  // Region (Day 9) — foreign key to the Region table for known regions
+  // (HK/MO/CN/OTHER and any future additions). `customRegion` remains as a
+  // free-form label that overrides the FK lookup when filled in.
+  regionId    String?
+  region      Region?  @relation(fields: [regionId], references: [id], onDelete: SetNull)
+  customRegion String?  // populated only when region FK is set to OTHER (or null)
+
   // Financial
   creditLimit Decimal? @db.Decimal(12, 2)
   paymentTerms String?  // e.g., "Net 30", "Net 60"
@@ -404,16 +421,23 @@ model Quotation {
 // name/description/unitPrice are snapshotted at quotation time so the
 // historical quote doesn't drift when the catalogue changes.
 
-enum ItemType {
-  PRODUCT
-  SERVICE
-}
+// ItemType is stored as a plain String in the database (column type: text)
+// rather than as a Postgres enum. The two valid values are:
+//   "PRODUCT" — a physical or downloadable good; productId is set
+//   "SERVICE" — a labour-based deliverable; serviceId is set
+// We chose text because:
+//   1. adding new item types (e.g. SUBSCRIPTION, USAGE) shouldn't require
+//      a DDL migration — just a new string value
+//   2. the schema/DB were created without the enum originally, and
+//      backfilling an enum now would require a one-shot migration that's
+//      not worth the cost given how rarely this column changes
+// Day 8: code MUST always use one of the two values above.
 
 model QuotationItem {
   id          String   @id @default(cuid())
   quotationId String
   // Polymorphic: exactly one of productId or serviceId is set
-  itemType    ItemType
+  itemType    String   @default("PRODUCT")
   productId   String?
   serviceId   String?
   // Snapshot fields (immutable after creation)
