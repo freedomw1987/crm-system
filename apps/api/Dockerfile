@@ -47,6 +47,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     openssl ca-certificates curl dumb-init \
     && rm -rf /var/lib/apt/lists/*
 
+# Day N: pre-create the attachment upload directory. The Docker volume
+# mount at /app/data/uploads in docker-compose.yml handles persistence
+# across container recreations; the mkdir here just makes sure the
+# in-container path exists the very first time the image runs (before
+# the volume is mounted by compose).
+RUN mkdir -p /app/data/uploads && chown -R bun:bun /app/data || true
+
 WORKDIR /app
 
 # Copy entire workspace from builder (Bun resolves TS directly)

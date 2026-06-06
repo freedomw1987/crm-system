@@ -73,7 +73,7 @@ export async function userHasPermission(userId: string, permission: string): Pro
  *
  * This re-verifies the JWT in-place and returns the userId.
  */
-async function getUserIdFromRequest(request: Request): Promise<string | null> {
+export async function getUserIdFromRequest(request: Request): Promise<string | null> {
   const auth = request.headers.get('authorization');
   if (!auth?.startsWith('Bearer ')) return null;
   const token = auth.slice(7);

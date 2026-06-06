@@ -54,6 +54,11 @@ services:
     # Exposed via nginx reverse proxy (web service)
     expose:
       - "3001"
+    volumes:
+      # Day N: uploaded attachments persist on the host. The api
+      # container's Dockerfile pre-creates the directory so the bun
+      # process can write immediately.
+      - crm_uploads:/app/data/uploads
 
   # ---------- Web (nginx serving SPA + reverse proxy /api) ----------
   web:
@@ -125,3 +130,5 @@ services:
 volumes:
   pgdata:
     name: crm_pgdata
+  crm_uploads:
+    name: crm_uploads
