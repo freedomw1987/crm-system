@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { dealsApi, companiesApi, type KanbanData, type Deal, type Company } from '@/lib/api';
 import { formatCurrency } from '@/lib/utils';
 import { CompanyAutocomplete } from '@/components/company-autocomplete';
+import { QuotationBuilder } from '@/components/quotation-builder';
 
 export function DealsPage() {
   const qc = useQueryClient();
@@ -19,6 +20,10 @@ export function DealsPage() {
   const presetCompanyId = searchParams.get('companyId') ?? undefined;
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<Deal | null>(null);
+  // Day N: when a deal-card's "+ 報價" button is clicked, store the
+  // deal in this state so the inline <QuotationBuilder> modal opens
+  // pre-filled with deal + company. No navigation, no page change.
+  const [quotationFor, setQuotationFor] = useState<Deal | null>(null);
   const { data: kanban, isLoading } = useQuery({
     queryKey: ['deals-kanban'],
     queryFn: () => dealsApi.kanban(),
@@ -144,6 +149,7 @@ export function DealsPage() {
                 onDrop={(dealId) => moveStage.mutate({ dealId, stageId: bucket.stage.id })}
                 isMoving={moveStage.isPending}
                 onEdit={(deal) => setEditing(deal)}
+                onNewQuotation={(deal) => setQuotationFor(deal)}
               />
             ))}
           </div>
@@ -169,6 +175,32 @@ export function DealsPage() {
           qc.invalidateQueries({ queryKey: ['deals-kanban'] });
         }}
       />
+      {/* Day N: inline QuotationBuilder modal triggered from a deal card.
+          Pre-fills with `defaultDealId` + the deal's company so the user
+          doesn't have to re-pick either. The builder's onSaved also bumps
+          the kanban cache (deal._count.quotations) so the card's
+          "X 份報價 · ＋" counter updates immediately. */}
+      <Dialog open={quotationFor !== null} onOpenChange={(v) => { if (!v) setQuotationFor(null); }}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              為「{quotationFor?.title ?? ''}」建立報價
+            </DialogTitle>
+          </DialogHeader>
+          {quotationFor && (
+            <QuotationBuilder
+              defaultCompanyId={quotationFor.company?.id ?? ''}
+              defaultDealId={quotationFor.id}
+              onSaved={() => {
+                setQuotationFor(null);
+                qc.invalidateQueries({ queryKey: ['deals-kanban'] });
+                qc.invalidateQueries({ queryKey: ['quotations'] });
+              }}
+              onCancel={() => setQuotationFor(null)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -190,12 +222,17 @@ function KanbanColumn({
   onDrop,
   isMoving,
   onEdit,
+  onNewQuotation,
 }: {
   stage: { id: string; name: string; probability: number; color: string };
   deals: Deal[];
   onDrop: (dealId: string) => void;
   isMoving: boolean;
   onEdit: (deal: Deal) => void;
+  /** Day N: open QuotationBuilder inline-modal pre-filled with this deal.
+   *  Replaces the previous navigate('/quotations?dealId=...') flow so the
+   *  user never leaves the Kanban board to draft a quote. */
+  onNewQuotation?: (deal: Deal) => void;
 }) {
   const [dragOver, setDragOver] = useState(false);
   // Prisma returns Decimal as a string; coerce each value so we don't
@@ -242,7 +279,13 @@ function KanbanColumn({
           </p>
         ) : (
           deals.map((d) => (
-            <DealCard key={d.id} deal={d} disabled={isMoving} onEdit={onEdit} />
+            <DealCard
+              key={d.id}
+              deal={d}
+              disabled={isMoving}
+              onEdit={onEdit}
+              onNewQuotation={onNewQuotation}
+            />
           ))
         )}
       </div>
@@ -253,7 +296,18 @@ function KanbanColumn({
   );
 }
 
-function DealCard({ deal, disabled, onEdit }: { deal: Deal; disabled: boolean; onEdit: (d: Deal) => void }) {
+function DealCard({
+  deal,
+  disabled,
+  onEdit,
+  onNewQuotation,
+}: {
+  deal: Deal;
+  disabled: boolean;
+  onEdit: (d: Deal) => void;
+  /** Day N: open QuotationBuilder inline-modal pre-filled with this deal. */
+  onNewQuotation?: (d: Deal) => void;
+}) {
   // Track drag state so a click on the card body doesn't open the edit
   // dialog while the user is mid-drag.
   const [dragging, setDragging] = useState(false);
@@ -293,14 +347,16 @@ function DealCard({ deal, disabled, onEdit }: { deal: Deal; disabled: boolean; o
               {formatCurrency(deal.value, deal.currency)}
             </span>
           </div>
-          {/* Quotation entry point: navigate to /quotations?dealId=... so the
-              builder auto-opens with the deal pre-filled. Show "+ 報價" when
-              no quotes exist yet (CTA), or the count when there are some. */}
+          {/* Quotation entry point: open QuotationBuilder inline-modal
+              pre-filled with this deal + its company. Show "+ 報價" when
+              no quotes exist yet (CTA), or the count when there are some.
+              We intentionally don't navigate anymore — staying on the
+              Kanban board is the whole point of the inline modal. */}
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              navigate(`/quotations?dealId=${deal.id}`);
+              onNewQuotation?.(deal);
             }}
             className={`mt-1.5 inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded hover:bg-primary/10 transition-colors ${
               quoteCount > 0
