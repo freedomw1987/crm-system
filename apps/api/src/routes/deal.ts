@@ -24,7 +24,7 @@ export const dealRoutes = new Elysia({ prefix: '/deals', tags: ['deals'] })
       skip: Number(offset),
       orderBy: { createdAt: 'desc' },
       include: {
-        company: { select: { id: true, name: true, region: true } },
+        company: { select: { id: true, name: true, region: { select: { id: true, code: true, name: true, flag: true } } } },
         owner: { select: { id: true, name: true, email: true } },
         stage: { select: { id: true, name: true, probability: true, color: true } },
         _count: { select: { quotations: true } },
@@ -52,7 +52,7 @@ export const dealRoutes = new Elysia({ prefix: '/deals', tags: ['deals'] })
       where,
       orderBy: { createdAt: 'desc' },
       include: {
-        company: { select: { id: true, name: true, region: true } },
+        company: { select: { id: true, name: true, region: { select: { id: true, code: true, name: true, flag: true } } } },
         owner: { select: { id: true, name: true, email: true } },
         _count: { select: { quotations: true } },
       },

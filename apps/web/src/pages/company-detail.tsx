@@ -8,10 +8,14 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { companiesApi, quotationsApi, contactsApi, type Contact } from '@/lib/api';
+import { companiesApi, quotationsApi, contactsApi, type Contact, type Region } from '@/lib/api';
 import { formatCurrency, formatDate } from '@/lib/utils';
 
-const REGION_META: Record<string, { flag: string; label: string }> = {
+// Day 9: CompanyDetailRegionMeta is the fallback used while /api/regions
+// is still in flight (or if the request fails for offline browsing). It
+// only needs to be large enough to render the company badge without
+// flickering; the real catalogue comes from the API.
+const CompanyDetailRegionMeta: Record<string, { flag: string; label: string }> = {
   HK: { flag: '🇭🇰', label: '香港' },
   MO: { flag: '🇲🇴', label: '澳門' },
   CN: { flag: '🇨🇳', label: '中國' },
@@ -51,11 +55,16 @@ export function CompanyDetailPage() {
   if (isLoading) return <p>載入中...</p>;
   if (!company) return <p>搵唔到呢間公司</p>;
 
-  const region = company.region ?? 'HK';
-  const regionMeta = REGION_META[region] ?? REGION_META.OTHER;
-  const regionLabel = region === 'OTHER' && company.customRegion
+  // Day 9: company.region is now a Region object (FK include). Fall back
+  // to a hard-coded label for the four base regions when the object is
+  // missing (older records created before the FK migration, or the rare
+  // detail-page query that doesn't include the relation).
+  const region = company.region;
+  const regionCode = region?.code ?? 'HK';
+  const regionMeta = CompanyDetailRegionMeta[regionCode] ?? CompanyDetailRegionMeta.OTHER;
+  const regionLabel = regionCode === 'OTHER' && company.customRegion
     ? company.customRegion
-    : regionMeta.label;
+    : region?.name ?? regionMeta.label;
 
   return (
     <div className="space-y-6">

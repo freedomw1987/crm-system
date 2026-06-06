@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
-import { Package, Plus, Trash2, Loader2, Edit2, Search } from 'lucide-react';
+import { Package, Plus, Trash2, Edit2, Search } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Input, Textarea } from '@/components/ui/input';
+import { Input } from '@/components/ui/input';
 import { Select, Label } from '@/components/ui/select';
 import { productsApi, type Product } from '@/lib/api';
 import { formatCurrency } from '@/lib/utils';
+import { ProductDialog } from '@/components/product-dialog';
 
 const STATUS_VARIANT: Record<Product['status'], 'success' | 'secondary' | 'warning' | 'destructive'> = {
   ACTIVE: 'success',
@@ -173,188 +174,22 @@ export function ProductsPage() {
         </div>
       )}
 
-      {createOpen && (
-        <ProductDialog
-          onClose={() => setCreateOpen(false)}
-          onSuccess={() => {
-            setCreateOpen(false);
-            queryClient.invalidateQueries({ queryKey: ['products'] });
-          }}
-        />
-      )}
-      {editing && (
-        <ProductDialog
-          product={editing}
-          onClose={() => setEditing(null)}
-          onSuccess={() => {
-            setEditing(null);
-            queryClient.invalidateQueries({ queryKey: ['products'] });
-          }}
-        />
-      )}
-    </div>
-  );
-}
-
-interface ProductDialogProps {
-  product?: Product;
-  onClose: () => void;
-  onSuccess: () => void;
-}
-function ProductDialog({ product, onClose, onSuccess }: ProductDialogProps) {
-  const [sku, setSku] = useState(product?.sku ?? '');
-  const [name, setName] = useState(product?.name ?? '');
-  const [description, setDescription] = useState(product?.description ?? '');
-  const [category, setCategory] = useState(product?.category ?? '');
-  const [unitPrice, setUnitPrice] = useState<number>(Number(product?.unitPrice) || 0);
-  const [costPrice, setCostPrice] = useState<number>(Number(product?.costPrice) || 0);
-  const [currency, setCurrency] = useState(product?.currency ?? 'HKD');
-  const [status, setStatus] = useState<Product['status']>(product?.status ?? 'ACTIVE');
-  const [trackInventory, setTrackInventory] = useState(product?.trackInventory ?? true);
-  const [stockQuantity, setStockQuantity] = useState<number>(Number(product?.stockQuantity) || 0);
-  const [lowStockThreshold, setLowStockThreshold] = useState<number>(Number(product?.lowStockThreshold) || 0);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const isEdit = !!product;
-
-  async function submit() {
-    setError(null);
-    if (!sku.trim() || !name.trim()) {
-      setError('請填 SKU 同產品名稱');
-      return;
-    }
-    if (unitPrice < 0) {
-      setError('售價不可為負');
-      return;
-    }
-    setSubmitting(true);
-    try {
-      const data = {
-        sku: sku.trim(),
-        name: name.trim(),
-        description: description.trim() || undefined,
-        category: category.trim() || undefined,
-        unitPrice,
-        costPrice: costPrice || undefined,
-        currency,
-        status,
-        trackInventory,
-        stockQuantity: trackInventory ? stockQuantity : undefined,
-        lowStockThreshold: trackInventory && lowStockThreshold > 0 ? lowStockThreshold : undefined,
-      };
-      if (isEdit && product) {
-        await productsApi.update(product.id, data);
-      } else {
-        await productsApi.create(data);
-      }
-      onSuccess();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : '儲存失敗');
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 overflow-y-auto">
-      <Card className="w-full max-w-2xl my-8">
-        <CardContent className="p-6 space-y-4">
-          <h2 className="text-lg font-bold">{isEdit ? '編輯產品' : '新增產品'}</h2>
-
-          {error && <p className="text-sm text-destructive">{error}</p>}
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="sku">SKU *</Label>
-              <Input id="sku" value={sku} onChange={(e) => setSku(e.target.value)} placeholder="e.g. HW-MON-001" />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="name">產品名稱 *</Label>
-              <Input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder='e.g. 27" 4K Monitor' />
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="desc">產品描述</Label>
-            <Textarea
-              id="desc"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="產品規格、特點、用途..."
-              rows={3}
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="cat">分類</Label>
-              <Input id="cat" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="e.g. Hardware" />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="status">狀態</Label>
-              <Select id="status" value={status} onChange={(e) => setStatus(e.target.value as Product['status'])}>
-                <option value="ACTIVE">Active</option>
-                <option value="ARCHIVED">Archived</option>
-                <option value="OUT_OF_STOCK">Out of Stock</option>
-              </Select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="price">售價 *</Label>
-              <Input id="price" type="number" value={unitPrice} onChange={(e) => setUnitPrice(Number(e.target.value))} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="cost">成本</Label>
-              <Input id="cost" type="number" value={costPrice} onChange={(e) => setCostPrice(Number(e.target.value))} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="cur">貨幣</Label>
-              <Select id="cur" value={currency} onChange={(e) => setCurrency(e.target.value)}>
-                <option>HKD</option>
-                <option>USD</option>
-                <option>CNY</option>
-                <option>EUR</option>
-                <option>GBP</option>
-              </Select>
-            </div>
-          </div>
-
-          <div className="space-y-2 border-t pt-3">
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={trackInventory}
-                onChange={(e) => setTrackInventory(e.target.checked)}
-                className="rounded"
-              />
-              追蹤庫存
-            </label>
-            {trackInventory && (
-              <div className="grid grid-cols-2 gap-3 pl-6">
-                <div className="space-y-1.5">
-                  <Label htmlFor="stock">現有庫存</Label>
-                  <Input id="stock" type="number" value={stockQuantity} onChange={(e) => setStockQuantity(Number(e.target.value))} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="low">低庫存警示</Label>
-                  <Input id="low" type="number" value={lowStockThreshold} onChange={(e) => setLowStockThreshold(Number(e.target.value))} placeholder="0 = 不警示" />
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="flex justify-end gap-2 pt-4 border-t">
-            <Button variant="outline" onClick={onClose} disabled={submitting}>取消</Button>
-            <Button onClick={submit} disabled={submitting}>
-              {submitting && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
-              {isEdit ? '儲存' : '建立'}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      <ProductDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onSaved={() => {
+          queryClient.invalidateQueries({ queryKey: ['products'] });
+        }}
+      />
+      <ProductDialog
+        product={editing ?? undefined}
+        open={editing !== null}
+        onOpenChange={(v) => { if (!v) setEditing(null); }}
+        onSaved={() => {
+          setEditing(null);
+          queryClient.invalidateQueries({ queryKey: ['products'] });
+        }}
+      />
     </div>
   );
 }

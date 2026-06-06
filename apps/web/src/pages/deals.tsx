@@ -1,7 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
-import { KanbanSquare, Plus, GripVertical, X } from 'lucide-react';
+import { KanbanSquare, Plus, GripVertical, X, Edit2 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -14,6 +13,7 @@ import { formatCurrency } from '@/lib/utils';
 export function DealsPage() {
   const qc = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
+  const [editing, setEditing] = useState<Deal | null>(null);
   const { data: kanban, isLoading } = useQuery({
     queryKey: ['deals-kanban'],
     queryFn: () => dealsApi.kanban(),
@@ -121,19 +121,31 @@ export function DealsPage() {
                 deals={bucket.deals}
                 onDrop={(dealId) => moveStage.mutate({ dealId, stageId: bucket.stage.id })}
                 isMoving={moveStage.isPending}
+                onEdit={(deal) => setEditing(deal)}
               />
             ))}
           </div>
         </div>
       )}
 
-      <CreateDealDialog
+      <DealDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
         companies={companies}
         stages={kanban?.buckets.map((b) => b.stage) ?? []}
         defaultCompanyId={companies[0]?.id}
-        onCreated={() => qc.invalidateQueries({ queryKey: ['deals-kanban'] })}
+        onSaved={() => qc.invalidateQueries({ queryKey: ['deals-kanban'] })}
+      />
+      <DealDialog
+        deal={editing ?? undefined}
+        open={editing !== null}
+        onOpenChange={(v) => { if (!v) setEditing(null); }}
+        companies={companies}
+        stages={kanban?.buckets.map((b) => b.stage) ?? []}
+        onSaved={() => {
+          setEditing(null);
+          qc.invalidateQueries({ queryKey: ['deals-kanban'] });
+        }}
       />
     </div>
   );
@@ -155,11 +167,13 @@ function KanbanColumn({
   deals,
   onDrop,
   isMoving,
+  onEdit,
 }: {
   stage: { id: string; name: string; probability: number; color: string };
   deals: Deal[];
   onDrop: (dealId: string) => void;
   isMoving: boolean;
+  onEdit: (deal: Deal) => void;
 }) {
   const [dragOver, setDragOver] = useState(false);
   // Prisma returns Decimal as a string; coerce each value so we don't
@@ -206,7 +220,7 @@ function KanbanColumn({
           </p>
         ) : (
           deals.map((d) => (
-            <DealCard key={d.id} deal={d} disabled={isMoving} />
+            <DealCard key={d.id} deal={d} disabled={isMoving} onEdit={onEdit} />
           ))
         )}
       </div>
@@ -217,14 +231,16 @@ function KanbanColumn({
   );
 }
 
-function DealCard({ deal, disabled }: { deal: Deal; disabled: boolean }) {
+function DealCard({ deal, disabled, onEdit }: { deal: Deal; disabled: boolean; onEdit: (d: Deal) => void }) {
+  // Track drag state so a click on the card body doesn't open the edit
+  // dialog while the user is mid-drag.
+  const [dragging, setDragging] = useState(false);
   return (
     <div
       draggable={!disabled}
-      onDragStart={(e) => {
-        e.dataTransfer.setData('text/deal-id', deal.id);
-        e.dataTransfer.effectAllowed = 'move';
-      }}
+      onDragStart={() => setDragging(true)}
+      onDragEnd={() => setDragging(false)}
+      onClick={() => { if (!dragging) onEdit(deal); }}
       className={`p-2.5 rounded border bg-card hover:border-primary hover:shadow-sm transition-all cursor-grab active:cursor-grabbing group ${
         disabled ? 'opacity-60' : ''
       }`}
@@ -247,33 +263,78 @@ function DealCard({ deal, disabled }: { deal: Deal; disabled: boolean }) {
             </div>
           )}
         </div>
+        <button
+          type="button"
+          aria-label="編輯 deal"
+          onClick={(e) => { e.stopPropagation(); onEdit(deal); }}
+          className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground transition-opacity p-0.5 -m-0.5"
+        >
+          <Edit2 className="h-3.5 w-3.5" />
+        </button>
       </div>
     </div>
   );
 }
 
-function CreateDealDialog({
+/**
+ * DealDialog — unified create + edit dialog for Deals.
+ *
+ * - When `deal` is provided → edit mode (calls `dealsApi.update`).
+ * - When `deal` is omitted → create mode (calls `dealsApi.create`).
+ *
+ * Stage handling in edit mode:
+ *   The backend's PATCH /deals/:id does a raw `prisma.deal.update` with
+ *   NO status/closedAt side-effect logic. To match the kanban drag-drop
+ *   behaviour (auto-set WON/LOST/OPEN + stamp closedAt) we make TWO calls
+ *   when the stage changed:
+ *     1. PATCH /deals/:id with the rest of the editable fields.
+ *     2. PATCH /deals/:id/stage with the new stageId.
+ *   The stage endpoint (apps/api/src/routes/deal.ts:69) is the only place
+ *   that handles the WON/LOST/closedAt semantics.
+ */
+function DealDialog({
   open,
   onOpenChange,
   companies,
   stages,
   defaultCompanyId,
-  onCreated,
+  deal,
+  onSaved,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   companies: Company[];
   stages: Array<{ id: string; name: string; position: number; probability: number; color: string }>;
   defaultCompanyId?: string;
-  onCreated: () => void;
+  deal?: Deal;
+  onSaved: () => void;
 }) {
-  const [title, setTitle] = useState('');
-  const [companyId, setCompanyId] = useState(defaultCompanyId ?? '');
-  const [value, setValue] = useState('');
-  const [stageId, setStageId] = useState(stages[0]?.id ?? '');
-  const [expectedCloseDate, setExpectedCloseDate] = useState('');
+  const isEdit = !!deal;
+  const [title, setTitle] = useState(deal?.title ?? '');
+  const [companyId, setCompanyId] = useState(deal?.company?.id ?? defaultCompanyId ?? '');
+  const [value, setValue] = useState(deal?.value != null ? String(deal.value) : '');
+  const [stageId, setStageId] = useState(deal?.stage?.id ?? stages[0]?.id ?? '');
+  const [expectedCloseDate, setExpectedCloseDate] = useState(
+    deal?.expectedCloseDate ? deal.expectedCloseDate.slice(0, 10) : ''
+  );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Re-seed when the dialog opens — handles edit-mode re-open with a
+  // different deal, and keeps `companyId`/`stageId` valid when stages
+  // arrive after the dialog first mounts (async kanban query).
+  // We reseed on `open` only, not on `stages` — see useEffect below.
+  useEffect(() => {
+    if (open) {
+      setTitle(deal?.title ?? '');
+      setCompanyId(deal?.company?.id ?? defaultCompanyId ?? '');
+      setValue(deal?.value != null ? String(deal.value) : '');
+      setStageId(deal?.stage?.id ?? stages[0]?.id ?? '');
+      setExpectedCloseDate(deal?.expectedCloseDate ? deal.expectedCloseDate.slice(0, 10) : '');
+      setError(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, deal?.id]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -281,18 +342,40 @@ function CreateDealDialog({
       setError('Company 與 Stage 必填');
       return;
     }
+    if (!title.trim()) {
+      setError('Deal 名稱必填');
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
-      await dealsApi.create({
-        title,
-        companyId,
-        value: Number(value) || 0,
-        stageId,
-        expectedCloseDate: expectedCloseDate || undefined,
-      });
-      setTitle(''); setValue(''); setExpectedCloseDate('');
-      onCreated();
+      if (isEdit && deal) {
+        const stageChanged = stageId !== deal.stage?.id;
+        // 1) Update the rest of the editable fields (skip stageId to
+        //    avoid bypassing the auto-status logic on the backend).
+        await dealsApi.update(deal.id, {
+          title: title.trim(),
+          value: Number(value) || 0,
+          expectedCloseDate: expectedCloseDate || undefined,
+        });
+        // 2) If the stage changed, route through the dedicated endpoint
+        //    so the backend can set status + closedAt correctly.
+        if (stageChanged) {
+          await dealsApi.moveStage(deal.id, stageId);
+        }
+      } else {
+        await dealsApi.create({
+          title: title.trim(),
+          companyId,
+          value: Number(value) || 0,
+          stageId,
+          expectedCloseDate: expectedCloseDate || undefined,
+        });
+      }
+      if (!isEdit) {
+        setTitle(''); setValue(''); setExpectedCloseDate('');
+      }
+      onSaved();
       onOpenChange(false);
     } catch (err) {
       setError((err as Error).message);
@@ -305,7 +388,7 @@ function CreateDealDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>新增 Deal</DialogTitle>
+          <DialogTitle>{isEdit ? '編輯 Deal' : '新增 Deal'}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
@@ -321,11 +404,12 @@ function CreateDealDialog({
                 onChange={(e) => setCompanyId(e.target.value)}
                 className="w-full h-9 rounded border bg-background px-2 text-sm"
                 required
+                disabled={isEdit}
               >
                 <option value="">— 揀公司 —</option>
                 {companies.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.name} ({c.region ?? 'HK'})
+                    {c.name} ({c.region?.code ?? 'HK'})
                   </option>
                 ))}
               </select>
@@ -363,7 +447,9 @@ function CreateDealDialog({
           )}
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>取消</Button>
-            <Button type="submit" disabled={submitting || !title}>{submitting ? '建立中...' : '建立'}</Button>
+            <Button type="submit" disabled={submitting || !title.trim()}>
+              {submitting ? (isEdit ? '儲存中...' : '建立中...') : (isEdit ? '儲存' : '建立')}
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

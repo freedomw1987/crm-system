@@ -18,13 +18,14 @@ import { Input, Textarea } from '@/components/ui/input';
 import { Select, Label } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import {
   productsApi, companiesApi, servicesApi, quotationsApi,
   type Company, type Product, type Service, type ServiceManDay,
   type Quotation, type QuotationItem, type Deal,
 } from '@/lib/api';
 import { formatCurrency } from '@/lib/utils';
+import { QuickCreateServiceDialog } from './quick-create-service-dialog';
+import { ProductDialog } from './product-dialog';
 
 interface DraftLine {
   key: string;
@@ -379,15 +380,11 @@ export function QuotationBuilder({ existing, initialDealId, onSaved, onCancel }:
               onChange={(patch) => updateLine(idx, patch)}
               onRemove={() => removeLine(idx)}
               canRemove={lines.length > 1}
-              onCreateProduct={async (p) => {
-                const created = await productsApi.create(p);
-                setProducts((prev) => [created, ...prev]);
-                return created;
+              onCreateProduct={(p) => {
+                setProducts((prev) => [p, ...prev]);
               }}
-              onCreateService={async (s) => {
-                const created = await servicesApi.create(s);
-                setServices((prev) => [created, ...prev]);
-                return created;
+              onCreateService={(s) => {
+                setServices((prev) => [s, ...prev]);
               }}
             />
           ))}
@@ -475,8 +472,8 @@ function LineItemRow({
   onChange: (patch: Partial<DraftLine>) => void;
   onRemove: () => void;
   canRemove: boolean;
-  onCreateProduct: (p: { name: string; sku: string; unitPrice: number }) => Promise<Product>;
-  onCreateService: (s: { name: string; unitPrice: number }) => Promise<Service>;
+  onCreateProduct: (p: Product) => void;
+  onCreateService: (s: Service) => void;
 }) {
   const isProduct = line.itemType === 'PRODUCT';
   return (
@@ -611,7 +608,9 @@ function ProductAutocomplete({
   products: Product[];
   value?: string;
   onChange: (id: string) => void;
-  onCreate: (p: { name: string; sku: string; unitPrice: number }) => Promise<Product>;
+  /** Store the created product in the parent catalogue list. The dialog
+   *  itself does the API call; this callback is just the state update. */
+  onCreate: (p: Product) => void;
   label: string;
   className?: string;
 }) {
@@ -653,7 +652,7 @@ function ProductAutocomplete({
           placeholder="搜尋 SKU 或名稱..."
         />
         {open && (
-          <div className="absolute z-50 top-full mt-1 left-0 right-0 max-h-60 overflow-y-auto bg-popover border rounded shadow-lg">
+          <div className="absolute z-50 top-full mt-1 left-0 right-0 max-h-60 overflow-y-auto bg-white border border-border rounded shadow-lg">
             {filtered.length === 0 ? (
               <div className="p-2 text-sm text-muted-foreground text-center">搵唔到</div>
             ) : (
@@ -684,12 +683,18 @@ function ProductAutocomplete({
           </div>
         )}
       </div>
-      <QuickCreateProductDialog
+      <ProductDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
         defaultName={query}
-        onCreate={onCreate}
-        onCreated={(p) => { onChange(p.id); setCreateOpen(false); }}
+        onSaved={(created) => {
+          if (created) {
+            onCreate(created);
+            onChange(created.id);
+            setQuery(`${created.sku} — ${created.name}`);
+          }
+          setCreateOpen(false);
+        }}
       />
     </div>
   );
@@ -705,7 +710,9 @@ function ServiceAutocomplete({
   services: Service[];
   value?: string;
   onChange: (id: string) => void;
-  onCreate: (s: { name: string; unitPrice: number }) => Promise<Service>;
+  /** Store the created service in the parent catalogue list. The dialog
+   *  itself does the API call; this callback is just the state update. */
+  onCreate: (s: Service) => void;
   label: string;
   className?: string;
 }) {
@@ -746,7 +753,7 @@ function ServiceAutocomplete({
           placeholder="搜尋服務名..."
         />
         {open && (
-          <div className="absolute z-50 top-full mt-1 left-0 right-0 max-h-60 overflow-y-auto bg-popover border rounded shadow-lg">
+          <div className="absolute z-50 top-full mt-1 left-0 right-0 max-h-60 overflow-y-auto bg-white border border-border rounded shadow-lg">
             {filtered.length === 0 ? (
               <div className="p-2 text-sm text-muted-foreground text-center">搵唔到</div>
             ) : (
@@ -783,135 +790,12 @@ function ServiceAutocomplete({
         open={createOpen}
         onOpenChange={setCreateOpen}
         defaultName={query}
-        onCreate={onCreate}
-        onCreated={(s) => { onChange(s.id); setCreateOpen(false); }}
+        onCreated={(s) => {
+          onCreate(s);
+          onChange(s.id);
+          setCreateOpen(false);
+        }}
       />
     </div>
-  );
-}
-
-// ============================================================================
-// Quick create dialogs
-// ============================================================================
-
-function QuickCreateProductDialog({
-  open, onOpenChange, defaultName, onCreate, onCreated,
-}: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  defaultName: string;
-  onCreate: (p: { name: string; sku: string; unitPrice: number }) => Promise<Product>;
-  onCreated: (p: Product) => void;
-}) {
-  const [name, setName] = useState(defaultName);
-  const [sku, setSku] = useState('');
-  const [unitPrice, setUnitPrice] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => { if (open) { setName(defaultName); setSku(''); setUnitPrice(''); setError(null); } }, [open, defaultName]);
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!sku.trim()) { setError('SKU 必填'); return; }
-    setSubmitting(true);
-    try {
-      const p = await onCreate({ name, sku: sku.toUpperCase(), unitPrice: Number(unitPrice) || 0 });
-      onCreated(p);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>快速新增 Product</DialogTitle>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <div>
-            <Label htmlFor="np-name">名稱 *</Label>
-            <Input id="np-name" value={name} onChange={(e) => setName(e.target.value)} required />
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <Label htmlFor="np-sku">SKU *</Label>
-              <Input id="np-sku" value={sku} onChange={(e) => setSku(e.target.value)} placeholder="例: WDG-001" required />
-            </div>
-            <div>
-              <Label htmlFor="np-price">單價 (HKD) *</Label>
-              <Input id="np-price" type="number" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} required />
-            </div>
-          </div>
-          {error && <p className="text-sm text-destructive">{error}</p>}
-          <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>取消</Button>
-            <Button type="submit" disabled={submitting}>{submitting ? '建立中...' : '建立'}</Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function QuickCreateServiceDialog({
-  open, onOpenChange, defaultName, onCreate, onCreated,
-}: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  defaultName: string;
-  onCreate: (s: { name: string; unitPrice: number }) => Promise<Service>;
-  onCreated: (s: Service) => void;
-}) {
-  const [name, setName] = useState(defaultName);
-  const [unitPrice, setUnitPrice] = useState('');
-  const [description, setDescription] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => { if (open) { setName(defaultName); setUnitPrice(''); setDescription(''); setError(null); } }, [open, defaultName]);
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setSubmitting(true);
-    try {
-      const s = await onCreate({ name, unitPrice: Number(unitPrice) || 0 });
-      onCreated(s);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>快速新增 Service</DialogTitle>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <div>
-            <Label htmlFor="ns-name">名稱 *</Label>
-            <Input id="ns-name" value={name} onChange={(e) => setName(e.target.value)} required />
-          </div>
-          <div>
-            <Label htmlFor="ns-price">總價 (HKD) *</Label>
-            <Input id="ns-price" type="number" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} required />
-            <p className="text-xs text-muted-foreground mt-1">
-              之後可以喺 Services 頁面加詳細嘅 SOW / man-day breakdown。
-            </p>
-          </div>
-          {error && <p className="text-sm text-destructive">{error}</p>}
-          <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>取消</Button>
-            <Button type="submit" disabled={submitting}>{submitting ? '建立中...' : '建立'}</Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
   );
 }

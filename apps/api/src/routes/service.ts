@@ -35,6 +35,9 @@ export const serviceRoutes = new Elysia({ prefix: '/services', tags: ['services'
       take: Number(limit),
       skip: Number(offset),
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
+      // Match the detail endpoint so the frontend can render man-day
+      // counts on the list page without an extra roundtrip.
+      include: { manDayLines: { orderBy: { sortOrder: 'asc' } } },
     });
     return { items, total: items.length };
   })

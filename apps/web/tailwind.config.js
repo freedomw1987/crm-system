@@ -33,6 +33,10 @@ export default {
           DEFAULT: 'hsl(0 0% 100%)',
           foreground: 'hsl(222.2 84% 4.9%)',
         },
+        popover: {
+          DEFAULT: 'hsl(0 0% 100%)',
+          foreground: 'hsl(222.2 84% 4.9%)',
+        },
       },
       borderRadius: {
         lg: '0.5rem',

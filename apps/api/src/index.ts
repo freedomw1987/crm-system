@@ -21,6 +21,7 @@ import { chatRoutes } from './routes/chat';
 import { userRoutes } from './routes/users';
 import { auditRoutes } from './routes/audit';
 import { roleRoutes } from './routes/roles';
+import { regionRoutes } from './routes/region';
 import { logEvent } from './middleware/audit';
 
 const PORT = Number(process.env.API_PORT ?? 3001);
@@ -69,6 +70,7 @@ const app = new Elysia()
   .use(chatRoutes)
   .use(userRoutes)
   .use(roleRoutes)
+  .use(regionRoutes)
   .use(auditRoutes)
 
   .onError(({ code, error, set }) => {

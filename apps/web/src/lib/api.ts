@@ -88,6 +88,21 @@ export const authApi = {
 };
 
 // ---------- Companies ----------
+export interface Region {
+  id: string;
+  code: string;
+  name: string;
+  flag?: string | null;
+  isActive: boolean;
+  sortOrder: number;
+  _count?: { companies: number };
+}
+
+/**
+ * Day 9: A company's region is now a FK to the Region table rather than a
+ * hard-coded enum. `region` (FK include) and `regionId` are both present
+ * on list/get responses. `customRegion` remains for the free-form case.
+ */
 export interface Company {
   id: string;
   name: string;
@@ -97,16 +112,15 @@ export interface Company {
   email?: string | null;
   phone?: string | null;
   website?: string | null;
-  /** Day 8: regional segmentation (HK/MO/CN/OTHER). */
-  region?: 'HK' | 'MO' | 'CN' | 'OTHER';
-  /** Day 8: free-form region label, populated when region === 'OTHER'. */
+  regionId?: string | null;
+  region?: Region | null;
   customRegion?: string | null;
   _count?: { contacts: number; quotations: number; deals: number };
 }
 export const companiesApi = {
-  list: (params: { query?: string; status?: string; region?: string; limit?: number } = {}) => {
+  list: (params: { search?: string; status?: string; region?: string; limit?: number } = {}) => {
     const qs = new URLSearchParams();
-    if (params.query) qs.set('query', params.query);
+    if (params.search) qs.set('search', params.search);
     if (params.status) qs.set('status', params.status);
     if (params.region) qs.set('region', params.region);
     if (params.limit) qs.set('limit', String(params.limit));
@@ -119,9 +133,9 @@ export const companiesApi = {
     quotations: Array<{ id: string; number: string; status: string; total: number; createdAt: string }>;
     deals: Array<{ id: string; title: string; value: number; status: string; stage: { name: string; color: string } }>;
   }>(`/companies/${id}`),
-  create: (data: Partial<Company> & { region?: 'HK' | 'MO' | 'CN' | 'OTHER'; customRegion?: string }) =>
+  create: (data: Partial<Company> & { regionId?: string; region?: string; customRegion?: string }) =>
     request<Company>('/companies', { method: 'POST', body: JSON.stringify(data) }),
-  update: (id: string, data: Partial<Company> & { region?: 'HK' | 'MO' | 'CN' | 'OTHER'; customRegion?: string }) =>
+  update: (id: string, data: Partial<Company> & { regionId?: string | null; region?: string | null; customRegion?: string }) =>
     request<Company>(`/companies/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   remove: (id: string) => request<{ success: boolean }>(`/companies/${id}`, { method: 'DELETE' }),
 };
@@ -361,6 +375,21 @@ export const dealsApi = {
   remove: (id: string) => request<{ success: boolean }>(`/deals/${id}`, { method: 'DELETE' }),
 };
 
+// ---------- Regions (Day 9) ----------
+// CRUD for the Region catalogue. The list endpoint is public-to-all-authed
+// users (no `requirePermission` check on the backend) so the company
+// form/filter can always render the current set. Mutations require
+// `company:write` per the backend.
+export const regionsApi = {
+  list: () => request<Region[]>('/regions'),
+  get: (id: string) => request<Region>(`/regions/${id}`),
+  create: (data: { code: string; name: string; flag?: string; sortOrder?: number }) =>
+    request<Region>('/regions', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: string, data: Partial<{ name: string; flag: string; isActive: boolean; sortOrder: number }>) =>
+    request<Region>(`/regions/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  remove: (id: string) => request<{ success: boolean }>(`/regions/${id}`, { method: 'DELETE' }),
+};
+
 // ---------- Users (admin) ----------
 export interface UserSummary {
   id: string;
@@ -485,42 +514,74 @@ export interface Service {
   name: string;
   /** Service SOW (Statement of Work) — long-form description. */
   description: string | null;
+  /** Free-text category, e.g. "Consulting". */
+  category?: string | null;
+  /** Lifecycle status — controls whether the service appears in active pickers. */
+  status?: 'ACTIVE' | 'ARCHIVED' | 'DRAFT';
   /** Total quoted price for this service (sum of man-day subtotals). */
   unitPrice: number;
   currency: string;
-  isActive: boolean;
   sortOrder: number;
   manDays: ServiceManDay[];
   createdAt: string;
   updatedAt?: string;
 }
+// Backend's Prisma client returns the man-day relation under the
+// camelCased key `manDayLines` (preserved from the Prisma model name).
+// The frontend's `Service` type uses `manDays` to match the URL slug
+// and the wire-format key for the POST/PATCH validators' payload.
+// All API entry points that read a Service from the response normalise
+// `manDayLines` → `manDays` so the rest of the frontend can rely on a
+// single field name. (`create` and `update` are normalised defensively
+// too — the PATCH endpoint currently doesn't `include: manDayLines`
+// on its return, so the field is absent in those responses, but we
+// fall back to `manDays ?? []` for safety against future regressions.)
+function normaliseService<T extends { manDays?: unknown; manDayLines?: unknown }>(s: T): T {
+  const manDaysFromWire = (s as { manDayLines?: ServiceManDay[] }).manDayLines;
+  if (manDaysFromWire !== undefined) {
+    return { ...s, manDays: manDaysFromWire as ServiceManDay[] };
+  }
+  return s;
+}
 export const servicesApi = {
-  list: (params: { isActive?: string; limit?: number } = {}) => {
+  list: (params: { status?: string; limit?: number } = {}) => {
     const qs = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') qs.set(k, String(v)); });
-    return request<{ items: Service[]; total: number } | Service[]>(`/services${qs.toString() ? `?${qs}` : ''}`).then((r) =>
-      Array.isArray(r) ? r : r.items
-    );
+    return request<{ items: Service[]; total: number } | Service[]>(`/services${qs.toString() ? `?${qs}` : ''}`).then((r) => {
+      const items = Array.isArray(r) ? r : r.items;
+      return items.map(normaliseService);
+    });
   },
-  get: (id: string) => request<Service>(`/services/${id}`),
+  get: (id: string) =>
+    request<Service>(`/services/${id}`).then(normaliseService),
   create: (data: {
     name: string;
     description?: string;
+    category?: string;
     unitPrice?: number;
     currency?: string;
-    isActive?: boolean;
+    status?: 'ACTIVE' | 'ARCHIVED' | 'DRAFT';
     sortOrder?: number;
-    manDays?: Array<{ role: string; dayRate: number; days: number }>;
-  }) => request<Service>('/services', { method: 'POST', body: JSON.stringify(data) }),
+    /** Wire-format key for the backend validator — must be `manDayLines`
+     *  (Prisma relation name) on POST /services. */
+    manDayLines?: Array<{ role: string; dayRate: number; days: number }>;
+  }) => request<Service>('/services', { method: 'POST', body: JSON.stringify(data) }).then(normaliseService),
   update: (id: string, data: Partial<{
     name: string;
     description: string;
+    category?: string;
     unitPrice: number;
     currency: string;
-    isActive: boolean;
+    status?: 'ACTIVE' | 'ARCHIVED' | 'DRAFT';
     sortOrder: number;
-    manDays: Array<{ role: string; dayRate: number; days: number }>;
-  }>) => request<Service>(`/services/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+    /** Wire-format key for the backend validator — must be `manDayLines`
+     *  (Prisma relation name) to match POST /services. PATCH currently has
+     *  no body validator, so a stale `manDays` key would silently no-op;
+     *  we keep the wire key correct so the relation is actually replaced
+     *  when the backend eventually adds a validator (or if it already
+     *  strips unknown keys upstream). */
+    manDayLines?: Array<{ role: string; dayRate: number; days: number }>;
+  }>) => request<Service>(`/services/${id}`, { method: 'PATCH', body: JSON.stringify(data) }).then(normaliseService),
   remove: (id: string) => request<{ success: boolean }>(`/services/${id}`, { method: 'DELETE' }),
 };
 

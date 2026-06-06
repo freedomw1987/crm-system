@@ -24,7 +24,7 @@ export function ServiceDetailPage() {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [currency, setCurrency] = useState('HKD');
-  const [isActive, setIsActive] = useState(true);
+  const [status, setStatus] = useState<'ACTIVE' | 'ARCHIVED' | 'DRAFT'>('ACTIVE');
   const [manDays, setManDays] = useState<ServiceManDay[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -34,8 +34,12 @@ export function ServiceDetailPage() {
       setName(service.name);
       setDescription(service.description ?? '');
       setCurrency(service.currency);
-      setIsActive(service.isActive);
-      setManDays(service.manDays.map((m) => ({ role: m.role, dayRate: m.dayRate, days: m.days })));
+      setStatus(service.status ?? 'ACTIVE');
+      // Belt-and-suspenders: the api layer normalises manDayLines → manDays
+      // on response, so service.manDays is normally always an array. The
+      // fallback keeps the component resilient if the response shape ever
+      // regresses (e.g. an endpoint stops including the relation).
+      setManDays((service.manDays ?? []).map((m) => ({ role: m.role, dayRate: m.dayRate, days: m.days })));
     }
   }, [service]);
 
@@ -47,9 +51,9 @@ export function ServiceDetailPage() {
         name: name.trim(),
         description: description.trim(),
         currency,
-        isActive,
+        status,
         unitPrice: total,
-        manDays,
+        manDayLines: manDays,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['service', id] });
@@ -90,8 +94,8 @@ export function ServiceDetailPage() {
           </Link>
         </Button>
         <h1 className="text-2xl md:text-3xl font-bold flex-1 truncate">{service.name}</h1>
-        <Badge variant={isActive ? 'success' : 'secondary'}>
-          {isActive ? 'Active' : 'Inactive'}
+        <Badge variant={status === 'ACTIVE' ? 'success' : status === 'ARCHIVED' ? 'secondary' : 'outline'}>
+          {status === 'ACTIVE' ? 'Active' : status === 'ARCHIVED' ? 'Archived' : 'Draft'}
         </Badge>
       </div>
 
@@ -126,10 +130,15 @@ export function ServiceDetailPage() {
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="active">狀態</Label>
-              <Select id="active" value={isActive ? '1' : '0'} onChange={(e) => setIsActive(e.target.value === '1')}>
-                <option value="1">Active</option>
-                <option value="0">Inactive</option>
+              <Label htmlFor="status">狀態</Label>
+              <Select
+                id="status"
+                value={status}
+                onChange={(e) => setStatus(e.target.value as 'ACTIVE' | 'ARCHIVED' | 'DRAFT')}
+              >
+                <option value="ACTIVE">Active</option>
+                <option value="ARCHIVED">Archived</option>
+                <option value="DRAFT">Draft</option>
               </Select>
             </div>
           </div>
