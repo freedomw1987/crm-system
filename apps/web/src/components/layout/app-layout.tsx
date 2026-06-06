@@ -2,7 +2,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   Building2, FileText, KanbanSquare, LogOut,
   LayoutDashboard, Menu, X, Users, History, Briefcase, Shield, Package,
-  Sparkles,
+  Sparkles, UserCog,
 } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '@/lib/auth';
@@ -26,6 +26,11 @@ const navItems = [
 const adminNavItems = [
   { to: '/users', label: 'Users', icon: Users, adminOnly: true },
   { to: '/roles', label: 'Roles', icon: Shield, adminOnly: true },
+  // Day N: Man-day Roles page (admin-managed catalogue of pricing roles).
+  // Sales reps pick from this catalogue via a dropdown in the Service
+  // form (see apps/web/src/pages/services.tsx); they don't need to
+  // manage it themselves, so we keep it under the Admin section.
+  { to: '/man-day-roles', label: '人天結構', icon: UserCog, adminOnly: true },
   { to: '/audit', label: 'Audit Log', icon: History, adminOnly: true },
 ];
 

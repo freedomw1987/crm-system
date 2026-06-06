@@ -19,6 +19,7 @@ import { ServicesPage } from '@/pages/services';
 import { ServiceDetailPage } from '@/pages/service-detail';
 import { RolesPage } from '@/pages/roles';
 import { ProductsPage } from '@/pages/products';
+import { ManDayRolesPage } from '@/pages/man-day-roles';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -66,6 +67,7 @@ export function App() {
             <Route path="/services/:id" element={<ServiceDetailPage />} />
             <Route path="/products" element={<ProductsPage />} />
             <Route path="/roles" element={<RolesPage />} />
+            <Route path="/man-day-roles" element={<ManDayRolesPage />} />
           </Route>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

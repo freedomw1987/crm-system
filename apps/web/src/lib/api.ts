@@ -107,6 +107,8 @@ export interface Company {
   id: string;
   name: string;
   legalName?: string | null;
+  /** Business registration / tax ID (Day N: surfaced in the edit dialog). */
+  taxId?: string | null;
   industry?: string | null;
   status: 'active' | 'inactive' | 'blacklisted';
   email?: string | null;
@@ -133,6 +135,8 @@ export const companiesApi = {
     quotations: Array<{ id: string; number: string; status: string; total: number; createdAt: string }>;
     deals: Array<{ id: string; title: string; value: number; status: string; stage: { name: string; color: string } }>;
   }>(`/companies/${id}`),
+  // Day N: loose input type so the edit dialog can send taxId + website
+  // without TS yelling. The backend only accepts fields it knows about.
   create: (data: Partial<Company> & { regionId?: string; region?: string; customRegion?: string }) =>
     request<Company>('/companies', { method: 'POST', body: JSON.stringify(data) }),
   update: (id: string, data: Partial<Company> & { regionId?: string | null; region?: string | null; customRegion?: string }) =>
@@ -236,10 +240,17 @@ export interface QuotationItem {
   unitPrice: number;
   discount: number;
   lineTotal: number;
+  /** Day N: cost snapshot at line creation. SERVICE lines sum man-day
+   *  costRate × days × quantity; PRODUCT lines stay at 0. */
+  costSnapshot: number;
+  /** Day N: sell total minus cost snapshot. Positive for healthy margin. */
+  lineGp: number;
+  /** Day N: lineGp / lineTotal × 100. PRODUCT is always 100. */
+  lineGpPercent: number;
   /** For SERVICE items: snapshot of the service's man-day structure at the
    *  time the quotation was created. Used to display the SOW breakdown in the
    *  quotation detail view even if the service template is later changed. */
-  manDaySnapshot?: Array<{ role: string; dayRate: number; days: number; subtotal: number }> | null;
+  manDaySnapshot?: Array<{ role: string; dayRate: number; days: number; subtotal: number; costRate?: number; manDayRoleId?: string }> | null;
 }
 export type QuotationStatus = 'DRAFT' | 'SENT' | 'VIEWED' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED' | 'INVOICED';
 export interface Quotation {
@@ -623,4 +634,101 @@ export const rolesApi = {
   update: (id: string, data: Partial<{ name: string; description: string; permissions: string[] }>) =>
     request<Role>(`/roles/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   remove: (id: string) => request<{ success: boolean }>(`/roles/${id}`, { method: 'DELETE' }),
+};
+
+// ---------- Man-day Roles (Day N) ----------
+// Catalogue of man-day roles. Admin-only mutations. Currency is locked to
+// CNY on the backend (do not expose a currency field anywhere in the UI).
+export interface ManDayRole {
+  id: string;
+  name: string;
+  /** Sell price per man-day (CNY). */
+  price: number;
+  /** Cost per man-day (CNY). */
+  cost: number;
+  isActive: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+export const manDayRolesApi = {
+  list: () => request<ManDayRole[]>('/man-day-roles'),
+  get: (id: string) => request<ManDayRole>(`/man-day-roles/${id}`),
+  create: (data: { name: string; price: number; cost?: number; sortOrder?: number; isActive?: boolean }) =>
+    request<ManDayRole>('/man-day-roles', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: string, data: Partial<{ name: string; price: number; cost: number; sortOrder: number; isActive: boolean }>) =>
+    request<ManDayRole>(`/man-day-roles/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  remove: (id: string) => request<{ success: boolean }>(`/man-day-roles/${id}`, { method: 'DELETE' }),
+};
+
+// ---------- Activities + Attachments (Day N) ----------
+export type ActivityType = 'NOTE' | 'CALL' | 'EMAIL' | 'MEETING';
+export interface Activity {
+  id: string;
+  companyId: string | null;
+  dealId: string | null;
+  authorId: string;
+  type: ActivityType;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+  author?: { id: string; name: string; email: string };
+  company?: { id: string; name: string } | null;
+  deal?: { id: string; title: string } | null;
+  attachments?: Array<{ id: string; fileName: string; mimeType: string; sizeBytes: number; createdAt: string }>;
+}
+export interface Attachment {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  createdAt: string;
+  uploadedBy?: { id: string; name: string };
+  /** Only present on /companies/:id/attachments list. */
+  activity?: { id: string; type: ActivityType; content: string; createdAt: string };
+}
+export const activitiesApi = {
+  list: (params: { companyId?: string; dealId?: string; type?: string; limit?: number; offset?: number } = {}) => {
+    const qs = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') qs.set(k, String(v)); });
+    return request<{ items: Activity[]; total: number }>(`/activities${qs.toString() ? `?${qs}` : ''}`);
+  },
+  recent: (limit = 10) =>
+    request<{ items: Activity[]; total: number }>(`/activities/recent?limit=${Math.min(limit, 50)}`),
+  create: (data: { companyId?: string; dealId?: string; type?: ActivityType; content: string }) =>
+    request<Activity>('/activities', { method: 'POST', body: JSON.stringify(data) }),
+  remove: (id: string) => request<{ success: boolean }>(`/activities/${id}`, { method: 'DELETE' }),
+};
+export const attachmentsApi = {
+  forCompany: (companyId: string) =>
+    request<{ items: Attachment[]; total: number }>(`/companies/${companyId}/attachments`),
+  forActivity: (activityId: string) =>
+    request<{ items: Attachment[]; total: number }>(`/activities/${activityId}/attachments`),
+  /**
+   * Upload a single file to an activity. Uses raw fetch (NOT request<T>)
+   * because the request<T> helper is hard-coded to application/json and
+   * does not support multipart/form-data bodies.
+   */
+  upload: async (activityId: string, file: File): Promise<Attachment> => {
+    const fd = new FormData();
+    fd.append('file', file);
+    const token = getToken();
+    const r = await fetch(`${API_BASE}/activities/${activityId}/attachments`, {
+      method: 'POST',
+      body: fd,
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!r.ok) {
+      let errMsg = `Upload failed (${r.status})`;
+      try {
+        const body = await r.json();
+        if (body && typeof body === 'object' && 'error' in body) errMsg = (body as { error: string }).error;
+      } catch { /* not json */ }
+      throw new ApiError(r.status, null, errMsg);
+    }
+    const body = await r.json() as { items: Attachment[]; total: number };
+    return body.items[0];
+  },
+  downloadUrl: (id: string) => `${API_BASE}/attachments/${id}/download`,
+  remove: (id: string) => request<{ success: boolean }>(`/attachments/${id}`, { method: 'DELETE' }),
 };

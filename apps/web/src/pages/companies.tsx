@@ -206,20 +206,27 @@ function CompanyCard({ company, onEdit }: { company: Company; onEdit: () => void
  * pre-selected from company.regionId (with customRegion populated if
  * the chosen region is OTHER).
  */
-function CompanyFormDialog({
+export function CompanyFormDialog({
   mode,
   company,
   open,
   onOpenChange,
   onSaved,
   regions,
+  defaultName,
 }: {
   mode: 'create' | 'edit';
   company?: Company | null;
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  onSaved: () => void;
+  /** Called with the saved company so the parent can chain actions
+   *  (e.g. company-autocomplete wants the new id). In edit mode the
+   *  argument is the updated company; in create mode it is the new one. */
+  onSaved: (c?: Company) => void;
   regions: Region[];
+  /** Pre-fill the name field on create (used by CompanyAutocomplete
+   *  when the user typed a query that didn't match any company). */
+  defaultName?: string;
 }) {
   const [name, setName] = useState('');
   const [industry, setIndustry] = useState('');
@@ -228,7 +235,9 @@ function CompanyFormDialog({
   const [legalName, setLegalName] = useState('');
   const [taxId, setTaxId] = useState('');
   const [website, setWebsite] = useState('');
-  const [status, setStatus] = useState('active');
+  // Use the literal-union type so the cast in handleSubmit is a no-op
+  // and TS narrows correctly through the <select> onChange.
+  const [status, setStatus] = useState<Company['status']>('active');
   const [regionId, setRegionId] = useState<string>('');
   const [customRegion, setCustomRegion] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -278,15 +287,20 @@ function CompanyFormDialog({
         taxId: taxId || undefined,
         website: website || undefined,
         status,
-        regionId: regionId || null,
+        // UI never offers a "clear region" affordance, so we coerce
+        // empty string to undefined rather than null. Backend also
+        // accepts null on update (used to clear) but the form
+        // signature is stricter and prefers undefined.
+        regionId: regionId || undefined,
         customRegion: isOther ? (customRegion || undefined) : undefined,
       };
+      let saved: Company | undefined;
       if (isEdit && company) {
-        await companiesApi.update(company.id, payload);
+        saved = await companiesApi.update(company.id, payload);
       } else {
-        await companiesApi.create(payload);
+        saved = await companiesApi.create(payload);
       }
-      onSaved();
+      onSaved(saved);
       onOpenChange(false);
     } catch (err) {
       setError((err as Error).message);
@@ -340,7 +354,7 @@ function CompanyFormDialog({
               <select
                 id="status"
                 value={status}
-                onChange={(e) => setStatus(e.target.value)}
+                onChange={(e) => setStatus(e.target.value as Company['status'])}
                 className="w-full h-9 px-3 rounded-md border border-input bg-background text-sm"
               >
                 <option value="active">Active</option>
