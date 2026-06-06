@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Search, Building2, Plus, X } from 'lucide-react';
+import { Search, Building2, Plus, X, Pencil } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { companiesApi, regionsApi, type Company, type Region } from '@/lib/api';
 import { Card, CardContent } from '@/components/ui/card';
@@ -15,6 +15,7 @@ export function CompaniesPage() {
   const [query, setQuery] = useState('');
   const [regionFilter, setRegionFilter] = useState<string>('');
   const [createOpen, setCreateOpen] = useState(false);
+  const [editing, setEditing] = useState<Company | null>(null);
   const { data: companies = [], isLoading, refetch } = useQuery({
     queryKey: ['companies', { search: query, regionFilter }],
     queryFn: () => companiesApi.list({
@@ -83,15 +84,28 @@ export function CompaniesPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {companies.map((c) => (
-            <CompanyCard key={c.id} company={c} />
+            <CompanyCard
+              key={c.id}
+              company={c}
+              onEdit={() => setEditing(c)}
+            />
           ))}
         </div>
       )}
 
-      <CreateCompanyDialog
+      <CompanyFormDialog
+        mode="create"
         open={createOpen}
         onOpenChange={setCreateOpen}
-        onCreated={() => refetch()}
+        onSaved={() => refetch()}
+        regions={regions}
+      />
+      <CompanyFormDialog
+        mode="edit"
+        company={editing}
+        open={editing !== null}
+        onOpenChange={(v) => { if (!v) setEditing(null); }}
+        onSaved={() => refetch()}
         regions={regions}
       />
     </div>
@@ -122,94 +136,157 @@ function FilterPill({ active, onClick, label, flag }: { active: boolean; onClick
   );
 }
 
-function CompanyCard({ company }: { company: Company }) {
+function CompanyCard({ company, onEdit }: { company: Company; onEdit: () => void }) {
   const region = company.region;
   const isOther = region?.code === 'OTHER';
   return (
-    <Link to={`/companies/${company.id}`}>
-      <Card className="hover:border-primary transition-colors h-full">
-        <CardContent className="p-5">
-          <div className="flex items-start gap-3">
-            <div className="h-10 w-10 rounded bg-primary/10 text-primary flex items-center justify-center shrink-0">
-              <Building2 className="h-5 w-5" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <h3 className="font-semibold truncate">{company.name}</h3>
-                {region && (
-                  <Badge variant="outline" className="shrink-0 text-xs">
-                    {region.flag ? `${region.flag} ` : ''}
-                    {isOther && company.customRegion ? company.customRegion : region.name}
+    <div className="relative group">
+      <Link to={`/companies/${company.id}`}>
+        <Card className="hover:border-primary transition-colors h-full">
+          <CardContent className="p-5">
+            <div className="flex items-start gap-3">
+              <div className="h-10 w-10 rounded bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                <Building2 className="h-5 w-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-semibold truncate">{company.name}</h3>
+                  {region && (
+                    <Badge variant="outline" className="shrink-0 text-xs">
+                      {region.flag ? `${region.flag} ` : ''}
+                      {isOther && company.customRegion ? company.customRegion : region.name}
+                    </Badge>
+                  )}
+                </div>
+                {company.industry && (
+                  <p className="text-sm text-muted-foreground mt-0.5">{company.industry}</p>
+                )}
+                <div className="flex items-center gap-2 mt-2 flex-wrap">
+                  <Badge variant={company.status === 'active' ? 'success' : 'secondary'}>
+                    {company.status}
                   </Badge>
-                )}
-              </div>
-              {company.industry && (
-                <p className="text-sm text-muted-foreground mt-0.5">{company.industry}</p>
-              )}
-              <div className="flex items-center gap-2 mt-2 flex-wrap">
-                <Badge variant={company.status === 'active' ? 'success' : 'secondary'}>
-                  {company.status}
-                </Badge>
-                {company._count && (
-                  <span className="text-xs text-muted-foreground">
-                    {company._count.contacts} 聯絡人 ·{' '}
-                    {company._count.quotations} 報價 ·{' '}
-                    {company._count.deals} deals
-                  </span>
-                )}
+                  {company._count && (
+                    <span className="text-xs text-muted-foreground">
+                      {company._count.contacts} 聯絡人 ·{' '}
+                      {company._count.quotations} 報價 ·{' '}
+                      {company._count.deals} deals
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        </CardContent>
-      </Card>
-    </Link>
+          </CardContent>
+        </Card>
+      </Link>
+      {/* Edit button — absolute-positioned over the card so it doesn't
+          trigger the parent <Link>. stopPropagation ensures the card
+          click doesn't navigate when the user means to edit. */}
+      <button
+        type="button"
+        aria-label="編輯公司"
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); onEdit(); }}
+        className="absolute top-2 right-2 h-7 w-7 rounded-md bg-background/80 backdrop-blur border border-input flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-background opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+      >
+        <Pencil className="h-3.5 w-3.5" />
+      </button>
+    </div>
   );
 }
 
-function CreateCompanyDialog({
+/**
+ * Shared form dialog for both creating and editing a company. Replaces
+ * the old CreateCompanyDialog so we have a single source of truth for
+ * the company form (was the root cause of "no edit in list" — the
+ * create form was a standalone component that the list page never
+ * threaded an edit prop through).
+ *
+ * Mode 'edit' requires a `company` prop (the row being edited); mode
+ * 'create' ignores it. The form is initialised from the company in
+ * edit mode and from empty strings in create mode. Region id is
+ * pre-selected from company.regionId (with customRegion populated if
+ * the chosen region is OTHER).
+ */
+function CompanyFormDialog({
+  mode,
+  company,
   open,
   onOpenChange,
-  onCreated,
+  onSaved,
   regions,
 }: {
+  mode: 'create' | 'edit';
+  company?: Company | null;
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  onCreated: () => void;
+  onSaved: () => void;
   regions: Region[];
 }) {
   const [name, setName] = useState('');
   const [industry, setIndustry] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
-  // Day 9: store the selected Region's *id* in state (we send `regionId`
-  // to the backend; backend still accepts `region` as a code for back-compat).
+  const [legalName, setLegalName] = useState('');
+  const [taxId, setTaxId] = useState('');
+  const [website, setWebsite] = useState('');
+  const [status, setStatus] = useState('active');
   const [regionId, setRegionId] = useState<string>('');
   const [customRegion, setCustomRegion] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Re-initialise the form whenever the dialog opens with a new target.
+  // In edit mode, we seed from the company row; in create mode, we
+  // start blank. We deliberately depend on the company id (not the
+  // whole object) so editing one company and then opening another
+  // doesn't show stale data while the new props are still settling.
+  useEffect(() => {
+    if (!open) return;
+    if (mode === 'edit' && company) {
+      setName(company.name ?? '');
+      setIndustry(company.industry ?? '');
+      setEmail(company.email ?? '');
+      setPhone(company.phone ?? '');
+      setLegalName(company.legalName ?? '');
+      setTaxId(company.taxId ?? '');
+      setWebsite(company.website ?? '');
+      setStatus(company.status ?? 'active');
+      setRegionId(company.regionId ?? '');
+      setCustomRegion(company.customRegion ?? '');
+    } else {
+      setName(''); setIndustry(''); setEmail(''); setPhone('');
+      setLegalName(''); setTaxId(''); setWebsite(''); setStatus('active');
+      setRegionId(''); setCustomRegion('');
+    }
+    setError(null);
+  }, [open, mode, company?.id]);
+
   const selectedRegion = regions.find((r) => r.id === regionId);
   const isOther = selectedRegion?.code === 'OTHER';
+  const isEdit = mode === 'edit';
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
     setError(null);
     try {
-      await companiesApi.create({
+      const payload = {
         name,
         industry: industry || undefined,
         email: email || undefined,
         phone: phone || undefined,
-        // Backend accepts either `regionId` (cuid, preferred) or `region`
-        // (Region.code). We pass regionId so future region renames don't
-        // break the linkage.
-        regionId: regionId || undefined,
+        legalName: legalName || undefined,
+        taxId: taxId || undefined,
+        website: website || undefined,
+        status,
+        regionId: regionId || null,
         customRegion: isOther ? (customRegion || undefined) : undefined,
-      });
-      setName(''); setIndustry(''); setEmail(''); setPhone('');
-      setRegionId(''); setCustomRegion('');
-      onCreated();
+      };
+      if (isEdit && company) {
+        await companiesApi.update(company.id, payload);
+      } else {
+        await companiesApi.create(payload);
+      }
+      onSaved();
       onOpenChange(false);
     } catch (err) {
       setError((err as Error).message);
@@ -222,12 +299,22 @@ function CreateCompanyDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>新增公司</DialogTitle>
+          <DialogTitle>{isEdit ? '編輯公司' : '新增公司'}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <Label htmlFor="name">公司名稱 *</Label>
             <Input id="name" value={name} onChange={(e) => setName(e.target.value)} required />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <Label htmlFor="legalName">法定名稱</Label>
+              <Input id="legalName" value={legalName} onChange={(e) => setLegalName(e.target.value)} />
+            </div>
+            <div>
+              <Label htmlFor="taxId">商業登記 / Tax ID</Label>
+              <Input id="taxId" value={taxId} onChange={(e) => setTaxId(e.target.value)} />
+            </div>
           </div>
           <div>
             <Label htmlFor="industry">行業</Label>
@@ -243,6 +330,25 @@ function CreateCompanyDialog({
               <Input id="phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
             </div>
           </div>
+          <div>
+            <Label htmlFor="website">網站</Label>
+            <Input id="website" value={website} onChange={(e) => setWebsite(e.target.value)} />
+          </div>
+          {isEdit && (
+            <div>
+              <Label htmlFor="status">狀態</Label>
+              <select
+                id="status"
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+                className="w-full h-9 px-3 rounded-md border border-input bg-background text-sm"
+              >
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+                <option value="blacklisted">Blacklisted</option>
+              </select>
+            </div>
+          )}
           <div>
             <Label>地區 (Region) *</Label>
             <div className="grid grid-cols-2 gap-2 mt-1">
@@ -282,7 +388,7 @@ function CreateCompanyDialog({
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>取消</Button>
             <Button type="submit" disabled={submitting || !name || !regionId}>
-              {submitting ? '建立中...' : '建立'}
+              {submitting ? (isEdit ? '儲存中...' : '建立中...') : (isEdit ? '儲存' : '建立')}
             </Button>
           </DialogFooter>
         </form>
