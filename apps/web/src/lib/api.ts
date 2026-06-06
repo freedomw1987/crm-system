@@ -521,6 +521,12 @@ export interface ServiceManDay {
   dayRate: number;
   /** Number of days for this role. */
   days: number;
+  /** Day N: cost per day in HKD. The backend snapshots this on the
+   *  quotation item at create-time, but the service's own manDayLines
+   *  also carry it so the quotation builder can render a live GP%
+   *  preview without re-fetching. Missing in legacy rows (pre-Day N)
+   *  — treat as 0. */
+  costRate?: number;
   /** Computed: dayRate × days. */
   subtotal?: number;
 }

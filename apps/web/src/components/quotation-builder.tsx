@@ -36,7 +36,7 @@ interface DraftLine {
   sku?: string;
   // SERVICE
   serviceId?: string;
-  manDaySnapshot?: Array<{ role: string; dayRate: number; days: number; subtotal: number }>;
+  manDaySnapshot?: Array<{ role: string; dayRate: number; days: number; costRate?: number; subtotal: number }>;
   // common
   name: string;
   description?: string;
@@ -194,19 +194,32 @@ export function QuotationBuilder({
   const subtotal = useMemo(() => lines.reduce((s, l) => s + lineTotal(l), 0), [lines]);
   const taxAmount = subtotal * (Number(taxRate) / 100);
   const total = subtotal + taxAmount;
-  // Total GP = sum of known lineGp values, plus lineTotal for product
-  // lines that don't have a lineGp yet (PRODUCT GP is 100% of lineTotal
-  // per the backend's gpOf() formula). Service lines in CREATE mode
-  // contribute 0 here because we don't have costRate client-side; the
-  // user will see the real number after the server's
-  // recalcQuotationAndItems runs and the response comes back.
+  // Total GP = sum of known lineGp values (from edit mode carry-over),
+  // plus live-derived lineTotal for product lines (PRODUCT GP is 100% of
+  // lineTotal per the backend's gpOf() formula). For SERVICE lines in
+  // CREATE mode we derive from the manDaySnapshot we just snapshotted
+  // when the service was picked: per-line cost = sum(costRate × days)
+  // (a "per line" cost because quantity already represents man-day
+  // units for service lines). This mirrors the backend's
+  // costPerManDayFromSnapshot() helper — see apps/api/src/routes/quotation.ts.
   const { totalGp, totalGpUnknownService } = useMemo(() => {
     let gp = 0;
     let unknownService = 0;
     for (const l of lines) {
-      if (l.lineGp != null) { gp += l.lineGp; }
-      else if (l.itemType === 'PRODUCT') { gp += lineTotal(l); }
-      else { unknownService += 1; }
+      if (l.lineGp != null) { gp += l.lineGp; continue; }
+      if (l.itemType === 'PRODUCT') { gp += lineTotal(l); continue; }
+      // SERVICE line in CREATE mode (or after a snapshot rebuild):
+      // derive from manDaySnapshot if it has costRate, else fall back
+      // to "—" (the user will see the real value after the server's
+      // recalcQuotationAndItems runs and onSaved returns the full row).
+      const snap = l.manDaySnapshot;
+      if (snap && snap.length > 0 && snap.some((m) => m.costRate != null && Number(m.costRate) > 0)) {
+        const costPerUnit = snap.reduce((s, m) => s + Number(m.costRate ?? 0) * Number(m.days), 0);
+        const lineSell = lineTotal(l);
+        gp += lineSell - costPerUnit * Number(l.quantity);
+      } else {
+        unknownService += 1;
+      }
     }
     return { totalGp: gp, totalGpUnknownService: unknownService };
   }, [lines]);
@@ -245,11 +258,15 @@ export function QuotationBuilder({
       return;
     }
     // Build the man-day snapshot at apply time so the quotation captures the
-    // SOW breakdown even if the service is later edited.
+    // SOW breakdown even if the service is later edited. Pass through
+    // `costRate` from the service's manDayLines so the builder's live
+    // GP% preview has the cost data it needs without an extra roundtrip
+    // — backend's recalcQuotationAndItems will also use this snapshot.
     const snapshot = (service.manDays ?? []).map((m: ServiceManDay) => ({
       role: m.role,
       dayRate: Number(m.dayRate),
       days: Number(m.days),
+      costRate: Number(m.costRate ?? 0),
       subtotal: Number(m.subtotal ?? Number(m.dayRate) * Number(m.days)),
     }));
     updateLine(idx, {
