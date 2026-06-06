@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CRM 系統 — 項目文檔</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- 老闆 / 收件人提示:直接 double-click 個 file 就開到,無需 server / 安裝 -->
+  <a href="#doc" class="skip-link">跳到內容</a>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <h1 class="brand">📋 CRM 系統 — 項目文檔</h1>
+      <span class="brand-sub" id="brand-sub">最新版本: Day 9 · 2026-06-06</span>
+      <div class="topbar-actions">
+        <input id="search" type="search" placeholder="搜尋文件..." aria-label="搜尋" />
+        <button id="theme-toggle" aria-label="切換主題" title="切換深色 / 淺色模式">🌙</button>
+        <button id="print-btn" aria-label="列印 / 匯出 PDF" title="列印 / 匯出 PDF">🖨</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar" id="sidebar" aria-label="文件目錄">
+      <nav id="nav"><!-- built by app.js --></nav>
+    </aside>
+
+    <main class="content" id="doc" tabindex="-1">
+      <article class="doc">
+        <div class="loading">載入中...</div>
+      </article>
+    </main>
+  </div>
+
+  <footer class="doc-footer">
+    <p>
+      💡 提示:本文件係 self-contained HTML — Double-click 直接開,無需安裝 / 上網。
+      撳 <kbd>🖨</kbd> 可列印或匯出 PDF。
+      撳 <kbd>🌙</kbd> 切換深色模式。
+    </p>
+  </footer>
+
+  <script type="text/markdown" id="doc-XXX"></script>
+  <script src="app.js"></script>
+</body>
+</html>
