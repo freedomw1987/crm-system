@@ -187,15 +187,24 @@ export function CompanyDetailPage() {
             </CardContent>
           </Card>
 
-          {/* Quotations */}
+          {/* Quotations — always render the header with a "+ 新增 Quotation"
+              entry point so Sales can quote this company from its detail
+              page even when there are no existing quotations yet. The
+              builder receives the companyId via ?companyId=<id> and
+              pre-fills the company dropdown. */}
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
               <CardTitle>Quotations ({quotations.length})</CardTitle>
+              <Button asChild size="sm" variant="outline">
+                <Link to={`/quotations?companyId=${id}`}>
+                  <Plus className="h-3.5 w-3.5 mr-1" /> 新增 Quotation
+                </Link>
+              </Button>
             </CardHeader>
             <CardContent className="p-0">
               {quotations.length === 0 ? (
                 <p className="text-sm text-muted-foreground p-6 text-center">
-                  仲未有報價單
+                  仲未有報價單 · 撳右上「新增 Quotation」開第一份
                 </p>
               ) : (
                 <ul className="divide-y">

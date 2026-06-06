@@ -49,6 +49,12 @@ interface QuotationBuilderProps {
   existing?: Quotation;
   /** Optional preset dealId (when builder is opened from a deal detail page). */
   initialDealId?: string;
+  /**
+   * Optional preset companyId (when builder is opened from a company
+   * detail page's "+ 新增 Quotation" shortcut). Mirrors the initialDealId
+   * pattern so Sales never has to re-pick the company they came from.
+   */
+  initialCompanyId?: string;
   onSaved: (q: Quotation) => void;
   onCancel: () => void;
 }
@@ -89,10 +95,13 @@ function lineTotal(line: DraftLine): number {
   return qty * price * (1 - disc / 100);
 }
 
-export function QuotationBuilder({ existing, initialDealId, onSaved, onCancel }: QuotationBuilderProps) {
+export function QuotationBuilder({ existing, initialDealId, initialCompanyId, onSaved, onCancel }: QuotationBuilderProps) {
   const isEdit = !!existing;
 
-  const [companyId, setCompanyId] = useState<string>(existing?.companyId ?? '');
+  // For create mode, prefer the explicit preset (initialCompanyId from the
+  // ?companyId= shortcut) over the existing-company field (only set in
+  // edit mode). This matches the initialDealId handling a few lines down.
+  const [companyId, setCompanyId] = useState<string>(initialCompanyId ?? existing?.companyId ?? '');
   const [title, setTitle] = useState(existing?.title ?? '');
   const [notes, setNotes] = useState(existing?.notes ?? '');
   const [taxRate, setTaxRate] = useState<number>(existing ? Number(existing.taxRate) : 0);

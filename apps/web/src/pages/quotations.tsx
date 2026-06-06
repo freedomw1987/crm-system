@@ -18,6 +18,7 @@ export function QuotationsPage() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const presetDealId = searchParams.get('dealId') ?? undefined;
+  const presetCompanyId = searchParams.get('companyId') ?? undefined;
   const { data: quotations = [], isLoading } = useQuery({
     queryKey: ['quotations'],
     queryFn: () => quotationsApi.list({ limit: 50 }),
@@ -29,21 +30,24 @@ export function QuotationsPage() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
 
-  // Auto-open the builder when navigated in with ?dealId=... so a deal-card
-  // shortcut like "開/加 報價" can land here with the deal pre-filled. We
-  // clear the query string on close so a refresh doesn't re-open the dialog.
+  // Auto-open the builder when navigated in with ?dealId=... or
+  // ?companyId=... so a deal-card shortcut (「＋ 報價」) or a
+  // company-detail shortcut (「+ 新增 Quotation」) can land here with
+  // the deal / company pre-filled. We clear the query string on close
+  // so a refresh doesn't re-open the dialog.
   useEffect(() => {
-    if (presetDealId) {
+    if (presetDealId || presetCompanyId) {
       setBuilderOpen(true);
     }
-  }, [presetDealId]);
+  }, [presetDealId, presetCompanyId]);
 
   function closeBuilder() {
     setBuilderOpen(false);
-    if (presetDealId) {
-      // Strip ?dealId= from the URL after the dialog closes.
+    if (presetDealId || presetCompanyId) {
+      // Strip both possible presets from the URL after the dialog closes.
       const next = new URLSearchParams(searchParams);
       next.delete('dealId');
+      next.delete('companyId');
       setSearchParams(next, { replace: true });
     }
   }
@@ -106,6 +110,7 @@ export function QuotationsPage() {
           </DialogHeader>
           <QuotationBuilder
             initialDealId={presetDealId}
+            initialCompanyId={presetCompanyId}
             onSaved={handleBuilderSaved}
             onCancel={closeBuilder}
           />
