@@ -30,6 +30,15 @@ let indexTpl = fs.readFileSync(path.join(here, 'index.html'), 'utf8');
 let appTpl   = fs.readFileSync(path.join(here, 'app.js'), 'utf8');
 let cssTpl   = fs.readFileSync(path.join(here, 'styles.css'), 'utf8');
 
+// CRITICAL: app.js gets inlined inside <script>...</script>. Any literal
+// `</script>` string in app.js (e.g. inside a regex, template literal, or
+// comment) would terminate the script tag prematurely and break the page.
+// We escape every occurrence by inserting a backslash. JS engines treat
+// `<\/script>` inside a string as `<` + `/script>` (a 7-char string that
+// happens to contain "</script>"), so this is safe.
+appTpl = appTpl.replace(/<\/script>/gi, '<\\/script>');
+cssTpl = cssTpl.replace(/<\/script>/gi, '<\\/script>');  // belt-and-suspenders
+
 const embedded = docFiles.map(({ id, file, aliasOf, title }) => {
   if (!fs.existsSync(file)) {
     console.error(`⚠️  missing: ${file}`);
@@ -45,9 +54,11 @@ const embedded = docFiles.map(({ id, file, aliasOf, title }) => {
     content = raw.replace(/^# [^\n]*\n+/, '');
   }
   const displayFile = aliasOf || path.relative(here, file);
-  const safeContent = content
-    .replace(/<\/script>/gi, '<\\/script>')  // escape closing script tags inside content
-    ;
+  // Same `</script>` escape — markdown content is inlined inside
+  // <script type="text/markdown" id="doc-XXX">...</script>. The browser
+  // does NOT treat text/markdown as executable, but a literal `</script>`
+  // would still terminate the parent script element early.
+  const safeContent = content.replace(/<\/script>/gi, '<\\/script>');
   return `  <script type="text/markdown" id="doc-${id}" data-title="${title}" data-file="${displayFile}">
 ${safeContent}
   </script>`;
@@ -62,6 +73,27 @@ const inlined = indexTpl
 
 const outPath = path.join(here, 'index.html.bundled.html');
 fs.writeFileSync(outPath, inlined);
+
+// Self-test: write the inlined JS to a temp file and run `node --check` on
+// it. This catches `</script>` escape mistakes and other JS syntax errors
+// that would only surface when the page is opened in a browser.
+const inlinedScriptMatch = inlined.match(/<script>\s*\n([\s\S]*?)\n\s*<\/script>/);
+if (inlinedScriptMatch) {
+  const tmpScript = '/tmp/inlined-app-test.js';
+  fs.writeFileSync(tmpScript, inlinedScriptMatch[1]);
+  const { execFileSync } = require('child_process');
+  try {
+    execFileSync('node', ['--check', tmpScript], { stdio: 'pipe' });
+    console.log('  ✓ inlined JS passed node --check');
+  } catch (e) {
+    console.error('  ✗ inlined JS failed syntax check:');
+    console.error(e.stderr?.toString() || e.message);
+    process.exit(1);
+  } finally {
+    fs.unlinkSync(tmpScript);
+  }
+}
+
 console.log(`✓ Built ${outPath}`);
 console.log(`  Size: ${(fs.statSync(outPath).size / 1024).toFixed(1)} KB`);
 console.log(`  Open with: open ${outPath}    (macOS)`);
