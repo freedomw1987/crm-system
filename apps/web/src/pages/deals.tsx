@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { KanbanSquare, Plus, GripVertical, X, Edit2 } from 'lucide-react';
+import { KanbanSquare, Plus, GripVertical, X, Edit2, FileText } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -12,6 +13,9 @@ import { formatCurrency } from '@/lib/utils';
 
 export function DealsPage() {
   const qc = useQueryClient();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const presetCompanyId = searchParams.get('companyId') ?? undefined;
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<Deal | null>(null);
   const { data: kanban, isLoading } = useQuery({
@@ -22,6 +26,23 @@ export function DealsPage() {
     queryKey: ['companies-all'],
     queryFn: () => companiesApi.list({ limit: 200 }),
   });
+
+  // Auto-open the create dialog when navigated in with ?companyId=... so a
+  // "新增 Deal" button on a company-detail page can land here with the
+  // company pre-filled. Strip the param on close so a refresh doesn't
+  // re-open the dialog.
+  useEffect(() => {
+    if (presetCompanyId) setCreateOpen(true);
+  }, [presetCompanyId]);
+
+  function closeCreate() {
+    setCreateOpen(false);
+    if (presetCompanyId) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('companyId');
+      setSearchParams(next, { replace: true });
+    }
+  }
 
   // Move-deal mutation with optimistic update
   const moveStage = useMutation({
@@ -130,10 +151,10 @@ export function DealsPage() {
 
       <DealDialog
         open={createOpen}
-        onOpenChange={setCreateOpen}
+        onOpenChange={(v) => (v ? setCreateOpen(true) : closeCreate())}
         companies={companies}
         stages={kanban?.buckets.map((b) => b.stage) ?? []}
-        defaultCompanyId={companies[0]?.id}
+        defaultCompanyId={presetCompanyId ?? companies[0]?.id}
         onSaved={() => qc.invalidateQueries({ queryKey: ['deals-kanban'] })}
       />
       <DealDialog
@@ -235,6 +256,8 @@ function DealCard({ deal, disabled, onEdit }: { deal: Deal; disabled: boolean; o
   // Track drag state so a click on the card body doesn't open the edit
   // dialog while the user is mid-drag.
   const [dragging, setDragging] = useState(false);
+  const navigate = useNavigate();
+  const quoteCount = deal._count?.quotations ?? 0;
   return (
     <div
       draggable={!disabled}
@@ -257,11 +280,25 @@ function DealCard({ deal, disabled, onEdit }: { deal: Deal; disabled: boolean; o
               {formatCurrency(deal.value, deal.currency)}
             </span>
           </div>
-          {deal._count && deal._count.quotations > 0 && (
-            <div className="mt-1.5 text-[10px] text-muted-foreground">
-              📄 {deal._count.quotations} quotation(s)
-            </div>
-          )}
+          {/* Quotation entry point: navigate to /quotations?dealId=... so the
+              builder auto-opens with the deal pre-filled. Show "+ 報價" when
+              no quotes exist yet (CTA), or the count when there are some. */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              navigate(`/quotations?dealId=${deal.id}`);
+            }}
+            className={`mt-1.5 inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded hover:bg-primary/10 transition-colors ${
+              quoteCount > 0
+                ? 'text-muted-foreground hover:text-foreground'
+                : 'text-primary font-medium'
+            }`}
+            title={quoteCount > 0 ? `已有 ${quoteCount} 份報價,撳再加一份` : '為此 deal 建立報價'}
+          >
+            <FileText className="h-3 w-3" />
+            {quoteCount > 0 ? `${quoteCount} 份報價 · ＋` : '＋ 報價'}
+          </button>
         </div>
         <button
           type="button"

@@ -222,13 +222,24 @@ export function CompanyDetailPage() {
             </CardContent>
           </Card>
 
-          {/* Deals */}
-          {deals.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Deals ({deals.length})</CardTitle>
-              </CardHeader>
-              <CardContent className="p-0">
+          {/* Deals — always render (even when empty) so the "+ 新增 Deal"
+              entry point is always visible. Without this, a brand-new
+              company has no UI affordance to start a deal. */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+              <CardTitle>Deals ({deals.length})</CardTitle>
+              <Button asChild size="sm" variant="outline">
+                <Link to={`/deals?companyId=${id}`}>
+                  <Plus className="h-3.5 w-3.5 mr-1" /> 新增 Deal
+                </Link>
+              </Button>
+            </CardHeader>
+            <CardContent className="p-0">
+              {deals.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-8">
+                  暫未有 deal · 撳右上「新增 Deal」開第一個
+                </p>
+              ) : (
                 <ul className="divide-y">
                   {deals.map((d: { id: string; title: string; value: number; status: string; stage?: { name: string; color: string } }) => (
                     <li key={d.id}>
@@ -256,9 +267,9 @@ export function CompanyDetailPage() {
                     </li>
                   ))}
                 </ul>
-              </CardContent>
-            </Card>
-          )}
+              )}
+            </CardContent>
+          </Card>
         </div>
       </div>
 

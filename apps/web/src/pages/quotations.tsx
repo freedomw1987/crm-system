@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { FileText, Plus, Sparkles, Loader2 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
@@ -16,6 +16,8 @@ import { formatCurrency, formatDate } from '@/lib/utils';
 export function QuotationsPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const presetDealId = searchParams.get('dealId') ?? undefined;
   const { data: quotations = [], isLoading } = useQuery({
     queryKey: ['quotations'],
     queryFn: () => quotationsApi.list({ limit: 50 }),
@@ -27,8 +29,27 @@ export function QuotationsPage() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
 
-  function handleBuilderSaved(q: Quotation) {
+  // Auto-open the builder when navigated in with ?dealId=... so a deal-card
+  // shortcut like "開/加 報價" can land here with the deal pre-filled. We
+  // clear the query string on close so a refresh doesn't re-open the dialog.
+  useEffect(() => {
+    if (presetDealId) {
+      setBuilderOpen(true);
+    }
+  }, [presetDealId]);
+
+  function closeBuilder() {
     setBuilderOpen(false);
+    if (presetDealId) {
+      // Strip ?dealId= from the URL after the dialog closes.
+      const next = new URLSearchParams(searchParams);
+      next.delete('dealId');
+      setSearchParams(next, { replace: true });
+    }
+  }
+
+  function handleBuilderSaved(q: Quotation) {
+    closeBuilder();
     queryClient.invalidateQueries({ queryKey: ['quotations'] });
     navigate(`/quotations/${q.id}`);
   }
@@ -78,14 +99,15 @@ export function QuotationsPage() {
       </div>
 
       {/* New Quotation Dialog (builder) */}
-      <Dialog open={builderOpen} onOpenChange={setBuilderOpen}>
+      <Dialog open={builderOpen} onOpenChange={(o) => (o ? setBuilderOpen(true) : closeBuilder())}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>建立新報價單</DialogTitle>
           </DialogHeader>
           <QuotationBuilder
+            initialDealId={presetDealId}
             onSaved={handleBuilderSaved}
-            onCancel={() => setBuilderOpen(false)}
+            onCancel={closeBuilder}
           />
         </DialogContent>
       </Dialog>
