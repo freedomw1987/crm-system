@@ -1,21 +1,30 @@
 import { useEffect, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Search, Building2, Plus, X, Pencil } from 'lucide-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Search, Building2, Plus, X, Pencil, Briefcase, FileText } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { companiesApi, regionsApi, type Company, type Region } from '@/lib/api';
+import { companiesApi, regionsApi, dealsApi, type Company, type Region } from '@/lib/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { DealDialog } from '@/pages/deals';
+import { QuotationBuilder } from '@/components/quotation-builder';
 import { formatDate } from '@/lib/utils';
 
 export function CompaniesPage() {
+  const qc = useQueryClient();
   const [query, setQuery] = useState('');
   const [regionFilter, setRegionFilter] = useState<string>('');
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<Company | null>(null);
+  // Day N: track which company card's "+ Deal" / "+ Quotation" button
+  // was clicked so we can open the right modal with the right preset
+  // (defaultCompanyId). A single object per dialog is enough because the
+  // user can only open one of each at a time.
+  const [dealDialog, setDealDialog] = useState<{ companyId: string } | null>(null);
+  const [quotationDialog, setQuotationDialog] = useState<{ companyId: string } | null>(null);
   const { data: companies = [], isLoading, refetch } = useQuery({
     queryKey: ['companies', { search: query, regionFilter }],
     queryFn: () => companiesApi.list({
@@ -32,6 +41,22 @@ export function CompaniesPage() {
     queryKey: ['regions'],
     queryFn: () => regionsApi.list(),
     staleTime: 5 * 60_000, // catalogue rarely changes; 5 min is fine
+  });
+  // Kanban stages (for the inline "+ Deal" dialog). We re-use the same
+  // /deals/kanban query that pages/deals.tsx uses, so the stage list
+  // stays in sync with the admin-configured pipeline. `stages` is the
+  // shape DealDialog expects: { id, name, position, probability, color }.
+  const { data: kanban } = useQuery({
+    queryKey: ['deals-kanban'],
+    queryFn: () => dealsApi.kanban(),
+  });
+  const kanbanStages = (kanban?.buckets ?? []).map((b) => b.stage);
+  // Companies list — re-fetched here for the DealDialog's company dropdown.
+  // (The page-level query filters by search/region; DealDialog needs the
+  // full unfiltered list so the user can pick any company.)
+  const { data: companiesAll = [] } = useQuery({
+    queryKey: ['companies-all'],
+    queryFn: () => companiesApi.list({ limit: 200 }),
   });
 
   return (
@@ -88,6 +113,8 @@ export function CompaniesPage() {
               key={c.id}
               company={c}
               onEdit={() => setEditing(c)}
+              onNewDeal={() => setDealDialog({ companyId: c.id })}
+              onNewQuotation={() => setQuotationDialog({ companyId: c.id })}
             />
           ))}
         </div>
@@ -108,6 +135,44 @@ export function CompaniesPage() {
         onSaved={() => refetch()}
         regions={regions}
       />
+      {/* Inline modals (Day N): a "+ Deal" or "+ Quotation" button on
+          each company card opens these pre-populated with the company.
+          The user stays on the companies page after save — we just
+          invalidate the relevant query keys so cross-page navigation
+          shows the new row. */}
+      {dealDialog && (
+        <DealDialog
+          open={true}
+          onOpenChange={(v: boolean) => { if (!v) setDealDialog(null); }}
+          stages={kanbanStages}
+          companies={companiesAll}
+          defaultCompanyId={dealDialog.companyId}
+          onSaved={() => {
+            setDealDialog(null);
+            qc.invalidateQueries({ queryKey: ['deals-kanban'] });
+            qc.invalidateQueries({ queryKey: ['companies'] });
+          }}
+        />
+      )}
+      {quotationDialog && (
+        <Dialog open={true} onOpenChange={(v) => { if (!v) setQuotationDialog(null); }}>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>新增 Quotation</DialogTitle>
+            </DialogHeader>
+            <QuotationBuilder
+              defaultCompanyId={quotationDialog.companyId}
+              onSaved={() => {
+                setQuotationDialog(null);
+                qc.invalidateQueries({ queryKey: ['quotations'] });
+                qc.invalidateQueries({ queryKey: ['deals-kanban'] });
+                qc.invalidateQueries({ queryKey: ['companies'] });
+              }}
+              onCancel={() => setQuotationDialog(null)}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }
@@ -136,7 +201,19 @@ function FilterPill({ active, onClick, label, flag }: { active: boolean; onClick
   );
 }
 
-function CompanyCard({ company, onEdit }: { company: Company; onEdit: () => void }) {
+function CompanyCard({
+  company,
+  onEdit,
+  onNewDeal,
+  onNewQuotation,
+}: {
+  company: Company;
+  onEdit: () => void;
+  /** Open the inline "+ Deal" dialog pre-filled with this company. */
+  onNewDeal?: () => void;
+  /** Open the inline "+ Quotation" dialog pre-filled with this company. */
+  onNewQuotation?: () => void;
+}) {
   const region = company.region;
   const isOther = region?.code === 'OTHER';
   return (
@@ -178,6 +255,36 @@ function CompanyCard({ company, onEdit }: { company: Company; onEdit: () => void
           </CardContent>
         </Card>
       </Link>
+      {/* Day N: "+ Deal" and "+ Quotation" affordances. They sit on the
+          right edge of the card so the parent <Link> still works for the
+          body of the card. `e.stopPropagation` prevents the card's
+          onClick → navigate from firing. */}
+      {(onNewDeal || onNewQuotation) && (
+        <div className="absolute top-2 right-10 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+          {onNewDeal && (
+            <button
+              type="button"
+              aria-label="新增 Deal"
+              title="新增 Deal"
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onNewDeal(); }}
+              className="h-7 w-7 rounded-md bg-background/80 backdrop-blur border border-input flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-background"
+            >
+              <Briefcase className="h-3.5 w-3.5" />
+            </button>
+          )}
+          {onNewQuotation && (
+            <button
+              type="button"
+              aria-label="新增 Quotation"
+              title="新增 Quotation"
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onNewQuotation(); }}
+              className="h-7 w-7 rounded-md bg-background/80 backdrop-blur border border-input flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-background"
+            >
+              <FileText className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+      )}
       {/* Edit button — absolute-positioned over the card so it doesn't
           trigger the parent <Link>. stopPropagation ensures the card
           click doesn't navigate when the user means to edit. */}

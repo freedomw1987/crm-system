@@ -341,8 +341,13 @@ function DealCard({ deal, disabled, onEdit }: { deal: Deal; disabled: boolean; o
  *     2. PATCH /deals/:id/stage with the new stageId.
  *   The stage endpoint (apps/api/src/routes/deal.ts:69) is the only place
  *   that handles the WON/LOST/closedAt semantics.
+ *
+ * Day N: now exported so other pages (e.g. Companies list) can mount the
+ * same dialog inline when a "+ Deal" button on a company card is clicked.
+ * Caller is responsible for providing the `stages` array (typically
+ * derived from `dealsApi.kanban()` buckets) and the `companies` list.
  */
-function DealDialog({
+export function DealDialog({
   open,
   onOpenChange,
   companies,
