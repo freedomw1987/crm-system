@@ -261,7 +261,19 @@ function DealCard({ deal, disabled, onEdit }: { deal: Deal; disabled: boolean; o
   return (
     <div
       draggable={!disabled}
-      onDragStart={() => setDragging(true)}
+      // Day 9: previously we only set `dragging` state to suppress the click
+      // during drag, but we never called `setData` — so when KanbanColumn's
+      // `onDrop` read `e.dataTransfer.getData('text/deal-id')` it always
+      // returned an empty string and the move request was silently skipped.
+      // The deal card LOOKED like it had moved (optimistic onMutate) but
+      // the server was never called and onSettled reverted the position.
+      onDragStart={(e) => {
+        e.dataTransfer.setData('text/deal-id', deal.id);
+        // 'move' instead of the default 'copy' so the browser doesn't
+        // show a "+" cursor on drop targets in some browsers.
+        e.dataTransfer.effectAllowed = 'move';
+        setDragging(true);
+      }}
       onDragEnd={() => setDragging(false)}
       onClick={() => { if (!dragging) onEdit(deal); }}
       className={`p-2.5 rounded border bg-card hover:border-primary hover:shadow-sm transition-all cursor-grab active:cursor-grabbing group ${
@@ -357,10 +369,13 @@ function DealDialog({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Re-seed when the dialog opens — handles edit-mode re-open with a
-  // different deal, and keeps `companyId`/`stageId` valid when stages
-  // arrive after the dialog first mounts (async kanban query).
-  // We reseed on `open` only, not on `stages` — see useEffect below.
+  // Re-seed when the dialog opens OR when stages first arrive. The previous
+  // dependency array was `[open, deal?.id]` only, which meant that if the
+  // kanban query was still in flight when the user opened the edit dialog,
+  // the stage dropdown would lock in `stages[0]` (Lead) and never re-seed
+  // even after stages loaded. Adding `stages` to the deps fixes that race
+  // — it re-runs once stages arrive and corrects the selection to the
+  // deal's real current stage (or keeps the first stage in create mode).
   useEffect(() => {
     if (open) {
       setTitle(deal?.title ?? '');
@@ -371,7 +386,7 @@ function DealDialog({
       setError(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, deal?.id]);
+  }, [open, deal?.id, stages]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

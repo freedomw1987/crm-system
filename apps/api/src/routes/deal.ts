@@ -54,6 +54,12 @@ export const dealRoutes = new Elysia({ prefix: '/deals', tags: ['deals'] })
       include: {
         company: { select: { id: true, name: true, region: { select: { id: true, code: true, name: true, flag: true } } } },
         owner: { select: { id: true, name: true, email: true } },
+        // Day 9: include stage so the frontend edit dialog can pre-select
+        // the deal's current stage. Without this, `deal.stage` arrives as
+        // `undefined` and the form falls back to `stages[0]` (Lead),
+        // making every deal LOOK like a Lead no matter where it sits on
+        // the Kanban board.
+        stage: { select: { id: true, name: true, probability: true, color: true } },
         _count: { select: { quotations: true } },
       },
     });
