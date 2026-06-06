@@ -8,7 +8,12 @@ import { Badge } from '@/components/ui/badge';
 import { auditApi, type AuditAction, type AuditLog } from '@/lib/api';
 import { formatDateTime } from '@/lib/utils';
 
-// Display labels for each action
+// Display labels for each action. The `variant` feeds the Badge component
+// in AuditRow. Unknown actions (e.g. a future backend enum we haven't
+// mapped yet) fall back to a secondary gray badge showing the raw enum —
+// see the `?? FALLBACK` line in AuditRow. That fallback is the only thing
+// keeping the page from crashing when the backend emits an action we
+// forgot to add here, so KEEP IT even when extending this map.
 const ACTION_LABELS: Record<AuditAction, { label: string; variant: 'default' | 'info' | 'success' | 'warning' | 'destructive' | 'secondary' }> = {
   USER_LOGIN:              { label: '登入',         variant: 'success' },
   USER_LOGIN_FAILED:       { label: '登入失敗',     variant: 'destructive' },
@@ -33,7 +38,29 @@ const ACTION_LABELS: Record<AuditAction, { label: string; variant: 'default' | '
   DEAL_CREATED:            { label: '新增 Deal',    variant: 'default' },
   DEAL_UPDATED:            { label: '更新 Deal',    variant: 'default' },
   DEAL_DELETED:            { label: '刪除 Deal',    variant: 'destructive' },
+  DEAL_STAGE_CHANGED:      { label: 'Deal Stage 變更', variant: 'info' },
+  PRODUCT_CREATED:         { label: '新增 Product', variant: 'default' },
+  PRODUCT_UPDATED:         { label: '更新 Product', variant: 'default' },
+  PRODUCT_DELETED:         { label: '刪除 Product', variant: 'destructive' },
+  SERVICE_CREATED:         { label: '新增 Service', variant: 'default' },
+  SERVICE_UPDATED:         { label: '更新 Service', variant: 'default' },
+  SERVICE_DELETED:         { label: '刪除 Service', variant: 'destructive' },
+  ROLE_CREATED:            { label: '新增 Role',    variant: 'default' },
+  ROLE_UPDATED:            { label: '更新 Role',    variant: 'default' },
+  ROLE_DELETED:            { label: '刪除 Role',    variant: 'destructive' },
+  REGION_CREATED:          { label: '新增 Region',  variant: 'default' },
+  REGION_UPDATED:          { label: '更新 Region',  variant: 'default' },
+  REGION_DELETED:          { label: '刪除 Region',  variant: 'destructive' },
 };
+
+// Fallback for any future action the backend emits that we haven't added
+// above. Prevents the "Cannot read properties of undefined (reading
+// 'variant')" crash the audit page was hitting when DEAL_STAGE_CHANGED
+// (and PRODUCT_*/REGION_*/ROLE_*/SERVICE_*) were logged.
+const FALLBACK_META = { label: null as string | null, variant: 'secondary' as const };
+function getActionMeta(action: string) {
+  return ACTION_LABELS[action as AuditAction] ?? { ...FALLBACK_META, label: action };
+}
 
 export function AuditPage() {
   const [action, setAction] = useState<string>('');
@@ -122,7 +149,10 @@ export function AuditPage() {
 }
 
 function AuditRow({ event }: { event: AuditLog }) {
-  const meta = ACTION_LABELS[event.action];
+  // Use the safe accessor so a missing label (e.g. a brand-new backend
+  // action we haven't mapped yet) doesn't take down the entire row with
+  // a "Cannot read properties of undefined (reading 'variant')" error.
+  const meta = getActionMeta(event.action);
   return (
     <tr className="border-b last:border-0 hover:bg-muted/30">
       <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
