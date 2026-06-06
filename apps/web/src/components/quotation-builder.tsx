@@ -19,8 +19,8 @@ import { Select, Label } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
-  productsApi, companiesApi, servicesApi, quotationsApi,
-  type Company, type Product, type Service, type ServiceManDay,
+  productsApi, servicesApi, quotationsApi,
+  type Product, type Service, type ServiceManDay,
   type Quotation, type QuotationItem, type Deal,
 } from '@/lib/api';
 import { formatCurrency } from '@/lib/utils';
@@ -44,6 +44,17 @@ interface DraftLine {
   unitPrice: number;
   discount: number;     // percent
   itemId?: string;      // set when editing an existing item
+  /**
+   * Day N: GP fields carried over from the server. Populated in EDIT
+   * mode (the items in `existing.items` already have lineGp/lineGpPercent
+   * computed by recalcQuotationAndItems). In CREATE mode these stay
+   * undefined because we don't have the per-line costRate client-side;
+   * the builder shows "—" for service lines and 100% for product lines
+   * in the live preview, and the server fills in the real values on
+   * POST. See /api/src/routes/quotation.ts:40 (gpOf) for the formula.
+   */
+  lineGp?: number;
+  lineGpPercent?: number;
 }
 
 interface QuotationBuilderProps {
@@ -56,6 +67,15 @@ interface QuotationBuilderProps {
    * pattern so Sales never has to re-pick the company they came from.
    */
   initialCompanyId?: string;
+  /**
+   * Day N: alias for `initialCompanyId` for clarity at call-sites
+   * (e.g. inline modal from a Company card — "default" reads better than
+   * "initial" when the dialog is opened pre-populated). If both are
+   * provided, `defaultCompanyId` wins.
+   */
+  defaultCompanyId?: string;
+  /** Day N: alias for `initialDealId` — see defaultCompanyId. */
+  defaultDealId?: string;
   onSaved: (q: Quotation) => void;
   onCancel: () => void;
 }
@@ -86,6 +106,8 @@ function linesFromQuotation(q?: Quotation): DraftLine[] {
     unitPrice: Number(it.unitPrice),
     discount: Number(it.discount ?? 0),
     manDaySnapshot: it.manDaySnapshot ?? undefined,
+    lineGp: it.lineGp != null ? Number(it.lineGp) : undefined,
+    lineGpPercent: it.lineGpPercent != null ? Number(it.lineGpPercent) : undefined,
   }));
 }
 
@@ -96,23 +118,28 @@ function lineTotal(line: DraftLine): number {
   return qty * price * (1 - disc / 100);
 }
 
-export function QuotationBuilder({ existing, initialDealId, initialCompanyId, onSaved, onCancel }: QuotationBuilderProps) {
+export function QuotationBuilder({
+  existing, initialDealId, initialCompanyId, defaultCompanyId, defaultDealId, onSaved, onCancel,
+}: QuotationBuilderProps) {
   const isEdit = !!existing;
 
-  // For create mode, prefer the explicit preset (initialCompanyId from the
-  // ?companyId= shortcut) over the existing-company field (only set in
-  // edit mode). This matches the initialDealId handling a few lines down.
-  const [companyId, setCompanyId] = useState<string>(initialCompanyId ?? existing?.companyId ?? '');
+  // For create mode, prefer `defaultCompanyId` (the newer inline-modal
+  // alias) over `initialCompanyId` (the legacy /quotations?companyId=
+  // route alias) over the edit-mode company field. Same precedence
+  // pattern for dealId below. The values seed the state below; the user
+  // can still change either before saving.
+  const seedCompanyId = defaultCompanyId ?? initialCompanyId ?? existing?.companyId ?? '';
+  const seedDealId = defaultDealId ?? initialDealId ?? '';
+  const [companyId, setCompanyId] = useState<string>(seedCompanyId);
   const [title, setTitle] = useState(existing?.title ?? '');
   const [notes, setNotes] = useState(existing?.notes ?? '');
   const [taxRate, setTaxRate] = useState<number>(existing ? Number(existing.taxRate) : 0);
   const [validUntil, setValidUntil] = useState<string>(
     existing?.validUntil ? existing.validUntil.slice(0, 10) : ''
   );
-  const [dealId, setDealId] = useState<string>(initialDealId ?? '');
+  const [dealId, setDealId] = useState<string>(seedDealId);
   const [lines, setLines] = useState<DraftLine[]>(linesFromQuotation(existing));
 
-  const [companies, setCompanies] = useState<Company[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [companyDeals, setCompanyDeals] = useState<Deal[]>([]);
@@ -120,18 +147,18 @@ export function QuotationBuilder({ existing, initialDealId, initialCompanyId, on
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load companies + products + services for dropdowns
+  // Load products + services for dropdowns. Companies are loaded by
+  // <CompanyAutocomplete> on demand (it self-fetches when no `companies`
+  // prop is passed), so we don't double-fetch here.
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        const [c, p, s] = await Promise.all([
-          companiesApi.list({ limit: 200 }),
+        const [p, s] = await Promise.all([
           productsApi.list({ limit: 200 }),
           servicesApi.list({ limit: 200 }),
         ]);
         if (alive) {
-          setCompanies(c);
           setProducts(p);
           setServices(s);
         }
@@ -167,6 +194,23 @@ export function QuotationBuilder({ existing, initialDealId, initialCompanyId, on
   const subtotal = useMemo(() => lines.reduce((s, l) => s + lineTotal(l), 0), [lines]);
   const taxAmount = subtotal * (Number(taxRate) / 100);
   const total = subtotal + taxAmount;
+  // Total GP = sum of known lineGp values, plus lineTotal for product
+  // lines that don't have a lineGp yet (PRODUCT GP is 100% of lineTotal
+  // per the backend's gpOf() formula). Service lines in CREATE mode
+  // contribute 0 here because we don't have costRate client-side; the
+  // user will see the real number after the server's
+  // recalcQuotationAndItems runs and the response comes back.
+  const { totalGp, totalGpUnknownService } = useMemo(() => {
+    let gp = 0;
+    let unknownService = 0;
+    for (const l of lines) {
+      if (l.lineGp != null) { gp += l.lineGp; }
+      else if (l.itemType === 'PRODUCT') { gp += lineTotal(l); }
+      else { unknownService += 1; }
+    }
+    return { totalGp: gp, totalGpUnknownService: unknownService };
+  }, [lines]);
+  const totalGpPct = subtotal > 0 ? (totalGp / subtotal) * 100 : 0;
 
   function updateLine(idx: number, patch: Partial<DraftLine>) {
     setLines((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
@@ -323,10 +367,8 @@ export function QuotationBuilder({ existing, initialDealId, initialCompanyId, on
         <div className="space-y-1.5">
           <Label htmlFor="company">客戶 *</Label>
           <CompanyAutocomplete
-            companies={companies}
             value={companyId}
             onChange={setCompanyId}
-            onCreated={(c) => setCompanies((prev) => [c, ...prev])}
             label=""
             placeholder="搜尋客戶名稱..."
           />
@@ -427,6 +469,26 @@ export function QuotationBuilder({ existing, initialDealId, initialCompanyId, on
           <div className="flex justify-between border-t pt-2 mt-2 text-base font-bold">
             <span>Total</span>
             <span className="tabular-nums">{formatCurrency(total)}</span>
+          </div>
+          {/* Total GP summary — emerald so it stands out from cost rows.
+              Service lines in CREATE mode don't contribute (costRate is
+              server-side only), so the % is a partial best-effort
+              estimate; we surface a hint when that's the case. */}
+          <div className="flex justify-between text-sm pt-1 mt-1 border-t">
+            <span className="text-emerald-700 dark:text-emerald-400 font-medium">
+              Total GP
+              {totalGpUnknownService > 0 && (
+                <span
+                  className="ml-1 text-[10px] text-muted-foreground font-normal"
+                  title="Service line cost 未知 (server 才有),儲存後先見到實際 GP"
+                >
+                  (未計 {totalGpUnknownService} 條 service)
+                </span>
+              )}
+            </span>
+            <span className="tabular-nums text-emerald-700 dark:text-emerald-400 font-medium">
+              {formatCurrency(totalGp)} ({totalGpPct.toFixed(0)}%)
+            </span>
           </div>
         </CardContent>
       </Card>
@@ -585,6 +647,27 @@ function LineItemRow({
           <span className="text-xs font-semibold tabular-nums">
             {formatCurrency(lineTotal(line))}
           </span>
+          {(() => {
+            // Per-line GP$ / GP% display. In edit mode the server already
+            // computed these; in create mode PRODUCT = 100% margin (cost
+            // is zero), SERVICE shows "—" until the server fills it in
+            // on POST.
+            const total = lineTotal(line);
+            const gp = line.lineGp ?? (line.itemType === 'PRODUCT' ? total : null);
+            const gpPct = line.lineGpPercent ?? (line.itemType === 'PRODUCT' ? 100 : null);
+            if (gp === null || gpPct === null) {
+              return (
+                <span className="text-[10px] text-muted-foreground tabular-nums mt-0.5">
+                  GP: —
+                </span>
+              );
+            }
+            return (
+              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 tabular-nums mt-0.5">
+                GP: {formatCurrency(gp)} ({gpPct.toFixed(0)}%)
+              </span>
+            );
+          })()}
         </div>
       </div>
 

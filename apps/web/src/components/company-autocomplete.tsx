@@ -5,15 +5,24 @@
  * a company from the catalogue. The "create new" affordance opens a
  * full CompanyFormDialog (or, when `onCreate` is not provided, falls back
  * to a no-op — the parent decides which create flow to invoke).
+ *
+ * Day N: the company catalogue can be passed in via the `companies` prop
+ * (kept for back-compat with callers that already fetched the list for
+ * their own use, e.g. deals.tsx uses it to render the company name next
+ * to each deal). When the prop is omitted, the component self-fetches
+ * via companiesApi.list so callers like QuotationBuilderForm don't need
+ * a duplicate useQuery.
  */
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Autocomplete } from './autocomplete';
 import { CompanyFormDialog } from '@/pages/companies';
 import { companiesApi, regionsApi, type Company } from '@/lib/api';
 
 interface CompanyAutocompleteProps {
-  companies: Company[];
+  /** Optional pre-fetched list. If omitted, the component self-fetches
+   *  via companiesApi.list (limit 200, sorted by name). */
+  companies?: Company[];
   value?: string;
   onChange: (id: string) => void;
   /** Called with the newly created company so the parent can add it to
@@ -29,11 +38,23 @@ interface CompanyAutocompleteProps {
 }
 
 export function CompanyAutocomplete({
-  companies, value, onChange, onCreated,
+  companies: companiesProp, value, onChange, onCreated,
   label = '公司', className, disabled, placeholder = '搜尋公司名...', allowCreate = true,
 }: CompanyAutocompleteProps) {
   const [createOpen, setCreateOpen] = useState(false);
   const [prefillName, setPrefillName] = useState('');
+  const qc = useQueryClient();
+  // Self-fetch when the caller didn't pass a pre-loaded list. The query is
+  // disabled when `companies` is provided, so existing callers (deals.tsx
+  // passes a list to DealDialog) keep their current behaviour with no
+  // duplicate network round-trip.
+  const { data: fetched = [] } = useQuery({
+    queryKey: ['companies-all'],
+    queryFn: () => companiesApi.list({ limit: 200 }),
+    enabled: companiesProp === undefined,
+    staleTime: 5 * 60_000,
+  });
+  const companies = companiesProp ?? fetched;
   // The create dialog needs the regions catalogue. Day N: we fetch here
   // rather than threading it through props so every caller (Quotation
   // builder, Deal dialog, etc.) gets it for free.
@@ -68,6 +89,12 @@ export function CompanyAutocomplete({
           regions={regions}
           onSaved={(c) => {
             if (c) {
+              // Invalidate the companies catalogue so the new row shows up
+              // in the dropdown immediately. This matters when the
+              // autocomplete owns the query (no `companies` prop passed);
+              // for callers that passed a pre-loaded list they should
+              // handle their own invalidation.
+              qc.invalidateQueries({ queryKey: ['companies-all'] });
               onCreated?.(c);
               onChange(c.id);
             }
