@@ -300,6 +300,54 @@ maintained as a known backlog.
   in dev only.
 - **Est:** 15 minutes
 
+### P2-13 — Zero automated test coverage (Unit / Integration)
+- **Where:** `apps/api` + `apps/web` + `packages/db`
+- **Why:** Red-line 16 requires P0 US to have Unit + Integration + E2E
+  test layers. As of Day 14.7 (merged 2026-06-07 in `019cab8`):
+  - 0 unit test files in the repo
+  - 0 integration test files
+  - 0 test directories
+  - `apps/api/package.json` has `"test": "echo 'test: not configured yet'"`
+  - `apps/web/package.json` has no `test` script at all
+  - All testing relies on the 23-step E2E smoke script
+    (`/tmp/smoke-before-merge.sh`) + manual verification
+
+  This is **pre-existing structural debt** dating back to Day 1
+  (`bun-elysia-react-vite-stack` skill bootstrap), not introduced
+  by the Day 14.7 PR. Elysia 1.2 + `@ts-nocheck` in many route
+  files makes writing unit tests harder (a small refactor pass
+  to remove `@ts-nocheck` would help — see P1-1).
+
+  **Caveat from red-line audit 2026-06-07T14:05Z** (David approved
+  keeping merge without this entry, asked to log it as P2 for
+  Day 15+):
+  > "0 test 嘅 US 唔可以 ship" — strictly read, no P0 US can ship
+  > until this is addressed. We've been getting away with E2E-only
+  > because the manual smoke covers the happy paths, but any future
+  > refactor will lack a safety net.
+- **Fix:** (Day 15+ sprint; not blocking current prod deploy)
+  1. `apps/api`: add `bun:test` setup. Cover 7 settings endpoints
+     + Tax API + RBAC `requirePermission` (3 smoke tests each,
+     targeting 100% of the `permission → route` matrix in
+     `docs/rbac.md`).
+  2. `apps/web`: add `vitest` + React Testing Library. Cover
+     `lib/api.ts` request wrapper, multi-autocomplete components,
+     and the quotation-builder tax-override flow.
+  3. `packages/db`: add Prisma raw-query integration tests
+     (e.g. `audit log is written transactionally with mutation`).
+  4. Convert `/tmp/smoke-before-merge.sh` to Playwright so the
+     E2E layer is reproducible in CI.
+- **Est:** 2-3 sprints (~16-24 hours)
+- **Priority rationale:** logged as P2 because David approved
+  Day 14.7 merge with this caveat (red-line 16 is a known
+  acceptable risk for this ship, not a hard block). Will be
+  re-promoted to P1 if any of the next 3 sprints introduces
+  a refactor that lacks unit-test safety net.
+- **Linked:** red-line 16 (testing); red-line 12 (P0 US must
+  have test tasks) — `docs/QA-TRACKER.md` rows for US-S1..S7
+  all show `planned` test status; red-line 17 (deploy smoke
+  exists but is E2E-only, not unit-backed).
+
 ---
 
 ## Cross-references
