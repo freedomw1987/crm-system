@@ -1,6 +1,6 @@
 import { Elysia } from 'elysia';
 import { prisma } from '@crm/db';
-import { runAgent } from '@crm/ai';
+import { runAgent, AiNotConfiguredError } from '@crm/ai';
 import { jwtVerify } from 'jose';
 
 const SECRET = process.env.JWT_SECRET ?? 'dev-only-secret-please-change';
@@ -59,14 +59,32 @@ export const chatRoutes = new Elysia({ prefix: '/chat', tags: ['ai-chat'] })
       set.status = 400;
       return { error: 'Message is required' };
     }
-    if (!process.env.OPENAI_API_KEY) {
+    // Pre-check AiConfig to short-circuit with a friendly 503 (instead of
+    // letting runAgent() throw AiNotConfiguredError and us translate to
+    // 500). The DB check here is cheap (one row by PK) and matches the
+    // schema design (no env-var fallback — see prisma/schema.prisma
+    // AiConfig @id(1) comment). We still catch AiNotConfiguredError
+    // below as a defence in case the row is deleted between this check
+    // and the runAgent() call (race window on a singleton).
+    const aiConfig = await prisma.aiConfig.findUnique({
+      where: { id: 1 },
+      select: { id: true },
+    });
+    if (!aiConfig) {
       set.status = 503;
-      return { error: 'AI Agent not configured (OPENAI_API_KEY missing)' };
+      return {
+        error: 'AI Assistant is not configured',
+        message: 'Ask an admin to set up the AI Assistant at /admin/ai-config.',
+      };
     }
     try {
       const result = await runAgent({ userId, message, conversationId });
       return result;
     } catch (err) {
+      if (err instanceof AiNotConfiguredError) {
+        set.status = 503;
+        return { error: 'AI Assistant is not configured', message: err.message };
+      }
       console.error('[chat] Agent error:', err);
       set.status = 500;
       return { error: 'Agent failed', message: (err as Error).message };

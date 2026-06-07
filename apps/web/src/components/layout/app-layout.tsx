@@ -30,7 +30,8 @@ const adminNavItems = [
   // Sales reps pick from this catalogue via a dropdown in the Service
   // form (see apps/web/src/pages/services.tsx); they don't need to
   // manage it themselves, so we keep it under the Admin section.
-  { to: '/man-day-roles', label: '人天結構', icon: UserCog, adminOnly: true },
+  { to: '/man-day-roles', label: 'Man day role', icon: UserCog, adminOnly: true },
+  { to: '/ai-config', label: 'AI 設定', icon: Sparkles, adminOnly: true },
   { to: '/audit', label: 'Audit Log', icon: History, adminOnly: true },
 ];
 
