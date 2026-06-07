@@ -1,8 +1,14 @@
 /**
- * AI Agent core — lightweight function-calling loop
+ * AI Agent core — lightweight function-calling loop with streaming.
  *
- * Stack: OpenAI Chat Completions (function calling) + tool registry + Postgres memory
- * Zero-dependency (only `openai` SDK), no LangGraph/Mastra — fully under our control.
+ * Stack: OpenAI Chat Completions (streaming function calling) + tool
+ * registry + Postgres memory. Zero-dependency (only `openai` SDK), no
+ * LangGraph/Mastra — fully under our control.
+ *
+ * Streaming: `runAgentStream` is an async generator that yields
+ * `StreamEvent` objects as the agent works. The HTTP route wraps this
+ * in a Server-Sent Events response so the frontend can render tokens
+ * and tool calls incrementally.
  */
 
 import OpenAI from 'openai';
@@ -17,12 +23,16 @@ export interface AgentRunInput {
   message: string;
 }
 
-export interface AgentRunResult {
-  conversationId: string;
-  reply: string;
-  toolCalls: Array<{ name: string; args: unknown; result: unknown }>;
-  usage: { promptTokens: number; completionTokens: number; totalTokens: number };
-}
+/**
+ * Events emitted by `runAgentStream` over the course of one agent run.
+ * The frontend renders these incrementally as they arrive.
+ */
+export type StreamEvent =
+  | { type: 'token'; delta: string }
+  | { type: 'tool_start'; name: string; args: unknown }
+  | { type: 'tool_end'; name: string; result: unknown; error?: string }
+  | { type: 'done'; conversationId: string; usage: { promptTokens: number; completionTokens: number; totalTokens: number } }
+  | { type: 'error'; message: string };
 
 /**
  * Errors thrown from runAgent() that the chat route should translate to
@@ -35,7 +45,13 @@ export class AiNotConfiguredError extends Error {
   }
 }
 
-export async function runAgent(input: AgentRunInput): Promise<AgentRunResult> {
+/**
+ * Streaming agent run. Yields events as the LLM produces tokens and as
+ * tool calls start and finish. The conversation row + user message are
+ * created up front; the final assistant reply is persisted when the
+ * stream ends.
+ */
+export async function* runAgentStream(input: AgentRunInput): AsyncGenerator<StreamEvent> {
   // 0. Load LLM config from DB (no env-var fallback, by design)
   const aiConfig = await getAiConfig();
   if (!aiConfig) throw new AiNotConfiguredError();
@@ -107,62 +123,144 @@ export async function runAgent(input: AgentRunInput): Promise<AgentRunResult> {
     }),
   ];
 
-  // 4. Function-calling loop
-  const toolCallRecords: AgentRunResult['toolCalls'] = [];
+  // 4. Streaming function-calling loop
+  const tools = toolRegistry.map((t) => ({
+    type: 'function' as const,
+    function: {
+      name: t.name,
+      description: t.description,
+      parameters: t.parameters,
+    },
+  }));
+
   let totalUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
   let finalReply = '';
   const ctx: ToolContext = { userId: input.userId };
 
-  for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
-    const tools = toolRegistry.map((t) => ({
-      type: 'function' as const,
-      function: {
-        name: t.name,
-        description: t.description,
-        parameters: t.parameters,
-      },
-    }));
-
-    const resp = await client.chat.completions.create({
+  outer: for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
+    // OpenAI's `stream: true` for chat.completions returns an async
+    // iterable of chunks. We accumulate the assistant message as we go
+    // and yield each content delta so the frontend can render it
+    // token-by-token.
+    const stream = await client.chat.completions.create({
       model: MODEL,
       messages,
       tools: tools.length > 0 ? tools : undefined,
       tool_choice: tools.length > 0 ? 'auto' : undefined,
-    });
+      stream: true,
+      // stream_options is required by some providers (e.g. OpenAI) to
+      // get usage in the final chunk. We set it if the SDK type allows;
+      // providers that don't support it ignore the option.
+      stream_options: { include_usage: true },
+    } as Parameters<typeof client.chat.completions.create>[0]);
 
-    const choice = resp.choices[0];
-    if (!choice) break;
-    totalUsage = {
-      promptTokens: totalUsage.promptTokens + (resp.usage?.prompt_tokens ?? 0),
-      completionTokens: totalUsage.completionTokens + (resp.usage?.completion_tokens ?? 0),
-      totalTokens: totalUsage.totalTokens + (resp.usage?.total_tokens ?? 0),
+    // Accumulated assistant message we're building from chunks
+    const assistantMsg: OpenAI.Chat.ChatCompletionMessage = {
+      role: 'assistant',
+      content: null,
+      tool_calls: [],
     };
+    const toolCallAccumulators = new Map<
+      number,
+      { id: string; name: string; args: string }
+    >();
+    let streamUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
 
-    const msg = choice.message;
-    messages.push(msg);
+    for await (const chunk of stream as AsyncIterable<OpenAI.Chat.ChatCompletionChunk>) {
+      // Usage chunks (last chunk when stream_options.include_usage = true)
+      if ((chunk as { usage?: OpenAI.CompletionUsage }).usage) {
+        const u = (chunk as { usage: OpenAI.CompletionUsage }).usage;
+        streamUsage = {
+          promptTokens: u.prompt_tokens ?? 0,
+          completionTokens: u.completion_tokens ?? 0,
+          totalTokens: u.total_tokens ?? 0,
+        };
+        totalUsage = {
+          promptTokens: totalUsage.promptTokens + streamUsage.promptTokens,
+          completionTokens: totalUsage.completionTokens + streamUsage.completionTokens,
+          totalTokens: totalUsage.totalTokens + streamUsage.totalTokens,
+        };
+      }
+      const delta = chunk.choices?.[0]?.delta;
+      if (!delta) continue;
 
-    if (!msg.tool_calls || msg.tool_calls.length === 0) {
-      finalReply = msg.content ?? '';
-      break;
+      // Text token — yield to the stream
+      if (delta.content) {
+        if (!assistantMsg.content) assistantMsg.content = '';
+        assistantMsg.content += delta.content;
+        yield { type: 'token', delta: delta.content };
+      }
+
+      // Tool call deltas — accumulate then yield tool_start when complete
+      if (delta.tool_calls) {
+        for (const tcDelta of delta.tool_calls) {
+          const idx = tcDelta.index;
+          let acc = toolCallAccumulators.get(idx);
+          if (!acc) {
+            acc = { id: '', name: '', args: '' };
+            toolCallAccumulators.set(idx, acc);
+          }
+          if (tcDelta.id) acc.id = tcDelta.id;
+          if (tcDelta.function?.name) acc.name += tcDelta.function.name;
+          if (tcDelta.function?.arguments) acc.args += tcDelta.function.arguments;
+        }
+      }
     }
 
-    // Execute each tool call
-    for (const tc of msg.tool_calls) {
-      const toolName = tc.function.name;
-      const rawArgs = tc.function.arguments;
-      let parsedArgs: unknown = {};
-      try {
-        parsedArgs = JSON.parse(rawArgs);
-      } catch {
-        parsedArgs = {};
-      }
-      const tool = toolRegistry.find((t) => t.name === toolName);
+    // Build the final tool_calls array from accumulators
+    const finalToolCalls = Array.from(toolCallAccumulators.entries())
+      .sort(([a], [b]) => a - b)
+      .map(([, acc]) => {
+        let parsedArgs: unknown = {};
+        try {
+          parsedArgs = JSON.parse(acc.args);
+        } catch {
+          parsedArgs = {};
+        }
+        return {
+          id: acc.id,
+          type: 'function' as const,
+          function: { name: acc.name, arguments: acc.args },
+          _parsedArgs: parsedArgs,
+        };
+      });
 
+    if (finalToolCalls.length === 0) {
+      // No tool calls — we have the final reply in assistantMsg.content
+      finalReply = assistantMsg.content ?? '';
+      // Push the assistant message into history (with content)
+      messages.push({
+        role: 'assistant' as const,
+        content: finalReply || null,
+      });
+      break outer;
+    }
+
+    // We have tool calls. Push the assistant message with tool_calls into history.
+    messages.push({
+      role: 'assistant' as const,
+      content: assistantMsg.content || null,
+      tool_calls: finalToolCalls.map((tc) => ({
+        id: tc.id,
+        type: 'function' as const,
+        function: { name: tc.function.name, arguments: tc.function.arguments },
+      })),
+    });
+
+    // Execute each tool call, yielding tool_start / tool_end
+    for (const tc of finalToolCalls) {
+      const toolName = tc.function.name;
+      const parsedArgs = tc._parsedArgs;
+
+      yield { type: 'tool_start', name: toolName, args: parsedArgs };
+
+      const tool = toolRegistry.find((t) => t.name === toolName);
       let result: unknown;
-      let toolError: string | null = null;
+      let toolError: string | undefined;
       if (!tool) {
-        toolError = `Unknown tool: ${toolName}`;
-        result = { error: toolError };
+        const msg = `Unknown tool: ${toolName}`;
+        toolError = msg;
+        result = { error: msg };
       } else {
         try {
           result = await tool.execute(parsedArgs, ctx);
@@ -172,9 +270,9 @@ export async function runAgent(input: AgentRunInput): Promise<AgentRunResult> {
         }
       }
 
-      toolCallRecords.push({ name: toolName, args: parsedArgs, result });
+      yield { type: 'tool_end', name: toolName, result, error: toolError };
 
-      // Save assistant tool call + tool result to history
+      // Persist tool call + tool result as separate messages
       await prisma.conversationMessage.create({
         data: {
           conversationId,
@@ -194,7 +292,7 @@ export async function runAgent(input: AgentRunInput): Promise<AgentRunResult> {
         },
       });
 
-      // Add tool result to messages
+      // Feed result back to the LLM on the next iteration
       messages.push({
         role: 'tool',
         tool_call_id: tc.id,
@@ -222,12 +320,7 @@ export async function runAgent(input: AgentRunInput): Promise<AgentRunResult> {
     data: { updatedAt: new Date() },
   });
 
-  return {
-    conversationId,
-    reply: finalReply,
-    toolCalls: toolCallRecords,
-    usage: totalUsage,
-  };
+  yield { type: 'done', conversationId, usage: totalUsage };
 }
 
 // Re-exports

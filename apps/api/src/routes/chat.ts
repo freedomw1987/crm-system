@@ -1,6 +1,6 @@
 import { Elysia } from 'elysia';
 import { prisma } from '@crm/db';
-import { runAgent, AiNotConfiguredError } from '@crm/ai';
+import { runAgentStream, AiNotConfiguredError, type StreamEvent } from '@crm/ai';
 import { jwtVerify } from 'jose';
 
 const SECRET = process.env.JWT_SECRET ?? 'dev-only-secret-please-change';
@@ -17,6 +17,17 @@ async function verifyToken(authHeader: string | null): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * Wrap a `StreamEvent` in a Server-Sent Events (SSE) frame.
+ *
+ * Format per the SSE spec: each event is `data: <json>\n\n`. The
+ * frontend reads chunks, splits on `\n\n`, and parses each frame's
+ * `data:` line as JSON.
+ */
+function sseFrame(event: StreamEvent): string {
+  return `data: ${JSON.stringify(event)}\n\n`;
 }
 
 export const chatRoutes = new Elysia({ prefix: '/chat', tags: ['ai-chat'] })
@@ -63,9 +74,7 @@ export const chatRoutes = new Elysia({ prefix: '/chat', tags: ['ai-chat'] })
     // letting runAgent() throw AiNotConfiguredError and us translate to
     // 500). The DB check here is cheap (one row by PK) and matches the
     // schema design (no env-var fallback — see prisma/schema.prisma
-    // AiConfig @id(1) comment). We still catch AiNotConfiguredError
-    // below as a defence in case the row is deleted between this check
-    // and the runAgent() call (race window on a singleton).
+    // AiConfig @id(1) comment).
     const aiConfig = await prisma.aiConfig.findUnique({
       where: { id: 1 },
       select: { id: true },
@@ -77,18 +86,44 @@ export const chatRoutes = new Elysia({ prefix: '/chat', tags: ['ai-chat'] })
         message: 'Ask an admin to set up the AI Assistant at /admin/ai-config.',
       };
     }
-    try {
-      const result = await runAgent({ userId, message, conversationId });
-      return result;
-    } catch (err) {
-      if (err instanceof AiNotConfiguredError) {
-        set.status = 503;
-        return { error: 'AI Assistant is not configured', message: err.message };
-      }
-      console.error('[chat] Agent error:', err);
-      set.status = 500;
-      return { error: 'Agent failed', message: (err as Error).message };
-    }
+
+    // Build an SSE response. We construct the ReadableStream here
+    // instead of returning a plain JSON object so the connection
+    // stays open and the frontend can read tokens as they're emitted.
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      async start(controller) {
+        try {
+          for await (const event of runAgentStream({ userId, message, conversationId })) {
+            controller.enqueue(encoder.encode(sseFrame(event)));
+          }
+        } catch (err) {
+          if (err instanceof AiNotConfiguredError) {
+            controller.enqueue(encoder.encode(sseFrame({ type: 'error', message: err.message })));
+          } else {
+            console.error('[chat] Agent error:', err);
+            controller.enqueue(encoder.encode(sseFrame({
+              type: 'error',
+              message: (err as Error).message,
+            })));
+          }
+        } finally {
+          controller.close();
+        }
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        // Disable nginx response buffering so chunks flow to the
+        // browser immediately (see RG-005 + nginx sse fix in
+        // docker-compose / nginx.conf).
+        'Cache-Control': 'no-cache, no-transform',
+        'X-Accel-Buffering': 'no',
+        'Connection': 'keep-alive',
+      },
+    });
   })
 
   .delete('/conversations/:id', async ({ params, request, set }) => {
