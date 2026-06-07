@@ -229,4 +229,107 @@ export const settingsRoutes = new Elysia({ prefix: '/settings', tags: ['settings
 
       return { ok: true };
     }
+  )
+
+  // ===================================================================
+  // Day 14: System Configuration — Tax Rate
+  // ===================================================================
+  // Phase 2 of the Settings page. We use a generic key-value SystemConfig
+  // table (model added in migration 20260607000000_day14_system_config) so
+  // future settings (default currency, default pipeline colour, etc.) can
+  // reuse the same endpoints.
+  //
+  // Quotation builder reads GET /settings/tax at open time to pre-fill the
+  // tax rate input. Per-quotation override remains available (existing
+  // snapshot pattern); changing the system value does NOT rewrite historical
+  // quotations (per David 2026-06-07 plan, option A).
+  //
+  // GET   /settings/tax     — read current default tax rate (any authed user)
+  // PUT   /settings/tax     — admin sets a new rate (settings:update)
+
+  // GET /settings/tax — available to any logged-in user so the quotation
+  // builder can pre-fill. We do NOT require settings:read here on purpose;
+  // a SALES rep who can already see /quotations obviously needs to know
+  // the default tax rate for new quotes.
+  .get(
+    '/tax',
+    async ({ set }) => {
+      const row = await prisma.systemConfig.findUnique({
+        where: { key: 'default_tax_rate' },
+        include: { updatedBy: { select: { id: true, name: true, email: true } } },
+      });
+      if (!row) {
+        // Seed should have created it; if missing, treat as 0 and 200
+        // (graceful degradation — admin will see the seeded default on
+        // first visit anyway).
+        return { key: 'default_tax_rate', rate: 0, updatedAt: null, updatedBy: null };
+      }
+      // value is a JSON number (seed = 0). Normalise to number.
+      const rate = typeof row.value === 'number'
+        ? row.value
+        : Number((row.value as unknown) ?? 0);
+      return {
+        key: row.key,
+        rate,
+        description: row.description,
+        updatedAt: row.updatedAt,
+        updatedBy: row.updatedBy,
+      };
+    },
+    { detail: { summary: 'Get default tax rate' } }
+  )
+
+  // PUT /settings/tax — admin only. Audit logs the before/after diff.
+  .use(requirePermission('settings:update'))
+  .put(
+    '/tax',
+    async ({ body, set, request }) => {
+      const userId = await getUserIdFromRequest(request);
+      if (!userId) {
+        set.status = 401;
+        return { error: 'Unauthorized' };
+      }
+
+      const { rate } = body as { rate: number };
+      const oldRow = await prisma.systemConfig.findUnique({
+        where: { key: 'default_tax_rate' },
+        select: { value: true },
+      });
+      const oldRate = oldRow ? Number((oldRow.value as unknown) ?? 0) : 0;
+
+      const updated = await prisma.systemConfig.upsert({
+        where: { key: 'default_tax_rate' },
+        update: { value: rate, updatedById: userId },
+        create: {
+          key: 'default_tax_rate',
+          value: rate,
+          updatedById: userId,
+          description: 'Default tax rate (%) applied to NEW quotations. Per-quotation override available; existing quotations keep their snapshot.',
+        },
+        include: { updatedBy: { select: { id: true, name: true, email: true } } },
+      });
+
+      await logEvent({
+        actorId: userId,
+        action: 'SYSTEM_CONFIG_UPDATED',
+        resourceType: 'system_config',
+        resourceId: 'default_tax_rate',
+        description: `Updated default tax rate: ${oldRate}% → ${rate}%`,
+        metadata: { key: 'default_tax_rate', oldValue: oldRate, newValue: rate },
+        request,
+      });
+
+      return {
+        key: updated.key,
+        rate: Number((updated.value as unknown) ?? 0),
+        description: updated.description,
+        updatedAt: updated.updatedAt,
+        updatedBy: updated.updatedBy,
+      };
+    },
+    {
+      body: t.Object({
+        rate: t.Number({ minimum: 0, maximum: 100 }),
+      }),
+    }
   );
