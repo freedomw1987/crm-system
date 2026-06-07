@@ -23,8 +23,11 @@ import { ManDayRolesPage } from '@/pages/man-day-roles';
 import { AiConfigPage } from '@/pages/ai-config';
 import SettingsPage from '@/pages/settings';
 import { SettingsLayout } from '@/components/settings-layout';
-import { SettingsTabPlaceholder } from '@/pages/settings-tab-placeholder';
 import { SettingsTaxPage } from '@/pages/settings-tax';
+// Day 14.7 Step 8 — the 5 admin pages that were at top-level routes are
+// now mounted as children of <SettingsLayout /> (below). Top-level direct
+// routes for them are replaced by <Navigate /> backward-compat redirects.
+// (SettingsTabPlaceholder is no longer used — all 7 tabs are real pages now.)
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -65,27 +68,32 @@ export function App() {
             <Route path="/quotations/:id" element={<QuotationDetailPage />} />
             <Route path="/deals" element={<DealsPage />} />
             <Route path="/ai" element={<AiChatPage />} />
-            <Route path="/users" element={<UsersPage />} />
             <Route path="/users/:id" element={<UserDetailPage />} />
-            <Route path="/audit" element={<AuditPage />} />
             <Route path="/services" element={<ServicesPage />} />
             <Route path="/services/:id" element={<ServiceDetailPage />} />
             <Route path="/products" element={<ProductsPage />} />
-            <Route path="/roles" element={<RolesPage />} />
-            <Route path="/man-day-roles" element={<ManDayRolesPage />} />
-            <Route path="/ai-config" element={<AiConfigPage />} />
+            {/* Day 14.7 Step 8 — 5 admin pages moved under /settings/*.
+                Top-level direct routes are now <Navigate /> backward-compat
+                redirects (so existing bookmarks, chat-share links, and any
+                other deep links from before today still land on the right
+                page). Plan mitigation section called this out. */}
+            <Route path="/users" element={<Navigate to="/settings/users" replace />} />
+            <Route path="/roles" element={<Navigate to="/settings/roles" replace />} />
+            <Route path="/ai-config" element={<Navigate to="/settings/ai" replace />} />
+            <Route path="/man-day-roles" element={<Navigate to="/settings/man-day" replace />} />
+            <Route path="/audit" element={<Navigate to="/settings/audit" replace />} />
             {/* /settings (Pipeline config) — Day 14.7 Step 6 redirects to the new sub-route.
                 Bookmarks / deep links from before today still land on Pipeline. */}
             <Route path="/settings" element={<Navigate to="/settings/pipelines" replace />} />
-            {/* Day 14.7 — Settings sub-routes under SettingsLayout (Step 6: Tabs nav done; Step 7-8 fill children). */}
+            {/* Day 14.7 — Settings sub-routes under SettingsLayout (Step 6-8: all 7 tabs live). */}
             <Route path="/settings" element={<SettingsLayout />}>
               <Route path="pipelines" element={<SettingsPage />} />
-              <Route path="users" element={<SettingsTabPlaceholder title="Users" description="User management (moved from top-level)." step="Step 8" />} />
-              <Route path="roles" element={<SettingsTabPlaceholder title="Roles" description="Role & permission management (moved from top-level)." step="Step 8" />} />
-              <Route path="ai" element={<SettingsTabPlaceholder title="AI Config" description="AI provider config (moved from top-level)." step="Step 8" />} />
-              <Route path="man-day" element={<SettingsTabPlaceholder title="Man-day Roles" description="Man-day role catalog (moved from top-level)." step="Step 8" />} />
+              <Route path="users" element={<UsersPage />} />
+              <Route path="roles" element={<RolesPage />} />
+              <Route path="ai" element={<AiConfigPage />} />
+              <Route path="man-day" element={<ManDayRolesPage />} />
               <Route path="tax" element={<SettingsTaxPage />} />
-              <Route path="audit" element={<SettingsTabPlaceholder title="Audit Log" description="System audit log (moved from top-level)." step="Step 8" />} />
+              <Route path="audit" element={<AuditPage />} />
             </Route>
           </Route>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
