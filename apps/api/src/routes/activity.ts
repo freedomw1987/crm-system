@@ -163,8 +163,24 @@ export const activityRoutes = new Elysia({ prefix: '', tags: ['activities', 'att
   .get('/activities/recent', async ({ query, set, request }) => {
     const userId = await getUserIdFromRequest(request);
     if (!userId) { set.status = 401; return { error: 'Unauthorized' }; }
-    const limit = Math.min(Number((query as { limit?: string }).limit ?? '10'), 50);
+    const { limit: limitRaw, authorId, since } = query as {
+      limit?: string;
+      /** Day N+1: filter to a single sales rep (used by the Deal Kanban
+       *  pipeline-meeting view). Empty/undefined = no filter. */
+      authorId?: string;
+      /** Day N+1: ISO timestamp; only return activities at-or-after this
+       *  instant. Lets the Kanban view limit the list to "this week" /
+       *  "this month" without paging through old notes. */
+      since?: string;
+    };
+    const limit = Math.min(Number(limitRaw ?? '10'), 50);
+    // Build the where clause incrementally so undefined filters don't
+    // accidentally match everything.
+    const where: Record<string, unknown> = {};
+    if (authorId) where.authorId = authorId;
+    if (since) where.createdAt = { gte: new Date(since) };
     const items = await prisma.activity.findMany({
+      where,
       take: limit,
       orderBy: { createdAt: 'desc' },
       include: {

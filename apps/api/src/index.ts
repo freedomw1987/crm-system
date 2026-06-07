@@ -24,6 +24,7 @@ import { roleRoutes } from './routes/roles';
 import { regionRoutes } from './routes/region';
 import { manDayRoleRoutes } from './routes/man-day-role';
 import { activityRoutes } from './routes/activity';
+import { aiConfigRoutes } from './routes/ai-config';
 import { logEvent } from './middleware/audit';
 
 const PORT = Number(process.env.API_PORT ?? 3001);
@@ -75,6 +76,7 @@ const app = new Elysia()
   .use(regionRoutes)
   .use(manDayRoleRoutes)
   .use(activityRoutes)
+  .use(aiConfigRoutes)
   .use(auditRoutes)
 
   .onError(({ code, error, set }) => {

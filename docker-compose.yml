@@ -35,8 +35,17 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-crm}:${POSTGRES_PASSWORD:-crm_dev_password}@postgres:5432/${POSTGRES_DB:-crm_system}?schema=public
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production-please-use-long-random-string}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      # AI Assistant configuration is now entirely admin-controlled via
+      # the /admin/ai-config page (AiConfig DB row). We deliberately
+      # do NOT inject OPENAI_API_KEY / OPENAI_MODEL here — those would
+      # be server-side env fallbacks that the admin cannot override
+      # from the UI, which violates David's T2 spec ("API KEY, Endpoint,
+      # Model are user-configurable; not stored in 1, 2, or 3").
+      # AI_CONFIG_ENCRYPTION_KEY is the DB-encryption master key for
+      # the user-supplied api key (AES-256-GCM). It MUST be set in
+      # .env (32-byte hex). Generate one with:
+      #   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+      AI_CONFIG_ENCRYPTION_KEY: ${AI_CONFIG_ENCRYPTION_KEY:?AI_CONFIG_ENCRYPTION_KEY must be set in .env}
       NODE_ENV: production
       PORT: 3001
       HOST: 0.0.0.0

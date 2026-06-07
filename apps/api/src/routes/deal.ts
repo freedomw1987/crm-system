@@ -34,7 +34,14 @@ export const dealRoutes = new Elysia({ prefix: '/deals', tags: ['deals'] })
 
   // Day 8: Kanban view — returns stages with nested deals, perfect for drag-drop board
   .get('/kanban', async ({ query }) => {
-    const { ownerId, pipelineId } = query as { ownerId?: string; pipelineId?: string };
+    // 2026-06-06: accept companyId filter so the Kanban page can scope
+    // the board to a single customer's deals. Same param name as the
+    // flat /deals list — keeps the frontend API surface symmetric.
+    const { ownerId, pipelineId, companyId } = query as {
+      ownerId?: string;
+      pipelineId?: string;
+      companyId?: string;
+    };
     // 1) pick the pipeline (default if not specified)
     const pipeline = pipelineId
       ? await prisma.pipeline.findUnique({ where: { id: pipelineId } })
@@ -48,6 +55,7 @@ export const dealRoutes = new Elysia({ prefix: '/deals', tags: ['deals'] })
     // 3) load all deals in one query, then bucket by stage
     const where: Record<string, unknown> = { pipelineId: pipeline.id };
     if (ownerId) where.ownerId = ownerId;
+    if (companyId) where.companyId = companyId;
     const deals = await prisma.deal.findMany({
       where,
       orderBy: { createdAt: 'desc' },

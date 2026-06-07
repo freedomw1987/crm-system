@@ -9,6 +9,7 @@ import OpenAI from 'openai';
 import { prisma } from '@crm/db';
 import { toolRegistry, type ToolContext } from './tools';
 import { SYSTEM_PROMPT } from './prompts';
+import { getAiConfig } from './config';
 
 export interface AgentRunInput {
   userId: string;
@@ -23,11 +24,31 @@ export interface AgentRunResult {
   usage: { promptTokens: number; completionTokens: number; totalTokens: number };
 }
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const MODEL = process.env.OPENAI_MODEL ?? 'gpt-4o-mini';
-const MAX_TOOL_ITERATIONS = 6;
+/**
+ * Errors thrown from runAgent() that the chat route should translate to
+ * specific HTTP status codes (so the frontend can show a meaningful
+ * message instead of a generic 500).
+ */
+export class AiNotConfiguredError extends Error {
+  constructor() {
+    super('AI Assistant is not configured. Please ask an admin to set it up at /admin/ai-config.');
+  }
+}
 
 export async function runAgent(input: AgentRunInput): Promise<AgentRunResult> {
+  // 0. Load LLM config from DB (no env-var fallback, by design)
+  const aiConfig = await getAiConfig();
+  if (!aiConfig) throw new AiNotConfiguredError();
+
+  const client = new OpenAI({
+    apiKey: aiConfig.apiKey,
+    baseURL: aiConfig.endpointUrl,
+  });
+  const MODEL = aiConfig.modelName;
+  const MAX_TOOL_ITERATIONS = 6;
+  // Per-conversation system prompt override (admin can tune it in the UI)
+  const systemPrompt = aiConfig.systemPrompt?.trim() || SYSTEM_PROMPT;
+
   // 1. Get or create conversation
   let conversationId = input.conversationId;
   if (!conversationId) {
@@ -56,7 +77,7 @@ export async function runAgent(input: AgentRunInput): Promise<AgentRunResult> {
   });
 
   const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
-    { role: 'system', content: SYSTEM_PROMPT },
+    { role: 'system', content: systemPrompt },
     ...history.map((m) => {
       if (m.role === 'tool') {
         return {
@@ -212,4 +233,6 @@ export async function runAgent(input: AgentRunInput): Promise<AgentRunResult> {
 // Re-exports
 export { toolRegistry } from './tools';
 export { SYSTEM_PROMPT } from './prompts';
+export { getAiConfig, invalidateAiConfigCache } from './config';
+export { encryptSecret, decryptSecret, maskApiKey } from './encryption';
 export type { Tool, ToolContext } from './tools';

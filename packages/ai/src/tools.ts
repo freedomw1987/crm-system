@@ -381,12 +381,102 @@ const getTopCustomers: Tool = {
   },
 };
 
+// ============================================================
+// Tool: search_services
+// ============================================================
+// Day 10+: Searches the service catalogue by name/category/status. This
+// is the service-side mirror of search_products — services are
+// SOW-style offerings (man-day role breakdown) rather than discrete
+// SKUs, so the surface is simpler.
+const searchServices: Tool = {
+  name: 'search_services',
+  description: 'Search the service catalogue by name, category, or status. Returns services with pricing and man-day line counts.',
+  parameters: {
+    type: 'object',
+    properties: {
+      query: { type: 'string', description: 'Search term (matches name, description)' },
+      category: { type: 'string', description: 'Filter by category (e.g. "Consulting", "Implementation")' },
+      status: { type: 'string', enum: ['ACTIVE', 'INACTIVE', 'ARCHIVED'], description: 'Filter by status' },
+      limit: { type: 'number', description: 'Max results (default 20)' },
+    },
+  },
+  execute: async (args) => {
+    const where: Record<string, unknown> = {};
+    if (args.status) where.status = args.status;
+    if (args.category) where.category = args.category;
+    if (args.query) {
+      where.OR = [
+        { name: { contains: args.query, mode: 'insensitive' } },
+        { description: { contains: args.query, mode: 'insensitive' } },
+      ];
+    }
+    return prisma.service.findMany({
+      where,
+      take: args.limit ?? 20,
+      orderBy: { sortOrder: 'asc' },
+      include: {
+        _count: { select: { manDayLines: true, quotationItems: true } },
+      },
+    });
+  },
+};
+
+// ============================================================
+// Tool: update_deal_stage
+// ============================================================
+// Day 10+: Moves a deal to a different pipeline stage (the kanban
+// column). Returns the updated deal. Does NOT change the `status` field
+// (OPEN/WON/LOST) — that's a separate manual decision the sales rep
+// makes when they close the deal. Each call is logged as an Activity so
+// the audit trail is intact.
+const updateDealStage: Tool = {
+  name: 'update_deal_stage',
+  description: 'Move a deal to a different pipeline stage (kanban column). Does not change OPEN/WON/LOST status — that requires explicit close action. Logs an Activity for audit trail.',
+  parameters: {
+    type: 'object',
+    properties: {
+      dealId: { type: 'string', description: 'The deal ID' },
+      stageId: { type: 'string', description: 'The new stage ID (use list_deals to find current stage, or list_pipelines/list_stages if you need a different pipeline)' },
+      reason: { type: 'string', description: 'Why the deal is being moved (used in the Activity log)' },
+    },
+    required: ['dealId', 'stageId'],
+  },
+  execute: async (args, ctx) => {
+    const updated = await prisma.deal.update({
+      where: { id: args.dealId },
+      data: { stageId: args.stageId },
+      include: { stage: true, company: { select: { id: true, name: true } } },
+    });
+    // Audit trail via Activity
+    await prisma.activity.create({
+      data: {
+        type: 'NOTE',
+        // Schema: Activity has `content` (the body) and no `subject`.
+        // We prepend the subject-like prefix to the content so the
+        // activity log line is self-describing.
+        content: `[Stage change] ${updated.stage.name}${args.reason ? ` — ${args.reason}` : ' (via AI assistant)'}`,
+        dealId: args.dealId,
+        companyId: updated.companyId,
+        authorId: ctx.userId,
+      },
+    });
+    return {
+      dealId: updated.id,
+      title: updated.title,
+      newStage: updated.stage.name,
+      company: updated.company.name,
+    };
+  },
+};
+
 export const toolRegistry: Tool[] = [
   searchCompanies,
   getCompany,
   searchProducts,
+  searchServices,
   listQuotations,
   listDeals,
+  updateDealStage,
   draftQuotation,
   logActivity,
   getTopCustomers,

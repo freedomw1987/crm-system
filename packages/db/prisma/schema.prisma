@@ -54,6 +54,7 @@ model User {
   uploadedAttachments Attachment[]   @relation("AttachmentUploader")
   conversations       Conversation[]
   auditEvents         AuditLog[]     @relation("AuditActor")
+  aiConfigUpdates     AiConfig[]     @relation("AiConfigUpdater")
 
   @@index([email])
   @@index([role])
@@ -785,6 +786,8 @@ enum AuditAction {
   ACTIVITY_DELETED
   ATTACHMENT_UPLOADED
   ATTACHMENT_DELETED
+  // AI Configuration (Day 10+)
+  AI_CONFIG_UPDATED
 }
 
 model AuditLog {
@@ -812,4 +815,36 @@ model AuditLog {
   @@index([resourceType, resourceId])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+// ============================================================
+// 14. AI CONFIGURATION (Day 10+)
+// ============================================================
+//
+// Singleton row (id=1) storing the AI Assistant's connection to the
+// external LLM provider. The apiKey is stored encrypted at rest using
+// AES-256-GCM keyed off the server-side `AI_CONFIG_ENCRYPTION_KEY` env
+// var (master key). Endpoint URL, model name, and system prompt are
+// stored in plaintext because they aren't secret.
+//
+// Admin can edit via /admin/ai-config (no other surface). The chat route
+// loads this row on every request to drive the OpenAI client — no env-var
+// fallback, by design (David's T2 spec: "no LLM env defaults").
+
+model AiConfig {
+  id            Int      @id @default(1) // Singleton: always 1
+  // LLM provider connection
+  endpointUrl   String   // e.g. https://api.openai.com/v1
+  apiKeyCipher  String   @db.Text // AES-256-GCM: base64(iv || ciphertext || tag)
+  modelName     String   // e.g. gpt-4o, claude-3-5-sonnet, custom model
+  // Optional system prompt override (defaults to packages/ai/src/prompts.ts)
+  systemPrompt  String?  @db.Text
+  // Audit
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  updatedById   String?
+
+  updatedBy User? @relation("AiConfigUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@map("ai_config")
 }

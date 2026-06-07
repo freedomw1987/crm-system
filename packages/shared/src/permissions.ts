@@ -27,6 +27,10 @@ export const PERMISSIONS = {
   'user:delete': 'Delete user accounts',
   'audit:read':  'View audit log',
 
+  // AI Assistant configuration (admin-only)
+  'ai-config:read':   'View AI Assistant endpoint and model settings',
+  'ai-config:update': 'Edit AI Assistant endpoint URL, API key, and model name',
+
   // CRM resources
   'company:read':   'View companies',
   'company:create': 'Create companies',
