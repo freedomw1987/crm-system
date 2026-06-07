@@ -32,6 +32,27 @@ const PORT = Number(process.env.API_PORT ?? 3001);
 const HOST = process.env.API_HOST ?? '0.0.0.0';
 const CORS_ORIGIN = process.env.CORS_ORIGIN ?? 'http://localhost:5173';
 
+// P0-4 (2026-06-07 review): the previous code used
+//   `process.env.JWT_SECRET ?? 'dev-only-secret-please-change'`
+// which silently booted with a known weak secret if the env var was
+// missing. In production this would let anyone forge tokens (the
+// dev-only string is in the public source tree).
+//
+// Hard-fail at boot when:
+//   1. JWT_SECRET is missing
+//   2. JWT_SECRET is shorter than 32 chars
+//   3. JWT_SECRET is the dev-only fallback string in production
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET environment variable is required. Refusing to boot.');
+}
+if (JWT_SECRET.length < 32) {
+  throw new Error(`JWT_SECRET must be at least 32 characters (got ${JWT_SECRET.length}). Generate one with: openssl rand -hex 32`);
+}
+if (process.env.NODE_ENV === 'production' && JWT_SECRET === 'dev-only-secret-please-change') {
+  throw new Error('Refusing to boot: JWT_SECRET is set to the dev-only fallback in production.');
+}
+
 const app = new Elysia()
   .use(
     cors({
@@ -43,7 +64,7 @@ const app = new Elysia()
   .use(
     jwt({
       name: 'jwt',
-      secret: process.env.JWT_SECRET ?? 'dev-only-secret-please-change',
+      secret: JWT_SECRET,
     })
   )
 

@@ -2,6 +2,7 @@ import { Elysia, t } from 'elysia';
 import { prisma } from '@crm/db';
 import { authContext } from '../lib/context';
 import { logEvent } from '../middleware/audit';
+import { requirePermission } from '../middleware/rbac';
 
 export const authRoutes = new Elysia({ prefix: '/auth', tags: ['auth'] })
   .use(authContext)
@@ -65,14 +66,22 @@ export const authRoutes = new Elysia({ prefix: '/auth', tags: ['auth'] })
       }),
     }
   )
+  // P0-1 (2026-06-07 review): self-registration was public and accepted a
+  // client-supplied `role` field, letting any unauthenticated caller
+  // self-register as ADMIN. Now gated by `user:create` permission (only
+  // admins have this) and the `role` field is removed from the body —
+  // new users default to SALES. Admins promote via PATCH /users/:id.
+  // We re-extract actorId from the request via the same helper rbac.ts
+  // uses, since `requirePermission` consumed the token before this
+  // handler ran.
+  .use(requirePermission('user:create'))
   .post(
     '/register',
-    async ({ body, set }) => {
-      const { email, password, name, role } = body as {
+    async ({ body, set, request }) => {
+      const { email, password, name } = body as {
         email: string;
         password: string;
         name: string;
-        role?: 'ADMIN' | 'SALES' | 'VIEWER';
       };
       const existing = await prisma.user.findUnique({ where: { email } });
       if (existing) {
@@ -81,7 +90,19 @@ export const authRoutes = new Elysia({ prefix: '/auth', tags: ['auth'] })
       }
       const passwordHash = await Bun.password.hash(password);
       const user = await prisma.user.create({
-        data: { email, name, passwordHash, role: role ?? 'SALES' },
+        data: { email, name, passwordHash, role: 'SALES' },
+      });
+      // Re-extract actorId for the audit log (the route ran after
+      // requirePermission, so the token was already verified upstream).
+      const { getUserIdFromRequest } = await import('../middleware/rbac');
+      const actorId = await getUserIdFromRequest(request);
+      await logEvent({
+        actorId,
+        action: 'USER_CREATED',
+        resourceType: 'user',
+        resourceId: user.id,
+        description: `Created user ${user.email} (SALES)`,
+        request,
       });
       return {
         id: user.id,
@@ -95,11 +116,6 @@ export const authRoutes = new Elysia({ prefix: '/auth', tags: ['auth'] })
         email: t.String({ format: 'email' }),
         password: t.String({ minLength: 8 }),
         name: t.String({ minLength: 1 }),
-        role: t.Optional(t.Union([
-          t.Literal('ADMIN'),
-          t.Literal('SALES'),
-          t.Literal('VIEWER'),
-        ])),
       }),
     }
   )
