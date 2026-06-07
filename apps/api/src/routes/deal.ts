@@ -4,6 +4,7 @@ import { prisma } from '@crm/db';
 import { logEvent } from '../middleware/audit';
 import { authContext } from '../lib/context';
 import { requirePermission, getUserIdFromRequest } from '../middleware/rbac';
+import { withAuditDelete } from '../lib/with-audit';
 
 // P0-2 (2026-06-07 review): all deal endpoints (GET list/kanban/:id,
 // POST, PATCH stage, PATCH, DELETE) were public. Now gated.
@@ -327,17 +328,14 @@ export const dealRoutes = new Elysia({ prefix: '/deals', tags: ['deals'] })
   .use(requirePermission('deal:delete'))
   .delete('/:id', async ({ params, userId, request }) => {
     const before = await prisma.deal.findUnique({ where: { id: params.id }, select: { title: true } });
-    await prisma.deal.delete({ where: { id: params.id } });
-    if (before) {
-      await logEvent({
-        actorId: userId ?? null,
-        action: 'DEAL_DELETED',
-        resourceType: 'deal',
-        resourceId: params.id,
-        description: `Deleted deal ${before.title}`,
-        metadata: { title: before.title },
-        request,
-      });
-    }
-    return { success: true };
+    if (!before) return { success: true };
+    return withAuditDelete({
+      action: 'DEAL_DELETED',
+      resourceType: 'deal',
+      resourceId: params.id,
+      userId,
+      request,
+      deleteFn: () => prisma.deal.delete({ where: { id: params.id } }),
+      extraMetadata: { title: before.title },
+    });
   });

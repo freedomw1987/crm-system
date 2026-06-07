@@ -265,15 +265,13 @@ export const serviceRoutes = new Elysia({ prefix: '/services', tags: ['services'
     if (usage > 0) {
       return { success: false, error: `Cannot delete: ${usage} quotation item(s) reference this service. Archive it instead.` };
     }
-    await prisma.service.delete({ where: { id: params.id } });
-    await logEvent({
-      actorId: userId ?? null,
+    return withAuditDelete({
       action: 'SERVICE_DELETED',
       resourceType: 'service',
       resourceId: params.id,
-      description: `Deleted service ${before.name}`,
-      metadata: { name: before.name },
+      userId,
       request,
+      deleteFn: () => prisma.service.delete({ where: { id: params.id } }),
+      label: before.name,
     });
-    return { success: true };
   });
