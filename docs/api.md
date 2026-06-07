@@ -109,10 +109,35 @@
 - **200:** `Deal[]` (with company, owner, stage)
 
 ### POST /deals
+- **Auth:** `deal:create`
+- **Body:** `{ title, companyId, stageId, value, expectedCloseDate?, pipelineId?, ownerId?, description?, probability?, status?: 'OPEN'|'WON'|'LOST' }`
+- **Validation (RG-2026-06-07-DEAL-AUTOCOMPLETE, 2026-06-07):**
+  - `title` — required, 1-200 chars
+  - `companyId` — required, non-empty string (must exist in `companies`)
+  - `stageId` — required, non-empty string (must exist in `pipeline_stages`)
+  - `value` — required, numeric (number or numeric string)
+  - `expectedCloseDate` — optional ISO-8601 date
+  - `pipelineId` — optional; auto-resolved from `stageId` if omitted
+  - `ownerId` — optional; defaults to the calling user's id
+  - `description` — optional, max 5000 chars
+  - `probability` — optional, numeric
+  - `status` — optional enum `'OPEN' | 'WON' | 'LOST'`, defaults to `'OPEN'`
+- **Side effects:** Writes a `DEAL_CREATED` audit-log entry with the
+  creating user's id.
+- **201:** `Deal` (with company, owner, stage)
+- **422:** Validation error (Elysia schema violation)
+- **400:** Stage or owner not found
 
 ### GET /deals/:id
 
 ### PATCH /deals/:id
+- **Auth:** `deal:update`
+- **Body (Partial — all fields optional, RG-2026-06-07-DEAL-AUTOCOMPLETE):**
+  `{ title?, value?, expectedCloseDate?, description?, probability? }`
+- **Note:** Stage changes are NOT accepted on this endpoint — use
+  `PATCH /deals/:id/stage` instead so the backend can derive the
+  `status` and `closedAt` correctly.
+- **200:** `Deal`
 
 ### DELETE /deals/:id
 
@@ -347,6 +372,70 @@ stages; Phase 2 will add `/settings/system-configs` for global tax rate.
   }
   ```
 - **404:** if the stage doesn't exist
+
+---
+
+## Settings — Tax Rate (Day 14.7)
+
+Global default tax rate (percent, 0–100) applied to NEW quotations.
+Existing quotations keep their per-row `taxRate` snapshot — editing
+this value does NOT retroactively rewrite history (Plan option A, see
+`docs/retros/2026-06-07-system-settings.md`).
+
+The Quotation builder reads GET at open time to prefill the tax input;
+sales can still override per-quote.
+
+### GET /settings/tax
+- **Auth:** required (any logged-in user — SALES / VIEWER can read so
+  the quotation builder can prefill; we deliberately do NOT require
+  `settings:read` here)
+- **200:**
+  ```json
+  {
+    "key": "default_tax_rate",
+    "rate": 13,
+    "description": "Default tax rate (%) applied to NEW quotations. Per-quotation override available; existing quotations keep their snapshot.",
+    "updatedAt": "2026-06-07T11:40:00.000Z",
+    "updatedBy": { "id": "u_…", "name": "Admin User", "email": "admin@crm.local" }
+  }
+  ```
+- **Graceful degradation:** if the `SystemConfig` row is missing (seed
+  hasn't run / row was deleted), the response returns `rate: 0` with
+  `updatedAt: null` and `updatedBy: null` — NOT a 404. The frontend
+  renders `0%` and the admin can save to create the row.
+- **Storage:** `SystemConfig.value` is a `Json` Prisma column. The
+  backend coerces the stored JSON number to a native `number` on read;
+  clients never see the raw JSON shape.
+
+### PUT /settings/tax
+- **Auth:** required (`settings:update` — ADMIN only)
+- **Body:**
+  ```json
+  { "rate": 13 }
+  ```
+  - `rate` must be a number in `[0, 100]`. Zod validates; anything else
+    returns 422.
+- **Upsert:** writes a single row keyed `key = 'default_tax_rate'`.
+  Sets `value: rate`, `updatedById: <actor>`, refreshes `updatedAt`.
+  On the first save, the `description` column is populated with the
+  human-readable explanation.
+- **Audit:** every successful PUT emits one `SYSTEM_CONFIG_UPDATED`
+  row with:
+  ```json
+  {
+    "action": "SYSTEM_CONFIG_UPDATED",
+    "resourceType": "system_config",
+    "resourceId": "default_tax_rate",
+    "description": "Updated default tax rate: 6% → 13%",
+    "metadata": { "key": "default_tax_rate", "oldValue": 6, "newValue": 13 }
+  }
+  ```
+  This row is reachable from the Settings → Tax tab's "View audit log"
+  link, which deep-links to `/settings/audit?action=SYSTEM_CONFIG_UPDATED`.
+- **200:** the full `TaxConfig` row (same shape as GET).
+- **422:** if `rate` is missing, non-numeric, or outside `[0, 100]`.
+- **Used by:** Settings → Tax tab (`SettingsTaxPage`), SettingsLayout
+  (for cross-link to audit), Quotation builder (mount-time prefill).
 
 ---
 

@@ -4,6 +4,17 @@ import { prisma } from '@crm/db';
 import { authContext } from '../lib/context';
 import { logEvent } from '../middleware/audit';
 
+/**
+ * Coerce a `?ids=a&ids=b` (array) or `?ids=a,b` (single string) query
+ * value into a uniform `string[]`. Mirrors the same helper in
+ * deal.ts; kept local here to avoid a shared-util file for now.
+ */
+function toIdArray(v: string | string[] | undefined): string[] {
+  if (v === undefined || v === null) return [];
+  const arr = Array.isArray(v) ? v : v.split(',');
+  return arr.map((s) => s.trim()).filter((s) => s.length > 0);
+}
+
 // Quotation number generator (Q-YYYY-NNNN)
 async function nextQuotationNumber(): Promise<string> {
   const year = new Date().getFullYear();
@@ -155,11 +166,23 @@ async function resolveServiceCostSnapshot(
 export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quotations'] })
   .use(authContext)
   .get('/', async ({ query }) => {
-    const { companyId, status, createdById, dealId, limit = '50', offset = '0' } = query as {
+    // 2026-06-09: multi-select filter for the Quotation list page.
+    // Accepts `companyIds` / `createdByIds` (array or comma-separated
+    // string) in addition to the existing single-id `companyId` /
+    // `createdById`. `createdById` is the "sales rep" for a quotation
+    // — there is no `ownerId` column on `Quotation`; whoever created
+    // the quote is treated as the sales rep.
+    const {
+      companyId, status, createdById, dealId,
+      companyIds, createdByIds,
+      limit = '50', offset = '0',
+    } = query as {
       companyId?: string;
       status?: string;
       createdById?: string;
       dealId?: string;
+      companyIds?: string | string[];
+      createdByIds?: string | string[];
       limit?: string;
       offset?: string;
     };
@@ -168,6 +191,14 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
     if (status) where.status = status;
     if (createdById) where.createdById = createdById;
     if (dealId) where.dealId = dealId;
+    if (companyIds) {
+      const ids = toIdArray(query.companyIds as string | string[] | undefined);
+      if (ids.length) where.companyId = { in: ids };
+    }
+    if (createdByIds) {
+      const ids = toIdArray(query.createdByIds as string | string[] | undefined);
+      if (ids.length) where.createdById = { in: ids };
+    }
     return prisma.quotation.findMany({
       where,
       take: Number(limit),

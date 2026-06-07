@@ -47,9 +47,48 @@ async function main() {
   await prisma.address.deleteMany();
   await prisma.contact.deleteMany();
   await prisma.company.deleteMany();
+  await prisma.rolePermission.deleteMany(); // Day 14: before user (User.roleId FK)
+  await prisma.systemConfig.deleteMany();   // Day 14: SystemConfig (no FK chain to user yet, but for cleanliness)
+  await prisma.role.deleteMany();           // Day 14: before user
   await prisma.user.deleteMany();
 
+  // Day 14: seed Role + RolePermission rows from packages/shared/src/permissions.ts
+  // source of truth. Without these, the rbac.ts middleware returns 0 permissions
+  // for every user (P1-1 latent bug — `rbac.ts:64` reads from a table the seed
+  // script never wrote to). This commit closes that gap AND adds the new
+  // settings:* permissions for SystemConfig.
+  // NOTE: must come BEFORE user creation because User.roleId → Role.id.
+  const { PERMISSIONS } = await import('@crm/shared/permissions');
+  const allPermissionKeys = Object.keys(PERMISSIONS) as Array<keyof typeof PERMISSIONS>;
+  // Role → permission subset (matches packages/shared/src/permissions.ts)
+  const ROLE_PERMS: Record<string, string[]> = {
+    ADMIN:  allPermissionKeys,                                // everything
+    SALES:  ['company:read','company:create','company:update','company:delete',
+             'contact:read','contact:create','contact:update','contact:delete',
+             'product:read',
+             'quotation:read','quotation:create','quotation:update','quotation:delete','quotation:send',
+             'deal:read','deal:create','deal:update','deal:delete',
+             'chat:use'],
+    VIEWER: ['company:read','contact:read','product:read','quotation:read','deal:read'],
+  };
+  for (const roleName of ['ADMIN', 'SALES', 'VIEWER'] as const) {
+    const role = await prisma.role.create({
+      data: {
+        name: roleName,
+        displayName: roleName === 'ADMIN' ? 'Administrator' : roleName === 'SALES' ? 'Sales Rep' : 'Viewer',
+        description: `System role — seeded from packages/shared/src/permissions.ts`,
+        isSystem: true,
+        permissions: {
+          create: ROLE_PERMS[roleName].map((permission) => ({ permission })),
+        },
+      },
+    });
+    console.log(`✅ Created role ${role.name} (${ROLE_PERMS[roleName].length} permissions)`);
+  }
+
   // 1. Create admin user
+  const adminRole = await prisma.role.findUnique({ where: { name: 'ADMIN' } });
+  const salesRole = await prisma.role.findUnique({ where: { name: 'SALES' } });
   const adminPassword = await Bun.password.hash('admin123');
   const admin = await prisma.user.create({
     data: {
@@ -57,6 +96,7 @@ async function main() {
       name: 'Admin User',
       passwordHash: adminPassword,
       role: UserRole.ADMIN,
+      roleId: adminRole?.id,
     },
   });
   console.log('✅ Created admin user:', admin.email);
@@ -68,6 +108,7 @@ async function main() {
       name: 'Sales Rep',
       passwordHash: salesPassword,
       role: UserRole.SALES,
+      roleId: salesRole?.id,
     },
   });
   console.log('✅ Created sales user:', salesRep.email);
@@ -456,6 +497,22 @@ async function main() {
     },
   });
   console.log('✅ Created 1 sample quotation');
+
+  // System Configuration defaults (Day 14+)
+  // Seeded via upsert so re-running `bun run db:seed` doesn't wipe
+  // admin's in-flight edits to these values.
+  await prisma.systemConfig.upsert({
+    where: { key: 'default_tax_rate' },
+    update: {},
+    create: {
+      key: 'default_tax_rate',
+      // Stored as a JSON number so the same column can later hold
+      // e.g. { byRegion: { HK: 0, CN: 13 } } without a migration.
+      value: 0,
+      description: 'Default tax rate (%) applied to NEW quotations. Per-quotation override available; existing quotations keep their snapshot.',
+    },
+  });
+  console.log('✅ Seeded system_config.default_tax_rate = 0%');
 
   console.log('\n🎉 Seed complete!');
   console.log('\n📝 Login credentials:');

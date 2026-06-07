@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { History } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
@@ -63,9 +64,28 @@ function getActionMeta(action: string) {
 }
 
 export function AuditPage() {
-  const [action, setAction] = useState<string>('');
-  const [actorId, setActorId] = useState<string>('');
-  const [search, setSearch] = useState('');
+  // Day 14.7 Step 7/12 — initial filter values can be passed via query
+  // string so cross-tab links (e.g. Settings → Tax → "View audit log" with
+  // `?action=SYSTEM_CONFIG_UPDATED`) land pre-filtered.
+  //
+  // Step 12 fix: Step 7 used `useState(searchParams.get('action'))` which
+  // only reads the URL on mount. When the user navigates between audit
+  // pages via in-app <Link> clicks, react-router v7 reuses the existing
+  // component (no remount) so the filter state would NOT update from the
+  // new query string — the URL changes but the select/input stays on
+  // whatever the user last typed. The useEffect below syncs the URL
+  // → state on every searchParams change so deep links work whether you
+  // arrive via direct nav, browser back/forward, or in-app link.
+  const [searchParams] = useSearchParams();
+  const [action, setAction] = useState<string>(searchParams.get('action') ?? '');
+  const [actorId, setActorId] = useState<string>(searchParams.get('actorId') ?? '');
+  const [search, setSearch] = useState(searchParams.get('resourceId') ?? '');
+
+  useEffect(() => {
+    setAction(searchParams.get('action') ?? '');
+    setActorId(searchParams.get('actorId') ?? '');
+    setSearch(searchParams.get('resourceId') ?? '');
+  }, [searchParams]);
 
   const { data, isLoading } = useQuery({
     queryKey: ['audit', { action, actorId, search }],

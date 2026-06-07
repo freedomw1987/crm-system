@@ -55,6 +55,7 @@ model User {
   conversations       Conversation[]
   auditEvents         AuditLog[]     @relation("AuditActor")
   aiConfigUpdates     AiConfig[]     @relation("AiConfigUpdater")
+  systemConfigUpdates SystemConfig[] @relation("SystemConfigUpdater")
 
   @@index([email])
   @@index([role])
@@ -788,6 +789,8 @@ enum AuditAction {
   ATTACHMENT_DELETED
   // AI Configuration (Day 10+)
   AI_CONFIG_UPDATED
+  // System Configuration (Day 14+)
+  SYSTEM_CONFIG_UPDATED
 }
 
 model AuditLog {
@@ -847,4 +850,34 @@ model AiConfig {
   updatedBy User? @relation("AiConfigUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
 
   @@map("ai_config")
+}
+
+// ============================================================
+// 15. SYSTEM CONFIGURATION (Day 14+)
+// ============================================================
+//
+// Generic key-value store for admin-managed system defaults that
+// need to be read at runtime by the application layer (e.g. default
+// tax rate, default currency, default pipeline, etc.). Each row is
+// addressed by a stable `key` string; `value` holds the typed JSON
+// payload (Decimal numbers, strings, nested objects).
+//
+// Why a table (not env vars)?
+//   1. Admins can change values from the UI without a deploy.
+//   2. Changes are auditable (SYSTEM_CONFIG_UPDATED) and reversible.
+//   3. Multi-instance deploys share one source of truth.
+//
+// Retention: changes are not soft-deleted (we keep the latest value
+// only); full history lives in the audit_logs table (metadata holds
+// the before/after diff per ADR-0014 12-month retention).
+
+model SystemConfig {
+  key         String   @id
+  value       Json
+  description String?
+  updatedAt   DateTime @updatedAt
+  updatedById String?
+  updatedBy   User?    @relation("SystemConfigUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@map("system_config")
 }

@@ -1,8 +1,8 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   Building2, FileText, KanbanSquare, LogOut,
-  LayoutDashboard, Menu, X, Users, History, Briefcase, Shield, Package,
-  Sparkles, UserCog, Settings,
+  LayoutDashboard, Menu, X, Settings,
+  Sparkles, Package, Briefcase,
 } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '@/lib/auth';
@@ -23,19 +23,16 @@ const navItems = [
   { to: '/services', label: 'Service', icon: Briefcase },
 ];
 
+// Day 14.7 Step 10 — collapsed 5 separate admin links (Users / Roles /
+// Man-day / AI 設定 / Audit) into ONE "系統設置" entry that opens the
+// tabbed SettingsLayout (Pipelines/Users/Roles/AI/Man-day/Tax/Audit).
+// The 5 old top-level routes are still wired as <Navigate /> redirects
+// in App.tsx, so existing bookmarks / chat-share links still work, but
+// the sidebar no longer advertises them — the goal is a single discoverable
+// "System Settings" surface. Audit log is reachable via the Tax tab's
+// "View audit log" link (or by navigating /settings/audit directly).
 const adminNavItems = [
-  { to: '/users', label: 'Users', icon: Users, adminOnly: true },
-  { to: '/roles', label: 'Roles', icon: Shield, adminOnly: true },
-  // Day N: Man-day Roles page (admin-managed catalogue of pricing roles).
-  // Sales reps pick from this catalogue via a dropdown in the Service
-  // form (see apps/web/src/pages/services.tsx); they don't need to
-  // manage it themselves, so we keep it under the Admin section.
-  { to: '/man-day-roles', label: 'Man day role', icon: UserCog, adminOnly: true },
-  // Day 11: System Settings — Phase 1 covers sales pipeline configuration.
-  // The page is admin-only; SALES/VIEWER see a 403 if they navigate here directly.
   { to: '/settings', label: '系統設置', icon: Settings, adminOnly: true },
-  { to: '/ai-config', label: 'AI 設定', icon: Sparkles, adminOnly: true },
-  { to: '/audit', label: 'Audit Log', icon: History, adminOnly: true },
 ];
 
 export function AppLayout() {
