@@ -3,17 +3,7 @@ import { Elysia, t } from 'elysia';
 import { prisma } from '@crm/db';
 import { authContext } from '../lib/context';
 import { logEvent } from '../middleware/audit';
-
-/**
- * Coerce a `?ids=a&ids=b` (array) or `?ids=a,b` (single string) query
- * value into a uniform `string[]`. Mirrors the same helper in
- * deal.ts; kept local here to avoid a shared-util file for now.
- */
-function toIdArray(v: string | string[] | undefined): string[] {
-  if (v === undefined || v === null) return [];
-  const arr = Array.isArray(v) ? v : v.split(',');
-  return arr.map((s) => s.trim()).filter((s) => s.length > 0);
-}
+import { toIdArray } from '../lib/query-helpers';
 
 // Quotation number generator (Q-YYYY-NNNN)
 async function nextQuotationNumber(): Promise<string> {

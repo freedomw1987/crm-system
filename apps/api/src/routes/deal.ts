@@ -8,17 +8,7 @@ import { requirePermission, getUserIdFromRequest } from '../middleware/rbac';
 // P0-2 (2026-06-07 review): all deal endpoints (GET list/kanban/:id,
 // POST, PATCH stage, PATCH, DELETE) were public. Now gated.
 
-/**
- * Coerce a `?ids=a&ids=b` (array) or `?ids=a,b` (single string) query
- * value into a uniform `string[]`. Used by the multi-select filter
- * params (companyIds, ownerIds, createdByIds). Returns [] when the
- * input is missing or only contains empty strings.
- */
-function toIdArray(v: string | string[] | undefined): string[] {
-  if (v === undefined || v === null) return [];
-  const arr = Array.isArray(v) ? v : v.split(',');
-  return arr.map((s) => s.trim()).filter((s) => s.length > 0);
-}
+import { toIdArray } from '../lib/query-helpers';
 
 export const dealRoutes = new Elysia({ prefix: '/deals', tags: ['deals'] })
   .use(authContext)
