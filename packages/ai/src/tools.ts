@@ -422,6 +422,60 @@ const searchServices: Tool = {
 };
 
 // ============================================================
+// Tool: list_pipelines
+// ============================================================
+// Day 11: Lists the configured sales pipelines and their stages so the
+// AI can answer questions like "what's our sales pipeline?" or
+// "what stages do deals go through?". Read-only — updates are not
+// exposed as a tool (admins use the Settings page).
+const listPipelines: Tool = {
+  name: 'list_pipelines',
+  description:
+    "List the configured sales pipelines and their stages. Use this to find valid stage IDs/names before calling update_deal_stage, or to answer 'what's our sales pipeline?'.",
+  parameters: {
+    type: 'object',
+    properties: {
+      pipelineId: {
+        type: 'string',
+        description: 'Optional — return only this pipeline. Omit to list all.',
+      },
+    },
+  },
+  execute: async (args) => {
+    // Day 11: an empty string is the LLM's natural fallback for "no
+    // filter" when it doesn't realise the field is optional. Coerce
+    // '' to undefined so Prisma's `where` stays unfiltered.
+    const pipelineId = args.pipelineId && String(args.pipelineId).trim()
+      ? String(args.pipelineId)
+      : undefined;
+    const where = pipelineId ? { id: pipelineId } : undefined;
+    const pipelines = await prisma.pipeline.findMany({
+      where,
+      orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+      include: {
+        stages: {
+          orderBy: { position: 'asc' },
+          include: { _count: { select: { deals: true } } },
+        },
+      },
+    });
+    return pipelines.map((p) => ({
+      id: p.id,
+      name: p.name,
+      isDefault: p.isDefault,
+      stages: p.stages.map((s) => ({
+        id: s.id,
+        name: s.name,
+        position: s.position,
+        probability: s.probability,
+        color: s.color,
+        dealCount: s._count.deals,
+      })),
+    }));
+  },
+};
+
+// ============================================================
 // Tool: update_deal_stage
 // ============================================================
 // Day 10+: Moves a deal to a different pipeline stage (the kanban
@@ -476,6 +530,7 @@ export const toolRegistry: Tool[] = [
   searchServices,
   listQuotations,
   listDeals,
+  listPipelines,
   updateDealStage,
   draftQuotation,
   logActivity,
