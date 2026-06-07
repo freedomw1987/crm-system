@@ -1,499 +1,215 @@
-# CRM 系統 — 設計文件 (Design)
+# CRM System — Design Document
 
-> **版本**: Day 9
-> **受眾**: 業務決策人 / 設計審視者 / 客戶負責人
-> **目的**: 解釋系統嘅**視覺風格、UX 設計、Screen 設計、用戶流程**,**唔涉技術細節**
-
----
-
-## 1. 設計原則
-
-| 原則 | 解釋 |
-|---|---|
-| **清晰勝過花巧** | Sales 一日用 8 個鐘,介面唔可以阻礙佢哋,顏色只係 highlight 重要嘢 |
-| **單頁搞掂** | 報價單 / Deal 編輯可以喺一個 dialog 內完成,唔彈出多個視窗 |
-| **數據密度高** | Kanban 一次顯示多個 deal,清單一次顯示 50 個 record,sales 唔使 scroll 太多 |
-| **中文優先** | 全部用戶介面用繁體中文香港口語,data label 跟住 sales 嘅日常用語 |
-| **Responsive 設計** | 桌面、平板、手機自動適配(老闆用 iPad 開會睇 Kanban 一定要 work) |
+> Design tokens, UI patterns, and component conventions for the CRM frontend.
+> Source of truth is the code (`apps/web/src/components/ui/`) — this document
+> explains *why* the conventions exist and when to deviate.
 
 ---
 
-## 2. 視覺設計系統 (Design System)
+## 1. Visual language
 
-### 2.1 配色 (Color Palette)
+| Aspect | Choice | Reasoning |
+|--------|--------|-----------|
+| Font | System UI stack (`-apple-system`, `BlinkMacSystemFont`, `Segoe UI`, `PingFang TC`) | Fast load, native feel on each OS, no web font FOUT |
+| Primary colour | Brand blue (custom Tailwind `primary` token) | Reads as trustworthy/professional |
+| Bilingual | 繁中 primary, English secondary | David + HK market; nav labels are English (per Day 10 spec) |
+| Density | Compact by default (Tailwind `text-sm` for body) | More data per screen for sales reps |
+| Borders | 1px solid `border` token | Subtle separation, no heavy boxes |
+| Shadows | `shadow-sm` for cards, `shadow-lg` for FAB + modals | Modals need to float over content |
+| Spacing | 4 / 8 / 16 / 24 px scale (Tailwind default) | Don't reinvent — designers + devs share the same scale |
 
-整個系統用一套**精簡嘅色票** — 顏色只係用嚟區分 status / 強調 action,唔當裝飾用。
+## 2. Layout
 
-```
-主色 (Primary)
-  ████ #0969DA  →  按鈕、連結、active state
-  ████ #0550AE  →  hover
-
-語意色 (Semantic)
-  ████ #1A7F37  →  成功 / 已成交 (Won) / 已接受
-  ████ #CF222E  →  錯誤 / 已輸 (Lost) / 危險操作
-  ████ #BF8700  →  警告 / Draft / 等待
-  ████ #8250DF  →  資訊 / 提示 / AI 助手
-
-中性色 (Neutral)
-  ████ #24292F  →  標題
-  ████ #57606A  →  內文
-  ████ #8B949E  →  輔助文字
-  ████ #D0D7DE  →  邊框
-  ████ #F6F8FA  →  背景 (subtle)
-  ████ #FFFFFF  →  卡片背景
-```
-
-**Stage 顏色**(Pipeline 嘅每個 stage 都有特定色,kanban 嘅 column header 顯示):
-
-| Stage | 顏色 |
-|---|---|
-| Lead | 灰色 #8B949E |
-| Qualified | 藍色 #0969DA |
-| Proposal | 紫色 #8250DF |
-| Negotiation | 橙色 #BF8700 |
-| Won | 綠色 #1A7F37 |
-| Lost | 紅色 #CF222E |
-
-**黑暗模式 (Dark Mode)** — 全部 screen 都支援,系統記住用戶嘅選擇。
-
-### 2.2 字型 (Typography)
-
-- **中文**:PingFang TC (macOS) / Microsoft JhengHei (Windows) / Noto Sans CJK HK (Linux)
-- **英文**:系統字型 -apple-system / Segoe UI
-- **Monospace** (報價單編號、SKU):SF Mono / Menlo / Consolas
+### 2.1 Global chrome (`AppLayout`)
 
 ```
-H1 (頁面標題)   24px / 600 weight
-H2 (區塊標題)   20px / 600
-H3 (子區塊)     17px / 600
-Body            15px / 400
-Small / Caption 13px / 400
+┌────────────┬──────────────────────────────────────┐
+│  Sidebar   │  <header> (mobile only)              │
+│  (240 px)  ├──────────────────────────────────────┤
+│            │                                      │
+│  Logo      │                                      │
+│  Nav links │            <main> (Outlet)           │
+│  …         │                                      │
+│  ───       │                                      │
+│  User      │                                      │
+│  Logout    │                                      │
+│            │                                      │
+└────────────┴──────────────────────────────────────┘
+                                              ┌─────┐
+                                              │ FAB │  (AiFab, fixed)
+                                              └─────┘
 ```
 
-### 2.3 Spacing & Layout
+- **Sidebar**: fixed left, full height. On `< lg` it's `-translate-x-full` and
+  toggled by the hamburger button.
+- **Header**: only renders on `< lg` (mobile).
+- **Main**: scrolls independently (`overflow-auto`). Renders `<Outlet />`.
+- **FAB**: `position: fixed`, `bottom-6 right-6`, `z-50`. Sits *above* main
+  but *below* modals (which use `z-[100]+`).
 
-- 8px 為基準嘅 spacing system(8, 16, 24, 32, 48, 64)
-- 卡片圓角:6px
-- 按鈕圓角:6px
-- 主要按鈕 padding:8px 16px
-- 表格行高:48px (touch-friendly)
+### 2.2 Page patterns
 
-### 2.4 設計模式 (Design Patterns)
-
-| 模式 | 用途 |
-|---|---|
-| **Card** | 內容分組,白色底 + 淺灰邊框,陰影 subtle |
-| **Badge** | 顯示 status (Active / Draft / Archived),有圓角 pill shape |
-| **Dialog** | Modal popup 喺中間,背後 dim;主要用於 create / edit form |
-| **Autocomplete** | Type-ahead dropdown,顯示 icon + name + secondary text |
-| **Kanban** | Horizontal scroll 嘅 column 排列,drag-and-drop 視覺回饋 |
-| **Toast** | 右下角浮現,3 秒自動消失,用於 success / error notification |
-| **Inline edit** | 直接喺 table row 撳一下 edit,唔彈 dialog |
-
----
-
-## 3. Screen-by-Screen 設計
-
-### 3.1 登入頁 (Login)
+#### Detail page pattern (e.g. `/companies/:id`)
 
 ```
-┌────────────────────────────────────────┐
-│                                        │
-│                                        │
-│            📋 CRM 系統                 │
-│         銷售團隊嘅 AI 助手              │
-│                                        │
-│      ┌──────────────────────────┐      │
-│      │ 電郵                    │      │
-│      │ admin@crm.local         │      │
-│      └──────────────────────────┘      │
-│      ┌──────────────────────────┐      │
-│      │ 密碼                    │      │
-│      │ ••••••••                │      │
-│      └──────────────────────────┘      │
-│                                        │
-│      ┌──────────────────────────┐      │
-│      │        登入              │      │
-│      └──────────────────────────┘      │
-│                                        │
-│      ☐ 保持登入狀態                     │
-│                                        │
-└────────────────────────────────────────┘
+┌──────────────────────────────────────────┐
+│  ← Back    [Title]    [Edit] [Delete]    │  Header
+├──────────────────────────────────────────┤
+│  [Tab 1]  [Tab 2]  [Tab 3]               │  Tab nav
+├──────────────────────────────────────────┤
+│                                          │
+│  Active tab content                      │
+│                                          │
+└──────────────────────────────────────────┘
 ```
 
-- 居中卡片,~360px 寬
-- 大 logo + 簡短 slogan
-- 兩個 input + 一個 primary button
-- 背景:**淡漸層**(淺藍 → 淺灰)
+Tabs are kept in-page with `useState` (no router sub-routes) when they don't
+need deep-linking. Each tab content is a separate sub-component file
+(`OverviewTab.tsx`, `ActivityTab.tsx`, `AttachmentsTab.tsx`).
 
-### 3.2 主介面 (App Layout)
-
-登入後,所有頁面共用一個 layout:
+#### List page pattern (e.g. `/companies`)
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│  📋 CRM 系統    儀表板  客戶  產品  服務  報價  銷售管道  AI 助手    │ 張三 ▼│
-├──────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  (Page content 喺呢度)                                            │
-│                                                                  │
-│                                                                  │
-└──────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────┐
+│  Title                [Search] [+ New]   │
+│  Subtitle / count                        │
+├──────────────────────────────────────────┤
+│  Card  Card  Card    (grid 1/2/3 cols)   │
+│  Card  Card  Card                        │
+│  Empty state if 0                        │
+└──────────────────────────────────────────┘
 ```
 
-- **頂部 navigation** (60px 高):Logo + 主選單 + 用戶頭像 dropdown
-- 唔用 sidebar(全部一橫行 navigation,慳空間)
-- **RWD**:手機時 collapse 成漢堡選單
+## 3. Component library
 
-### 3.3 儀表板 (Dashboard)
+`apps/web/src/components/ui/` — shadcn-style primitives (Button, Input,
+Dialog, Card, Select, …). One file per component, no nested exports. All
+accept `className` for tailwind overrides.
 
-管理員/老闆打開就睇到嘅總覽:
+### 3.1 Naming
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│  儀表板                                              本月 ▼       │
-│                                                                  │
-│  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐     │
-│  │ 進行中     │ │ 本月成交   │ │ 待跟進任務  │ │ AI 助手用量 │     │
-│  │   23 個   │ │  $380,000  │ │    12 個   │ │   156 次   │     │
-│  │  ↑ 3 個   │ │  ↑ 12%     │ │  ⚠ 3 逾期  │ │  ↑ 24%     │     │
-│  └────────────┘ └────────────┘ └────────────┘ └────────────┘     │
-│                                                                  │
-│  最近活動                                                         │
-│  ──────────────────────────────────────────────────────         │
-│  10:32  張三  建立咗個 quotation Q-2026-0042 ($41,000)           │
-│  09:15  李四  將 deal 「ACME Upgrade」移到 Negotiation           │
-│  08:45  AI    為 ACME 草擬咗個 quotation                         │
-│  ...                                                            │
-│                                                                  │
-│  銷售管道概覽                                                     │
-│  ──────────────────────────────────────────────────────         │
-│  Lead: 8     Qualified: 5    Proposal: 4    Negotiation: 3      │
-│  Won: 2 ($95K)              Lost: 1                            │
-└──────────────────────────────────────────────────────────────────┘
-```
+- PascalCase for components: `DealCard`, `QuotationBuilder`
+- camelCase for hooks: `useAuth`, `useDealFilter`
+- Lowercase for utils: `cn`, `formatDateTime`
 
-- **Top KPI cards** (4 個):一打開就見到關鍵數字 + 與上月比較趨勢
-- **最近活動 feed**:即時顯示 team 嘅動作,鼓勵競爭/合作
-- **Pipeline 概覽**:迷你 kanban 顯示 stage 分布
+### 3.2 Form pattern
 
-### 3.4 客戶列表 (Companies)
+- Field label always above the input (not floating)
+- Required indicator: `*` after label text
+- Validation error rendered below the field, red text, `text-sm`
+- Submit button disabled while `isPending` from React Query
+- On mutation error, show error toast + keep form open
+
+### 3.3 Dialog pattern
+
+- Uses shadcn `Dialog` primitive
+- Title + close X in header
+- Body has the form / content
+- Footer has Cancel + primary action
+- Primary action: button colour `primary`, label is verb ("Save", "Create",
+  not "OK")
+- ESC + clicking outside = cancel (default Dialog behaviour)
+- Long forms scroll within dialog body, not the page
+
+## 4. Day 10 — AI Assistant UI specifics
+
+### 4.1 FAB (AiFab)
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│  客戶管理                                          + 新增客戶     │
-│  ┌────────────────────┐  ┌──────┐  ┌────────┐  ┌──────────┐   │
-│  │ 🔍 搜尋公司名...    │  │地區▼│  │ 狀態▼  │  │ 行業▼    │   │
-│  └────────────────────┘  └──────┘  └────────┘  └──────────┘   │
-│                                                                  │
-│  ┌────┬──────────────────┬──────────────┬──────┬───────┬─────┐  │
-│  │ ☐  │ 名稱              │ 行業          │地區  │ 聯絡人 │交易│  │
-│  ├────┼──────────────────┼──────────────┼──────┼───────┼─────┤  │
-│  │ ☐  │ ACME Limited      │ 零售          │🇭🇰 HK│   3   │  5  │  │
-│  │ ☐  │ Globex Corp.     │ 製造業        │🇲🇴 MO│   1   │  2  │  │
-│  │ ☐  │ Initech          │ IT Services   │🇨🇳 CN│   2   │  1  │  │
-│  └────┴──────────────────┴──────────────┴──────┴───────┴─────┘  │
-│                                                                  │
-│  顯示 1-50 個,共 137 個  < 1 2 3 >                              │
-└──────────────────────────────────────────────────────────────────┘
+                                            ┌──────────┐
+                                            │  [🪄]    │  ← pulse ring
+                                            │  (56px)  │
+                                            └──────────┘
+                                            AI Assistant  ← label on hover
 ```
 
-- **頂部 filter bar**:搜尋 + 多個 dropdown
-- **Data table**:行可 click 進 detail page;checkbox 喺左邊可以 batch 操作
-- **地區欄**用 emoji 旗仔 + 短碼,視覺上易認
-- **每頁 50 行**,David 嘅 137 個客戶 3 頁搞掂
+- 56 px circle (Material Design FAB spec)
+- Brand-primary background, white icon
+- Pulse ring (`animate-ping`) to draw the eye without being noisy
+- Hover label slides in from the right
+- `aria-label="開 AI Assistant"` for screen readers
+- Hidden when `location.pathname === '/ai'` so it doesn't cover the chat
 
-### 3.5 客戶詳情 (Company Detail)
-
-```
-┌──────────────────────────────────────────────────────────────────┐
-│  ← 客戶管理                                                       │
-│                                                                  │
-│  ACME Limited                            [編輯] [+ 新報價] [+ 新 Deal]│
-│  零售 · 🇭🇰 香港 · ACTIVE                                       │
-│                                                                  │
-│  ┌─基本資料─────────────────┐  ┌─統計────────────────────┐     │
-│  │ 統一商業登記: 12345678  │  │ 聯絡人: 3 個             │     │
-│  │ 電話: +852 2345 6789   │  │ 報價單: 5 個 (2 個已接受)│     │
-│  │ 電郵: info@acme.hk    │  │ 銷售機會: 2 個           │     │
-│  │ 網址: acme.hk         │  │ 累計交易: $385,000      │     │
-│  │ 信用額度: $100,000     │  │                          │     │
-│  │ 付款條件: Net 30       │  │                          │     │
-│  └────────────────────────┘  └─────────────────────────┘     │
-│                                                                  │
-│  聯絡人 (3)                                          + 新增      │
-│  ┌──────────────────────────────────────────────────┐           │
-│  │ 張小明  採購經理  zhang@acme.hk  +852 9876 5432  │           │
-│  │ 李大文  CTO     li@acme.hk     +852 8765 4321  │           │
-│  │ 陳小花  CEO     chen@acme.hk   +852 7654 3210  │           │
-│  └──────────────────────────────────────────────────┘           │
-│                                                                  │
-│  報價單 (5)                                                      │
-│  銷售機會 (2)                                                     │
-│  活動記錄                                                         │
-└──────────────────────────────────────────────────────────────────┘
-```
-
-- **頂部**:返回鍵 + 公司名 + 動作 buttons
-- **兩欄 layout** (desktop):左基本資料,右統計
-- **下方 tabs**:聯絡人 / 報價單 / 銷售機會 / 活動 — 全部 related data 集中一處
-
-### 3.6 Quotation Builder ⭐ (核心 Screen)
-
-呢個係**最重要嘅 screen**,**用單頁 Dialog 形式**,一個畫面搞掂晒報價工序:
+### 4.2 Chat page (`/ai`)
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│  ←  返回    Q-2026-0042 草稿                              [儲存] [發送]│
-│                                                                      │
-│  客戶 *  [🔍 揀客戶...        ▼]    關聯 Deal  [🔍 揀 Deal ▼]     │
-│  標題   [Q2 系統升級報價]              有效期   [2026-08-31]        │
-│  貨幣   [HKD ▼]                      稅率 %   [0.0]                │
-│                                                                      │
-│  行項目                                                                │
-│  ┌──────────────────────────────────────────────────────────────┐    │
-│  │ #  類型  │ 名稱          │ 數量  │ 單價    │ 折扣  │ 小計    │    │
-│  │ 1  📦 PROD│ 27" Monitor  │  5   │ $3,200  │  0%  │ $16,000 │    │
-│  │ 2  📦 PROD│ HDMI Cable   │  10  │ $50     │  0%  │ $500    │    │
-│  │ 3  🔧 SVC │ Installation │  1   │ $25,000 │  0%  │ $25,000 │    │
-│  │              └── 8 人天  [展開 SOW]                         │    │
-│  │ 4  + 加行項                                                    │    │
-│  └──────────────────────────────────────────────────────────────┘    │
-│                                                                      │
-│                                              小計   $41,500         │
-│                                              稅額   $0              │
-│                                              折扣   $0              │
-│                                              總計   $41,500 HKD     │
-└──────────────────────────────────────────────────────────────────────┘
+┌──────────────┬─────────────────────────────────────┐
+│  [新對話]     │  Conversation title                  │
+├──────────────┤─────────────────────────────────────┤
+│  Conv 1      │                                      │
+│  Conv 2      │  [User] Hi, what deals are open?     │
+│  Conv 3      │  [Bot]  Let me check…                │
+│              │        🔧 list_deals  ▾              │
+│              │           {json}                     │
+│              │  [Bot]  You have 5 open deals…       │
+│              │                                      │
+│              ├─────────────────────────────────────┤
+│              │  [textarea]              [Send]      │
+└──────────────┴─────────────────────────────────────┘
 ```
 
-**互動細節**:
-- 撳「加行項」會 inline 加新行,唔彈 dialog
-- 揀 Product / Service 用 **autocomplete dropdown**,type-ahead 搜尋
-- 如果搜尋嘅 product / service 唔存在,可以**即場新增**(autocomplete 底部有「+ 新增 Product『xxx』」按鈕,inline 開 dialog 整,完成即刻揀返)
-- 改數量 / 單價 → 細欄即時 re-compute
-- Service 行有「展開 SOW」顯示人天明細(Senior Consultant × 3 天之類)
-- 右下角即時顯示 total
+- 2-pane grid: `[260px_1fr]` on `md+`, single column on mobile
+- Conversation list scrolls independently
+- Message stream scrolls to bottom on new message
+- Tool calls are collapsible (`<details>`-like with caret)
+- Empty state shows 4 example prompts as clickable buttons
+- Composer: textarea (2 rows), Enter to send, Shift+Enter for newline
+- "AI 諗緊..." spinner during `sendMutation.isPending`
+- Error banner (red) if mutation fails
 
-### 3.7 銷售管道 (Deal Pipeline) ⭐ Kanban
-
-```
-┌────────────────────────────────────────────────────────────────────────┐
-│ 銷售管道  預設 ▼                            [ + 新 Deal]                │
-│                                                                          │
-│ 總值:$1.2M  |  進行中: 23  |  本月成交: $380K  |  轉化率: 18%            │
-│                                                                          │
-│ ┌─Lead─────┐ ┌─Qualified┐ ┌─Proposal──┐ ┌─Negotiation┐ ┌─Won─────┐ ┌─Lost┐│
-│ │  8 個    │ │  5 個    │ │   4 個    │ │    3 個     │ │ 2 個    │ │1 個 ││
-│ │ $120K    │ │ $250K    │ │  $380K    │ │   $450K     │ │ $95K    │ │$50K ││
-│ ├──────────┤ ├──────────┤ ├───────────┤ ├─────────────┤ ├─────────┤ ├─────┤│
-│ │┌────────┐│ │┌────────┐│ │┌─────────┐│ │┌───────────┐│ │┌───────┐│ │┌───┐││
-│ ││ACME 升級││ ││Globex ││ ││Initech ││ ││Softek 整合││ ││大昌行 ││ ││Y公司│││
-│ ││$50K   ││ ││$80K  ││ ││$120K   ││ ││$200K     ││ ││$60K   ││ ││$50K│││
-│ ││張三  📅││ ││李四  📅││ ││張三  📅 ││ ││王五  📅   ││ ││張三   ││ ││李四│││
-│ ││🇭🇰 HK ││ ││🇲🇴 MO ││ ││🇨🇳 CN  ││ ││🇭🇰 HK    ││ ││🇭🇰 HK  ││ ││🇲🇴 │││
-│ │└────────┘│ │└────────┘│ │└─────────┘│ │└───────────┘│ │└───────┘│ │└───┘││
-│ │┌────────┐│ │ ...      │ │ ...       │ │ ...         │ │ ...     │ │    ││
-│ ││ ...    ││ │          │ │           │ │             │ │         │ │    ││
-│ │└────────┘│ │          │ │           │ │             │ │         │ │    ││
-│ │  + 新    │ │  + 新    │ │  + 新     │ │  + 新       │ │         │ │    ││
-│ └──────────┘ └──────────┘ └───────────┘ └─────────────┘ └─────────┘ └─────┘│
-└────────────────────────────────────────────────────────────────────────┘
-```
-
-**互動細節**:
-- **Stage 拖拽**:滑鼠按住 deal card 可以拉去另一個 column,**column 邊界 highlight**(虛線 + 淺藍背景),drop 落去就 update + audit log
-- **Stage header 統計**:每個 column header 顯示「X 個 / $Y」
-- **Deal card 內容**:標題、金額、負責人、預計成交日期、地區
-- **撳 card** 開 detail dialog(完整資料 + 報價單列表 + 活動記錄)
-- **+ 新** button 喺 column 底部:加 deal 入呢個 stage
-- **Filter**:頂部可以 filter by 負責人、客戶、地區
-
-### 3.8 AI 助手
+## 5. AI Config page (`/admin/ai-config`)
 
 ```
-┌────────────────────────────────────────────────────────────┐
-│  AI 助手  對話 1                                  + 新對話   │
-│                                                            │
-│  ┌──────────────────────────────────────────────────────┐ │
-│  │ 張三 10:30                                            │ │
-│  │ 幫 ACME 開個 5 個 HW-MON-001 同 1 個 SVC-INSTALL-001 │ │
-│  └──────────────────────────────────────────────────────┘ │
-│                                                            │
-│  ┌──────────────────────────────────────────────────────┐ │
-│  │ AI 10:30                                              │ │
-│  │ 我幫你查咗:                                          │ │
-│  │ • ACME Limited (id: cm123)                            │ │
-│  │ • HW-MON-001 27" Monitor $3,200 × 5 = $16,000        │ │
-│  │ • SVC-INSTALL-001 Installation $25,000 (8 人天)        │ │
-│  │                                                       │ │
-│  │ Q-2026-0042 草稿已建立 ✅                             │ │
-│  │ 總計:$41,000 HKD                                      │ │
-│  │                                                       │ │
-│  │ [打開報價單]  [預覽]                                  │ │
-│  │                                                       │ │
-│  │ ▼ 工具調用                                            │ │
-│  │   search_companies("ACME") → 1 結果                  │ │
-│  │   search_products("HW-MON-001") → 1 結果             │ │
-│  │   search_services("SVC-INSTALL-001") → 1 結果         │ │
-│  │   draft_quotation(...) → 成功                         │ │
-│  └──────────────────────────────────────────────────────┘ │
-│                                                            │
-│  ┌────────────────────────────────────────────────┐ [送出]  │
-│  │ 問 AI 任何嘢...                                │         │
-│  └────────────────────────────────────────────────┘         │
-│  例如:「ACME 嘅最近 quotation?」                          │
-└────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────┐
+│  AI Assistant 設定                        │
+│  連接到外部 LLM provider (OpenAI-compat)  │
+├──────────────────────────────────────────┤
+│  Endpoint URL *                           │
+│  [https://api.openai.com/v1           ]  │
+│                                          │
+│  API Key *                               │
+│  [•••••••••••••••••••••••]   👁          │
+│  Never pre-filled. Re-enter on every save │
+│                                          │
+│  Model name *                            │
+│  [gpt-4o                              ]  │
+│                                          │
+│  System prompt (optional)                │
+│  [textarea, 6 rows                       │
+│   override default CRM assistant prompt ] │
+│                                          │
+│  [Test connection]   [Save]              │
+├──────────────────────────────────────────┤
+│  Last updated: 2026-06-09 10:42 by Admin  │
+│  Test result: ✅ 200 OK (gpt-4o, 14ms)   │
+└──────────────────────────────────────────┘
 ```
 
-- **類 WhatsApp 對話 UI**,user 訊息右對齊(藍底),AI 訊息左對齊(灰底)
-- **AI 回覆底部有「工具調用」可展開**,用戶可以睇 AI 做咗咩查詢(透明度)
-- **快捷 suggestion** 喺輸入框下方,提示用戶可以問啲咩
-- **歷史對話列表** 喺左 sidebar
+- API key field is `type="password"` always, even when editing existing
+  config (defence in depth against accidental paste into screenshots)
+- Test button probes the LLM with a 1-token request, shows latency
+- Save button requires all 3 required fields; system prompt is optional
 
-### 3.9 角色管理 (Admin)
+## 6. Accessibility
 
-```
-┌────────────────────────────────────────────────────────────────┐
-│ 角色與權限                                          + 新角色     │
-│                                                                  │
-│ ┌──────────────────────────────────────────────────────────┐    │
-│ │ 系統角色                                                    │    │
-│ │                                                            │    │
-│ │ 管理員 (ADMIN)              全權限 · 3 個用戶    [查看]    │    │
-│ │ 銷售 (SALES)                日常操作 · 8 個用戶  [查看]    │    │
-│ │ 檢視者 (VIEWER)             唯讀 · 2 個用戶      [查看]    │    │
-│ │                                                            │    │
-│ │ 自訂角色                                                    │    │
-│ │                                                            │    │
-│ │ 高級銷售                  銷售權限 + 用戶查看  [編輯] [刪] │    │
-│ │ 市場部                    客戶 + 報價查看        [編輯] [刪] │    │
-│ │ + 新角色                                                    │    │
-│ └──────────────────────────────────────────────────────────┘    │
-│                                                                  │
-│ 撳「編輯」開權限 matrix:                                          │
-│ ┌──────────────────────────────────────────────────────────┐    │
-│ │ 高級銷售                                                    │    │
-│ │                                                            │    │
-│ │ 客戶    ☑ 查看  ☑ 建立  ☑ 編輯  ☑ 刪除                   │    │
-│ │ 報價    ☑ 查看  ☑ 建立  ☑ 編輯  ☑ 刪除  ☑ 發送          │    │
-│ │ 銷售    ☑ 查看  ☑ 建立  ☑ 編輯  ☑ 刪除                   │    │
-│ │ 用戶    ☑ 查看                                              │    │
-│ │ AI 助手 ☑ 使用                                              │    │
-│ │                                                            │    │
-│ │                              [取消]  [儲存]                │    │
-│ └──────────────────────────────────────────────────────────┘    │
-└────────────────────────────────────────────────────────────────┘
-```
+- All interactive elements have visible focus rings
+- `aria-label` on icon-only buttons
+- Form fields have associated `<Label htmlFor>`
+- Modals trap focus
+- Color is never the only signal (errors include text + icon)
 
-- 系統角色 (ADMIN/SALES/VIEWER) 唔可以改名/刪
-- 自訂角色可以自由編輯
-- 權限 matrix 形式 checkbox,直覺易用
+## 7. Internationalisation
 
----
+- 繁中 primary for content
+- English for nav labels (per David Day 10 spec: "Man day role", "Roles",
+  "Users", "Audit Log", "AI 設定")
+- All user-facing strings live in the component (no i18n framework yet —
+  premature; we only support one locale)
 
-## 4. 互動細節 (Interaction Details)
+## 8. Mobile-first RWD
 
-### 4.1 拖拽 (Drag & Drop)
-
-Kanban 嘅拖拽有完整 visual feedback:
-
-| 狀態 | 視覺效果 |
-|---|---|
-| 開始拖拽 | card 半透明,跟住 mouse 移動 |
-| Hover over target column | column 邊界 highlight 藍色虛線 |
-| 拖到 invalid 位置 | mouse 顯示「禁止」icon,column 變紅邊 |
-| 放低 (drop) | card 飛入新 column,有 bounce animation |
-| 後台 update | 右上角 toast「已將 X 移到 Y stage」 |
-| 拉去 Won/Lost | 額外 dialog 問「點解贏/輸?」(必填) |
-
-### 4.2 Autocomplete
-
-當 user 喺報價單揀 Product/Service 嗰陣,type-ahead 行為:
-
-```
-使用者打 "moni..." →
-   ┌──────────────────────────────┐
-   │ 📦 HW-MON-001                │ ← 高亮 match 部分
-   │   27" 4K Monitor · $3,200    │
-   │ ──────────────────────────── │
-   │ 📦 HW-MON-002                │
-   │   32" Curved Monitor · $5,200│
-   │ ──────────────────────────── │
-   │ + 新增 Product「moni」      │ ← 冇結果可以即場加
-   └──────────────────────────────┘
-```
-
-- 鍵盤:`↑↓` 選擇,`Enter` 確認,`Esc` 取消
-- Mouse hover 顯示完整 description tooltip
-
-### 4.3 Inline Edit (Deal Card)
-
-撳 deal card 任何一個位會開 detail dialog:
-
-- 標題、客戶、金額、預計日期、描述 — 全部可 inline 編輯
-- 改 stage 用 dropdown,系統**自動 side-effect**(Won → set closedAt)
-- 改完即時 save(無需「儲存」按鈕)— 樂觀更新
-
-### 4.4 Toast Notifications
-
-成功 / 失敗 / 警告用右下角 toast 提示:
-
-```
-                                    ┌──────────────────────┐
-                                    │ ✅ 報價單已儲存       │
-                                    │    Q-2026-0042        │
-                                    │                  ✕  │
-                                    └──────────────────────┘
-```
-
-3 秒自動消失,errors 會停留 5 秒,有「復原」按鈕 (e.g. 刪咗 deal 可以 undo)。
-
----
-
-## 5. 響應式設計 (Responsive)
-
-### 5.1 桌面 (≥1024px) — 主要場景
-
-- 完整 layout,多 column
-- Kanban 一次顯示 6 個 stage
-- Data table 完整顯示
-
-### 5.2 平板 (768-1023px) — 老闆開會常用
-
-- Kanban 橫向 scroll,每次顯示 3-4 個 stage
-- Dialog 佔 80% 寬
-- Data table 隱藏次要 column
-
-### 5.3 手機 (<768px) — Sales 出街
-
-- 頂部 nav 變漢堡選單
-- Kanban 變 stage 切換 tab,一次顯示一個 stage
-- Data table 變 card list
-- Dialog 全屏
-- 主要動作 (新增、儲存) 放底部 sticky 按鈕
-
----
-
-## 6. 設計嘅「冇做」清單
-
-我哋**故意冇做**嘅設計決定,有意識嘅 trade-off:
-
-| 冇做嘅嘢 | 點解 |
-|---|---|
-| **Sidebar navigation** | 香港 sales 用大mon,頂部 nav 慳 horizontal space;**一致性高過探索性** |
-| **Customisable dashboard** | MVP 階段先做 fixed layout;data 一致對齊全公司,sales 唔可以「調」到自己嘅 dashboard 掩飾數據 |
-| **Theme builder** | Dark mode + Light mode 已經夠,custom brand color 留俟 enterprise 版本 |
-| **Drag-to-reorder table rows** | Data 已經有 `position` / `sortOrder` field,改 backend 比較易;UI 拖拽將來可以加 |
-| **Real-time collaboration** (multi-user edit) | 系統以 row-level 樂觀更新,last-write-wins;real-time CRDT 過複雜,MVP 不做 |
-
----
-
-## 7. 設計系統未來計劃
-
-- [ ] 統一 design tokens 入 Storybook(visual regression)
-- [ ] Accessibility audit (WCAG 2.1 AA)
-- [ ] i18n framework(目前 hard-coded 中文字串)
-- [ ] Mobile native app (iOS / Android)
-- [ ] 客戶 portal 嘅 design(將來俾客戶睇報價單)
+- Tailwind breakpoints: `sm` 640, `md` 768, `lg` 1024, `xl` 1280
+- Mobile-first: design for 375 px width first, then add `md:` `lg:` variants
+- Touch targets: minimum 44×44 px (iOS HIG)
+- iOS Safari: avoid `100vh` for full-page layouts (use `100dvh` or `h-screen`
+  with the viewport-fit hack — see `ios-safari-scroll-fixed-elements` skill)
