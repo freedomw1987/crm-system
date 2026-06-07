@@ -19,7 +19,7 @@ import { Select, Label } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
-  productsApi, servicesApi, quotationsApi,
+  productsApi, servicesApi, quotationsApi, settingsApi,
   type Product, type Service, type ServiceManDay,
   type Quotation, type QuotationItem, type Deal,
 } from '@/lib/api';
@@ -134,6 +134,10 @@ export function QuotationBuilder({
   const [title, setTitle] = useState(existing?.title ?? '');
   const [notes, setNotes] = useState(existing?.notes ?? '');
   const [taxRate, setTaxRate] = useState<number>(existing ? Number(existing.taxRate) : 0);
+  // Day 14.7 Step 9 — flag tracks whether the user has manually touched
+  // the tax-rate input. If they have, the auto-prefill effect below won't
+  // overwrite their value when getTax() resolves.
+  const [userTouchedTax, setUserTouchedTax] = useState<boolean>(false);
   const [validUntil, setValidUntil] = useState<string>(
     existing?.validUntil ? existing.validUntil.slice(0, 10) : ''
   );
@@ -189,6 +193,32 @@ export function QuotationBuilder({
     })();
     return () => { alive = false; };
   }, [companyId]);
+
+  // Day 14.7 Step 9 — In CREATE mode, prefill the tax-rate input with the
+  // system default from /api/settings/tax. The user can still override per
+  // quote (Plan option A). Guarded by `userTouchedTax` so we don't clobber
+  // a value the user already typed before the fetch resolved. In EDIT mode
+  // `existing.taxRate` is already in state, so we skip the fetch.
+  useEffect(() => {
+    if (existing) return;
+    if (userTouchedTax) return;
+    let alive = true;
+    settingsApi.getTax()
+      .then((tax) => {
+        if (!alive) return;
+        if (userTouchedTax) return; // re-check after await
+        const n = Number(tax.rate);
+        if (Number.isFinite(n) && n !== taxRate) setTaxRate(n);
+      })
+      .catch(() => {
+        // Non-fatal: if /settings/tax fails, the user can still type a
+        // rate manually. Don't block the form.
+      });
+    return () => { alive = false; };
+    // We intentionally only run on mount + when the touched flag flips,
+    // not on taxRate changes (to avoid re-fetches after the prefill).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [existing, userTouchedTax]);
 
   // Live totals
   const subtotal = useMemo(() => lines.reduce((s, l) => s + lineTotal(l), 0), [lines]);
@@ -418,7 +448,13 @@ export function QuotationBuilder({
             max={100}
             step="0.01"
             value={taxRate}
-            onChange={(e) => setTaxRate(Number(e.target.value) || 0)}
+            // Day 14.7 Step 9 — mark the field as touched so the auto-prefill
+            // effect won't overwrite a value the user typed before getTax()
+            // resolved.
+            onChange={(e) => {
+              setUserTouchedTax(true);
+              setTaxRate(Number(e.target.value) || 0);
+            }}
           />
         </div>
       </div>
