@@ -60,6 +60,10 @@ export const PERMISSIONS = {
 
   // AI agent — anyone authenticated can use
   'chat:use': 'Use the AI assistant',
+
+  // System Configuration (Day 14+)
+  'settings:read':   'View system configuration (tax rate, future defaults)',
+  'settings:update': 'Edit system configuration',
 } as const;
 
 export type Permission = keyof typeof PERMISSIONS;
