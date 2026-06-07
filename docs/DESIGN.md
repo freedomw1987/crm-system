@@ -213,3 +213,98 @@ accept `className` for tailwind overrides.
 - Touch targets: minimum 44×44 px (iOS HIG)
 - iOS Safari: avoid `100vh` for full-page layouts (use `100dvh` or `h-screen`
   with the viewport-fit hack — see `ios-safari-scroll-fixed-elements` skill)
+
+## 9. Day 14.7 — System Settings sub-route tabs
+
+### Architecture
+
+The Settings surface is **one** URL prefix (`/settings/*`) with **seven**
+sub-routes, each rendering inside a shared `<SettingsLayout />` chrome:
+
+```
+/settings             → <Navigate to=/settings/pipelines replace />
+/settings/pipelines   → <SettingsPage />          (Day 11 Pipeline CRUD)
+/settings/users       → <UsersPage />             (moved from top-level)
+/settings/roles       → <RolesPage />             (moved from top-level)
+/settings/ai          → <AiConfigPage />          (moved from top-level)
+/settings/man-day     → <ManDayRolesPage />       (moved from top-level)
+/settings/tax         → <SettingsTaxPage />       (new in Day 14.7)
+/settings/audit       → <AuditPage />             (moved from top-level)
+```
+
+The Layout renders:
+
+1. A heading (`<h1>系統設置</h1>`) + sub-title
+2. A shadcn `<Tabs>` row with 7 `<TabsTrigger>` (Pipelines / Users / Roles /
+   AI / Man-day / Tax / Audit)
+3. An `<Outlet />` for the child route
+
+### Why URL = source of truth (not Radix Tabs' internal state)
+
+We use `<Tabs value={currentTab} onValueChange={handleTabChange}>` where
+`currentTab` is derived from `useLocation().pathname` and `handleTabChange`
+calls `navigate('/settings/<next>')`. This is **not** the standard shadcn
+Tabs pattern (which uses `useState` internally), but it's deliberate:
+
+- Deep links work: pasting `/settings/tax` into a chat or email lands on
+  the Tax tab with the right content rendered
+- Browser back/forward navigate between tabs as expected
+- Each tab is independently URL-shareable
+- The SettingsLayout can be in the URL contract (e.g. the Tax tab's "View
+  audit log" link emits `/settings/audit?action=SYSTEM_CONFIG_UPDATED`)
+
+### Why `TabsTrigger` + `onClick`, not `<NavLink>` inside `<TabsList>`
+
+An early implementation used `<NavLink>` inside `<TabsList>` (styled to
+look like `<TabsTrigger>`). It failed because Radix Tabs in controlled
+mode logs a console warning when its `value` prop doesn't match a child
+`<TabsTrigger value=…>`. We switched to native `<TabsTrigger>` + `onClick`
+calling `navigate(...)`. Trade-off: middle-click "open in new tab" no
+longer works on the tab strip (it's a `<button>`, not an `<a>`). Acceptable
+because the tab nav is for in-app navigation; deep links from outside the
+app still land on the right tab via the URL contract above.
+
+### Why the sidebar collapsed from 5 admin links → 1
+
+Before Day 14.7 the sidebar (ADMIN section) had 5 separate entries:
+Users / Roles / Man day role / AI 設定 / Audit Log. After Day 14.7 there's
+**one** entry: 系統設置 → `/settings`. The 7 tabs are the new surface
+area; the sidebar is a single discoverable entry point.
+
+The 5 top-level direct routes (`/users`, `/roles`, `/audit`, `/ai-config`,
+`/man-day-roles`) are kept as `<Navigate replace />` redirects to the
+new sub-routes, so any bookmark / chat-share / email link from before
+today still works.
+
+### Why the legacy `/settings` route redirects to `/settings/pipelines`
+
+The original Day 11 /settings rendered `<SettingsPage />` directly with
+its own button-style tab strip showing only "Pipeline" and a disabled
+"Tax rate (Phase 2)" placeholder. When the new `<SettingsLayout />`
+7-tab nav was added in Day 14.7 Step 6, the Layout's tabs only render
+inside the layout — but `/settings` (the URL the original page lived at)
+was being matched by the **direct route** first, bypassing the layout
+entirely. We made `/settings` a `<Navigate replace />` to
+`/settings/pipelines`, which is the Pipeline tab in the new layout. The
+"Plan execution deviation" entry in the retro explains this in detail.
+
+### Per-tab page chrome (header duplication)
+
+Each `<Outlet />` child page renders its own `<h1>` (e.g. UsersPage has
+"Users", AuditPage has "Audit Log"). The SettingsLayout's own `<h1>系統設置</h1>`
+sits **above** the tab row, so the visual hierarchy is:
+
+```
+系統設置                          ← Layout h1
+管理 sales pipeline、user、role…   ← Layout subtitle
+[Pipelines | Users | | | Tax | ]  ← Tab row
+                                    ← Outlet area:
+Users                              ←   Child page h1
+管理系統用戶帳號、角色同權限        ←   Child page subtitle
+...                                ←   Child page content
+```
+
+This is intentional — the Layout h1 names the **section** (settings), and
+the child page h1 names the **view** (users, audit, etc.). iOS Human
+Interface Guidelines and Material Design both recommend this
+section/view pattern in tabbed surfaces.

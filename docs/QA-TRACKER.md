@@ -134,7 +134,6 @@
 | Audit log rows for CREATE/UPDATE/DELETE | yes | yes (logEvent fires on every mutation) | ✅ |
 
 #### US-S3 AI tool smoke
-
 | Check | Required | Actual | Result |
 |--------|----------|--------|--------|
 | `list_pipelines` tool registered | yes | yes (in `toolRegistry`) | ✅ |
@@ -142,6 +141,45 @@
 | Empty-string `pipelineId` treated as no filter | yes | yes (tool sent `pipelineId:''`, returned all 6 stages) | ✅ |
 | System prompt mentions `list_pipelines` | yes | yes (Day 11 line added) | ✅ |
 | Live chat: "What stages does our sales pipeline have?" → tool fires | yes | yes (TOOL_START `list_pipelines` + TOOL_END with 6 stages) | ✅ |
+
+### Day 14.7 — System Settings refactor (sub-route tabs) + Tax Rate (US-S4)
+
+#### US-S4 status change
+
+| US | Title | Status before | Status now | Notes |
+|----|-------|---------------|------------|-------|
+| **US-S4** | Phase 2: Tax rate tab on Settings | 🟨 BACKLOG | ✅ PASS | `system_configs` table seeded, `default_tax_rate` row created via admin save, GET/PUT 200, Quotation prefill works (smoke verified 13% prefill on create-dialog open) |
+
+#### Day 14.7 commit series
+
+| Commit | Title | What it changed |
+|--------|-------|-----------------|
+| `603745e` | feat(db): Day 14 SystemConfig table + SYSTEM_CONFIG_UPDATED audit action | Prisma migration + enum |
+| `818c29f` | feat(rbac): Day 14 settings:read / settings:update + seed Role/RolePermission rows | DB seed inserts missing rows (latent RBAC fix) |
+| `6a39ab6` | feat(api): Day 14 /api/settings/tax GET + PUT (admin) with SYSTEM_CONFIG_UPDATED audit | Routes + Zod + audit hook |
+| `eb1581f` | feat(web): Day 14.7 Step 5 — /settings sub-route tree + settingsApi.getTax/putTax | React Router tree + API client (initially had wire-shape drift, see §1 of retro) |
+| `72e13a2` | feat(web): Day 14.7 Step 6 — SettingsLayout 7-tab nav (shadcn Tabs) | Tabs wrapper + 7-tab nav, URL = source of truth |
+| `bd1d107` | feat(web): Day 14.7 Step 7 — Tax Rate settings page + **wire fix** | SettingsTaxPage + corrected `rate` field name |
+| `8161cbd` | feat(web): Day 14.7 Step 8 — wire all 5 admin tabs + backward-compat redirects | 5 placeholders → real pages, 5 `<Navigate>` backward-compat routes |
+| `9bc8695` | feat(web): Day 14.7 Step 9 — QuotationBuilder auto-prefills tax from system default | `userTouchedTax` race-safe prefill |
+| `6146aea` | feat(web): Day 14.7 Step 10 — collapse 5 admin links into single 系統設置 entry | Sidebar cleanup |
+| `5018578` | fix(web): Day 14.7 Step 12 — Tax 'View audit log' link uses /settings/audit (not legacy /audit) | 1-line fix for query-string drop across `<Navigate>` |
+
+#### Day 14.7 E2E smoke (this batch, via Playwright browser_navigate)
+
+| Check | Required | Actual | Result |
+|-------|----------|--------|--------|
+| `GET /api/health` (via nginx proxy) | 200 | 200 | ✅ |
+| Login as `admin@crm.local` | 200 + token | 200 + token | ✅ |
+| Navigate to `/settings` | auto-redirect to `/settings/pipelines` | `/settings/pipelines`, Pipelines tab active | ✅ |
+| Sidebar shows 1 admin entry "系統設置" (not 5) | yes | yes | ✅ Step 10 |
+| All 7 tabs render (Pipelines/Users/Roles/AI/Man-day/Tax/Audit) | yes | yes — all 7 render real page content, active tab highlight correct | ✅ Step 6/8 |
+| Tax save: 6 → 13 | PUT 200 + audit row | 200 + `SYSTEM_CONFIG_UPDATED` row with `oldValue:6 newValue:13` | ✅ Step 7 |
+| Quotation create-dialog opens with taxRate prefilled to 13 | yes | yes (system default applied via Step 9) | ✅ Step 9 |
+| Tax "View audit log" deep link | `/settings/audit?action=SYSTEM_CONFIG_UPDATED` | lands with table filtered to SYSTEM_CONFIG_UPDATED rows only | ✅ Step 12 fix |
+| 5 backward-compat redirects: `/users` `/roles` `/audit` `/ai-config` `/man-day-roles` | each navigates to the matching sub-route | all 5 land on correct sub-route with right tab active | ✅ Step 8 |
+| `tsc --noEmit` (web) | 0 errors | 0 errors (across Steps 5-10) | ✅ |
+| `docker compose build web` | builds with new SPA bundle | built, `index-am9hO3Fd.js` 589 KB | ✅ |
 
 ## Open follow-ups (post-ship)
 
