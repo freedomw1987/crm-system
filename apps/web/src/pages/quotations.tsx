@@ -79,18 +79,22 @@ export function QuotationsPage() {
     if (!aiPrompt.trim()) return;
     setAiLoading(true);
     setAiError(null);
+    // Collect any `draft_quotation` tool_end event from the stream so
+    // we can navigate to the new quotation once the agent finishes.
+    let draftQuotationId: string | undefined;
     try {
-      const result = await chatApi.send(aiPrompt);
-      const quotationToolCall = result.toolCalls.find((tc) => tc.name === 'draft_quotation');
-      if (quotationToolCall) {
-        const draftResult = quotationToolCall.result as { quotationId?: string };
-        if (draftResult?.quotationId) {
-          setAiOpen(false);
-          setAiPrompt('');
-          queryClient.invalidateQueries({ queryKey: ['quotations'] });
-          navigate(`/quotations/${draftResult.quotationId}`);
-          return;
+      await chatApi.send(aiPrompt, undefined, (ev) => {
+        if (ev.type === 'tool_end' && ev.name === 'draft_quotation') {
+          const result = ev.result as { quotationId?: string } | undefined;
+          if (result?.quotationId) draftQuotationId = result.quotationId;
         }
+      });
+      if (draftQuotationId) {
+        setAiOpen(false);
+        setAiPrompt('');
+        queryClient.invalidateQueries({ queryKey: ['quotations'] });
+        navigate(`/quotations/${draftQuotationId}`);
+        return;
       }
       setAiError('AI 冇整到 quotation,睇下 chat 了解詳情');
     } catch (err) {

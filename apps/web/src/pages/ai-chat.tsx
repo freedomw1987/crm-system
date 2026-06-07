@@ -4,13 +4,50 @@ import { Send, Sparkles, Trash2, Plus, Loader2, User, Bot, Wrench } from 'lucide
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { chatApi, type ConversationSummary, type ChatMessage, type AgentRunResult } from '@/lib/api';
+import {
+  chatApi,
+  type ConversationSummary,
+  type ChatMessage,
+  type StreamEvent,
+} from '@/lib/api';
 import { cn, formatDateTime } from '@/lib/utils';
+
+/**
+ * Tools invoked by the agent during the current run. We keep these in
+ * local state so the user can see what the agent did inline with the
+ * streaming reply, without waiting for the conversation to be
+ * persisted and re-fetched.
+ *
+ * Lifecycle:
+ *   tool_start → { name, args } pushed (status: 'running')
+ *   tool_end   → matching entry updated with { result, error }
+ *
+ * The display order matches the order the agent invoked the tools.
+ */
+interface InFlightToolCall {
+  name: string;
+  args: unknown;
+  result?: unknown;
+  error?: string;
+}
 
 export function AiChatPage() {
   const qc = useQueryClient();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [input, setInput] = useState('');
+  /**
+   * While a stream is in flight, we keep the assistant's reply-in-
+   * progress here so it can be rendered token-by-token. The
+   * React-Query-cached `Conversation` is only updated when the
+   * stream ends with a `done` event.
+   */
+  const [streamingReply, setStreamingReply] = useState('');
+  /**
+   * Tools invoked by the agent during the in-flight run. Reset to []
+   * on submit. Grew as tool_start / tool_end events arrive.
+   */
+  const [inFlightTools, setInFlightTools] = useState<InFlightToolCall[]>([]);
+  const [streamError, setStreamError] = useState<string | null>(null);
   const [expandedToolCalls, setExpandedToolCalls] = useState<Set<number>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -25,20 +62,84 @@ export function AiChatPage() {
     enabled: !!activeId,
   });
 
-  // Auto-scroll to bottom
+  /**
+   * Auto-scroll: jump to the bottom on every keystroke (so the
+   * composer stays visible) and on every new streaming token / tool
+   * event.
+   */
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
-  }, [activeConv?.messages.length, input]);
+  }, [activeConv?.messages.length, streamingReply, inFlightTools.length, input]);
 
-  const sendMutation = useMutation({
-    mutationFn: (message: string) => chatApi.send(message, activeId ?? undefined),
-    onSuccess: (result: AgentRunResult) => {
-      setActiveId(result.conversationId);
-      qc.invalidateQueries({ queryKey: ['conversations'] });
-      qc.invalidateQueries({ queryKey: ['conversation', result.conversationId] });
-      qc.invalidateQueries({ queryKey: ['quotations'] });
-    },
-  });
+  /**
+   * submitInFlight is `true` from the moment we call `chatApi.send`
+   * until the `done` event arrives. We use a ref + state pair so the
+   * button can disable while a request is in flight, and so the
+   * streaming UI can show a "thinking" indicator before the first
+   * token arrives.
+   */
+  const [submitInFlight, setSubmitInFlight] = useState(false);
+
+  async function handleSend(messageText: string, conversationId: string | null) {
+    if (!messageText.trim() || submitInFlight) return;
+    setStreamError(null);
+    setStreamingReply('');
+    setInFlightTools([]);
+    setSubmitInFlight(true);
+    try {
+      await chatApi.send(messageText, conversationId ?? undefined, (ev: StreamEvent) => {
+        switch (ev.type) {
+          case 'token':
+            setStreamingReply((prev) => prev + ev.delta);
+            break;
+          case 'tool_start':
+            setInFlightTools((prev) => [...prev, { name: ev.name, args: ev.args }]);
+            break;
+          case 'tool_end':
+            setInFlightTools((prev) =>
+              prev.map((t) =>
+                t.name === ev.name && t.result === undefined
+                  ? { ...t, result: ev.result, error: ev.error }
+                  : t,
+              ),
+            );
+            break;
+          case 'done':
+            // Backend persisted the conversation + reply. Refresh.
+            setActiveId(ev.conversationId);
+            qc.invalidateQueries({ queryKey: ['conversations'] });
+            qc.invalidateQueries({ queryKey: ['conversation', ev.conversationId] });
+            qc.invalidateQueries({ queryKey: ['quotations'] });
+            break;
+          case 'error':
+            setStreamError(ev.message);
+            break;
+        }
+      });
+    } catch (err) {
+      setStreamError((err as Error).message);
+    } finally {
+      setStreamingReply('');
+      setInFlightTools([]);
+      setSubmitInFlight(false);
+    }
+  }
+
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!input.trim() || submitInFlight) return;
+    const msg = input;
+    setInput('');
+    handleSend(msg, activeId);
+  }
+
+  function startNewChat() {
+    setActiveId(null);
+    setInput('');
+    setStreamingReply('');
+    setInFlightTools([]);
+    setStreamError(null);
+  }
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => chatApi.remove(id),
@@ -47,18 +148,6 @@ export function AiChatPage() {
       setActiveId(null);
     },
   });
-
-  function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    if (!input.trim() || sendMutation.isPending) return;
-    sendMutation.mutate(input);
-    setInput('');
-  }
-
-  function startNewChat() {
-    setActiveId(null);
-    setInput('');
-  }
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-4 h-[calc(100vh-8rem)]">
@@ -92,7 +181,10 @@ export function AiChatPage() {
       {/* Active conversation */}
       <Card className="flex flex-col overflow-hidden">
         {!activeId ? (
-          <EmptyState onPrompt={(p) => sendMutation.mutate(p)} disabled={sendMutation.isPending} />
+          <EmptyState
+            onPrompt={(p) => handleSend(p, null)}
+            disabled={submitInFlight}
+          />
         ) : (
           <>
             <CardHeader className="border-b flex flex-row items-center justify-between">
@@ -120,15 +212,29 @@ export function AiChatPage() {
                   }}
                 />
               ))}
-              {sendMutation.isPending && (
+
+              {/* In-flight streaming reply: the assistant bubble grows
+                  as `token` events arrive, with tool calls rendered as
+                  inline pills above the text (not as separate
+                  message bubbles — see MessageBubble for the same
+                  treatment of persisted tool messages). */}
+              {(streamingReply || inFlightTools.length > 0) && (
+                <StreamingBotMessage
+                  reply={streamingReply}
+                  tools={inFlightTools}
+                />
+              )}
+
+              {submitInFlight && streamingReply === '' && inFlightTools.length === 0 && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin" />
                   AI 諗緊...
                 </div>
               )}
-              {sendMutation.error && (
+
+              {streamError && (
                 <div className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded">
-                  {(sendMutation.error as Error).message}
+                  {streamError}
                 </div>
               )}
             </div>
@@ -149,7 +255,7 @@ export function AiChatPage() {
                 rows={2}
                 className="flex-1"
               />
-              <Button type="submit" disabled={!input.trim() || sendMutation.isPending}>
+              <Button type="submit" disabled={!input.trim() || submitInFlight}>
                 <Send className="h-4 w-4" />
               </Button>
             </form>
@@ -235,6 +341,12 @@ function ConversationItem({
   );
 }
 
+/**
+ * Persisted messages from the backend. Tool calls (role: 'tool') are
+ * rendered as inline pills (no bubble, no max-w container) — the
+ * feedback we got on Day 10 was that tool calls should not look like
+ * a message; they're metadata about what the agent is doing.
+ */
 function MessageBubble({
   message,
   index,
@@ -251,23 +363,20 @@ function MessageBubble({
 
   if (isTool) {
     return (
-      <div className="flex justify-start">
-        <div className="max-w-[80%]">
-          <button
-            type="button"
-            onClick={onToggle}
-            className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground mb-1"
-          >
-            <Wrench className="h-3 w-3" />
-            {message.toolName} {expanded ? '▾' : '▸'}
-          </button>
-          {expanded && (
-            <pre className="text-xs bg-muted p-2 rounded overflow-x-auto scrollbar-thin max-w-full">
-              {JSON.stringify(message.toolResult, null, 2)}
-            </pre>
-          )}
-        </div>
-      </div>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <Wrench className="h-3 w-3" />
+        <span className="font-mono">{message.toolName}</span>
+        <span aria-hidden="true">{expanded ? '▾' : '▸'}</span>
+        {expanded && (
+          <pre className="ml-2 text-xs bg-muted p-2 rounded overflow-x-auto scrollbar-thin max-w-full text-left">
+            {JSON.stringify(message.toolResult, null, 2)}
+          </pre>
+        )}
+      </button>
     );
   }
 
@@ -294,5 +403,78 @@ function MessageBubble({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * In-flight streaming assistant message. Rendered as a single
+ * bot-anchored bubble (with avatar) so it visually matches the
+ * persisted assistant messages — but with tool calls shown as
+ * inline pills above the text rather than as separate message
+ * bubbles. The text portion grows as `token` events append
+ * characters.
+ */
+function StreamingBotMessage({
+  reply,
+  tools,
+}: {
+  reply: string;
+  tools: InFlightToolCall[];
+}) {
+  return (
+    <div className="flex gap-3 justify-start">
+      <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+        <Bot className="h-4 w-4 text-primary" />
+      </div>
+      <div className="max-w-[80%] space-y-2">
+        {tools.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {tools.map((t, i) => (
+              <ToolPill key={`${t.name}-${i}`} tool={t} />
+            ))}
+          </div>
+        )}
+        {reply && (
+          <div className="rounded-lg px-4 py-2 text-sm whitespace-pre-wrap bg-muted">
+            {reply}
+            <span className="inline-block w-1.5 h-4 bg-primary ml-0.5 align-middle animate-pulse" />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Inline pill showing a single tool invocation. Same visual language
+ * as the persisted tool messages in MessageBubble. The pill expands
+ * to show the tool's arguments while running and its result on
+ * completion.
+ */
+function ToolPill({ tool }: { tool: InFlightToolCall }) {
+  const [expanded, setExpanded] = useState(false);
+  const status = tool.result === undefined ? 'running' : tool.error ? 'error' : 'ok';
+  return (
+    <button
+      type="button"
+      onClick={() => setExpanded((e) => !e)}
+      className={cn(
+        'inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded border transition-colors',
+        status === 'running' && 'border-primary/30 text-primary bg-primary/5 animate-pulse',
+        status === 'ok' && 'border-muted-foreground/30 text-muted-foreground bg-muted/30',
+        status === 'error' && 'border-destructive/30 text-destructive bg-destructive/5',
+      )}
+    >
+      <Wrench className="h-3 w-3" />
+      <span className="font-mono">{tool.name}</span>
+      {status === 'running' && <span className="text-[10px]">執行中…</span>}
+      {status === 'error' && <span className="text-[10px]">failed</span>}
+      <span aria-hidden="true">{expanded ? '▾' : '▸'}</span>
+      {expanded && (
+        <pre className="text-xs bg-muted p-2 rounded overflow-x-auto scrollbar-thin max-w-full text-left">
+          {JSON.stringify({ args: tool.args, result: tool.result, error: tool.error }, null, 2)}
+        </pre>
+      )}
+    </button>
   );
 }

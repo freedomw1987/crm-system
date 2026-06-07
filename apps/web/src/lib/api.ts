@@ -503,20 +503,92 @@ export interface ChatMessage {
 export interface Conversation extends ConversationSummary {
   messages: ChatMessage[];
 }
-export interface AgentRunResult {
-  conversationId: string;
-  reply: string;
-  toolCalls: Array<{ name: string; args: unknown; result: unknown }>;
-  usage: { promptTokens: number; completionTokens: number; totalTokens: number };
-}
+/**
+ * Events the backend's `/chat/send` endpoint streams back as
+ * Server-Sent Events. The frontend consumes these incrementally to
+ * render tokens and tool calls as they happen.
+ */
+export type StreamEvent =
+  | { type: 'token'; delta: string }
+  | { type: 'tool_start'; name: string; args: unknown }
+  | { type: 'tool_end'; name: string; result: unknown; error?: string }
+  | { type: 'done'; conversationId: string; usage: { promptTokens: number; completionTokens: number; totalTokens: number } }
+  | { type: 'error'; message: string };
 export const chatApi = {
   list: () => request<ConversationSummary[]>('/chat/conversations'),
   get: (id: string) => request<Conversation>(`/chat/conversations/${id}`),
-  send: (message: string, conversationId?: string) =>
-    request<AgentRunResult>('/chat/send', {
+  /**
+   * Stream a chat message. Unlike the other endpoints, this returns
+   * a Promise that resolves with `{ conversationId }` once the
+   * `done` event is received. The `onEvent` callback is invoked
+   * synchronously for each `StreamEvent` as it arrives — including
+   * `token` (incremental assistant text) and `tool_start` /
+   * `tool_end` (tool invocations and their results).
+   *
+   * On any HTTP error (4xx / 5xx) the body is parsed as JSON and
+   * thrown as `ApiError`. On a stream-level `error` event, we throw
+   * a regular `Error` after the response stream closes.
+   */
+  send: async (
+    message: string,
+    conversationId: string | undefined,
+    onEvent: (ev: StreamEvent) => void,
+  ): Promise<{ conversationId: string }> => {
+    const token = getToken();
+    const r = await fetch(`${API_BASE}/chat/send`, {
       method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
       body: JSON.stringify({ message, conversationId }),
-    }),
+    });
+    if (!r.ok || !r.body) {
+      let errMsg = `Chat send failed (${r.status})`;
+      try {
+        const body = await r.json();
+        if (body && typeof body === 'object' && 'error' in body) {
+          errMsg = (body as { error: string }).error;
+        }
+      } catch { /* not json */ }
+      throw new ApiError(r.status, null, errMsg);
+    }
+    const reader = r.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let doneConversationId: string | undefined;
+    let errorMessage: string | undefined;
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      // SSE frames are separated by a blank line. Process all
+      // complete frames in the buffer; keep any partial tail.
+      let idx: number;
+      // eslint-disable-next-line no-cond-assign
+      while ((idx = buffer.indexOf('\n\n')) !== -1) {
+        const frame = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        for (const line of frame.split('\n')) {
+          if (!line.startsWith('data: ')) continue;
+          const payload = line.slice(6).trim();
+          if (!payload) continue;
+          try {
+            const ev = JSON.parse(payload) as StreamEvent;
+            onEvent(ev);
+            if (ev.type === 'done') doneConversationId = ev.conversationId;
+            if (ev.type === 'error') errorMessage = ev.message;
+          } catch {
+            // Ignore malformed frames; the next valid frame will
+            // recover the stream's intent.
+          }
+        }
+      }
+    }
+    if (errorMessage) throw new Error(errorMessage);
+    if (!doneConversationId) throw new Error('Stream ended without done event');
+    return { conversationId: doneConversationId };
+  },
   remove: (id: string) => request<{ success: boolean }>(`/chat/conversations/${id}`, { method: 'DELETE' }),
 };
 
