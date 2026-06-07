@@ -23,6 +23,7 @@
 | A1 | Companies CRUD | ✅ PASS | P0 | Day 1-5 | — |
 | A2 | Deal Kanban | ✅ PASS | P0 | Day 8 | Drag-drop test done |
 | A3 | Quotation builder + GP% | 🟨 PARTIAL | P0 | Day 9 | GP% formula correct but not unit-tested (TEST-COVERAGE) |
+| A4 | Deal Autocomplete + Quick-Create in QuotationBuilder | ✅ PASS | P0 | 2026-06-07 | RG-2026-06-07-DEAL-AUTOCOMPLETE — backend validation 10/10 PASS, frontend `DealAutocomplete` + `DealDialog` pre-fill (+90d close date) shipped |
 
 ## Epic B — Admin
 

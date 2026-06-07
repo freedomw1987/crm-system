@@ -31,6 +31,7 @@
 | A1 | Companies CRUD | 🟨 planned | 🟨 planned | 🟨 planned | ✅ Done Day 6+ |
 | A2 | Deal Kanban | 🟨 planned | 🟨 planned | 🟨 planned | ✅ Done Day 8 |
 | A3 | Quotation builder + GP% | 🟨 planned | 🟨 planned | 🟨 planned | ✅ Done Day 9 |
+| A4 | Deal Autocomplete + Quick-Create in QuotationBuilder | 🟨 planned | ✅ done 2026-06-07 (`/tmp/rg_deal_smoke.ts` 10/10) | 🟨 planned | ✅ Done 2026-06-07 (RG-2026-06-07-DEAL-AUTOCOMPLETE) |
 
 ### Epic B — Admin
 

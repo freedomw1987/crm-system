@@ -109,10 +109,35 @@
 - **200:** `Deal[]` (with company, owner, stage)
 
 ### POST /deals
+- **Auth:** `deal:create`
+- **Body:** `{ title, companyId, stageId, value, expectedCloseDate?, pipelineId?, ownerId?, description?, probability?, status?: 'OPEN'|'WON'|'LOST' }`
+- **Validation (RG-2026-06-07-DEAL-AUTOCOMPLETE, 2026-06-07):**
+  - `title` — required, 1-200 chars
+  - `companyId` — required, non-empty string (must exist in `companies`)
+  - `stageId` — required, non-empty string (must exist in `pipeline_stages`)
+  - `value` — required, numeric (number or numeric string)
+  - `expectedCloseDate` — optional ISO-8601 date
+  - `pipelineId` — optional; auto-resolved from `stageId` if omitted
+  - `ownerId` — optional; defaults to the calling user's id
+  - `description` — optional, max 5000 chars
+  - `probability` — optional, numeric
+  - `status` — optional enum `'OPEN' | 'WON' | 'LOST'`, defaults to `'OPEN'`
+- **Side effects:** Writes a `DEAL_CREATED` audit-log entry with the
+  creating user's id.
+- **201:** `Deal` (with company, owner, stage)
+- **422:** Validation error (Elysia schema violation)
+- **400:** Stage or owner not found
 
 ### GET /deals/:id
 
 ### PATCH /deals/:id
+- **Auth:** `deal:update`
+- **Body (Partial — all fields optional, RG-2026-06-07-DEAL-AUTOCOMPLETE):**
+  `{ title?, value?, expectedCloseDate?, description?, probability? }`
+- **Note:** Stage changes are NOT accepted on this endpoint — use
+  `PATCH /deals/:id/stage` instead so the backend can derive the
+  `status` and `closedAt` correctly.
+- **200:** `Deal`
 
 ### DELETE /deals/:id
 

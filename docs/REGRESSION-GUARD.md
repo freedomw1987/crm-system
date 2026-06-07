@@ -248,3 +248,105 @@ When you fix a bug:
    framework.)
 5. Update `docs/QA-TRACKER.md` to flip any US that was regressed back
    to ✅ once the fix ships.
+
+---
+
+## RG-2026-06-07-DEAL-AUTOCOMPLETE — QuotationBuilder's Deal field + POST /deals validation + Prisma relation mapping
+
+- **Shipped:** 2026-06-07
+- **Files:**
+  - `apps/api/src/routes/deal.ts` (POST + PATCH body validation, relation
+    mapping, Elysia 1.2 userId fallback, audit actorId fix)
+  - `apps/web/src/components/deal-autocomplete.tsx` (new — pattern
+    mirrors `CompanyAutocomplete`)
+  - `apps/web/src/components/quotation-builder.tsx` (replaced plain
+    `<Select>` with `<DealAutocomplete>`; removed the inline
+    `useEffect` that fetched `/api/deals?companyId=...`)
+  - `apps/web/src/pages/deals.tsx` (`DealDialog.onSaved` widened from
+    `() => void` to `Optional<(deal?: Deal) => void>`; added
+    `defaultExpectedCloseDateOffsetDays` prop)
+- **Status:** ✅ Fixed (smoke-tested 10/10 PASS in `/tmp/rg_deal_smoke.ts`)
+
+### Root cause (3 issues, all addressed in this change)
+
+1. **No body validation on POST /deals or PATCH /deals/:id.** The
+   handlers did `prisma.deal.create({ data: body as never })` and
+   `prisma.deal.update({ data: body as never })` — the `as never` cast
+   hid the fact that the body wasn't validated against any schema.
+   A malformed payload would either fail with an opaque Prisma error
+   or — worse — silently drop a field. With the new Elysia
+   `body: t.Object({...})` schema, callers now get a clean 422 with
+   a field-level error message on any unknown / wrong-typed input.
+
+2. **Prisma relation mapping was wrong for flat-FK payloads.** The
+   Deal model declares `company Company @relation` /
+   `stage PipelineStage @relation` / etc., so Prisma requires either
+   a nested `connect` shape OR a `Prisma.DealUncheckedCreateInput`
+   type — but not both. The previous code passed the flat object
+   (with bare `companyId` etc.) and relied on the `as never` cast to
+   suppress the type error. At runtime, Prisma rejected every
+   `POST /deals` with `Argument company is missing`. The fix
+   explicitly types the data as `Prisma.DealUncheckedCreateInput`
+   and additionally resolves `pipelineId` from `stageId` when the
+   caller doesn't supply it (and defaults `ownerId` to the calling
+   user when not supplied).
+
+3. **QuotationBuilder's Deal field was a plain `<Select>`** with no
+   inline create. Sales had to leave the quotation-builder flow,
+   navigate to the Deals kanban, create a deal, come back, and
+   refresh the dropdown before the new deal was selectable. The new
+   `<DealAutocomplete>` wraps the shared `<Autocomplete>` and
+   exposes a "+ 新增 Deal" affordance that opens the existing
+   `DealDialog` pre-filled with the quotation's customer, the
+   default-pipeline first stage, value=0, and
+   `expectedCloseDate = today + 90 days` (David's preferred default
+   for enterprise close cycles). On save the new deal is
+   auto-selected and added to the local catalogue without a
+   parent re-render.
+
+### Invariant
+
+> **Any flat-FK API endpoint backed by a Prisma model with
+> `@relation` columns MUST use either `Prisma.<Model>UncheckedCreateInput`
+> or the nested `connect` shape — never both, never a bare object
+> cast through `as never`.** Grep for `prisma\.\w+\.create\(\{ data: body
+> as never` in `apps/api/src/routes/` — every match is a P1 that needs
+> a typed body schema and an explicit UncheckedCreateInput cast.
+
+> **The QuotationBuilder's Deal field MUST always go through
+> `<DealAutocomplete>` (or a future `autocomplete`-based variant)
+> — never re-introduce a plain `<Select>` here.** A plain `<Select>`
+> forces Sales to leave the flow to create a deal, which breaks
+> the "quote a deal in one go" promise of the QuotationBuilder.
+
+### Prevention
+
+- Don't re-introduce `as never` casts in `apps/api/src/routes/*.ts`.
+  Add a `t.Object({...})` body schema and explicit
+  `Prisma.<Model>UncheckedCreateInput` typing.
+- The `getUserIdFromRequest` fallback (used in POST /deals) is a
+  **workaround** for the Elysia 1.2 derive-context-loss bug
+  documented in `apps/api/src/middleware/rbac.ts:67-75`. Don't
+  remove it without first verifying the derive chain works in
+  Elysia 1.2 (we have not yet upgraded to 1.3+ where this is
+  fixed).
+- The new `<DealAutocomplete>` must always be paired with a
+  react-query `deals-by-company` cache key so other components
+  (e.g. the Deals kanban) can `invalidateQueries` on Quick-Create.
+- Always pre-fill `expectedCloseDate` via
+  `defaultExpectedCloseDateOffsetDays` (currently +90 days) for
+  any future caller of `DealDialog` that wants the same
+  "minimum-friction" UX the QuotationBuilder gets.
+
+### Smoke test
+
+Run from inside the crm-api container:
+
+```
+docker cp /tmp/rg_deal_smoke.ts crm-api:/tmp/rg_deal_smoke.ts
+docker exec crm-api bun run /tmp/rg_deal_smoke.ts
+```
+
+Expected: `=== ALL PASS ===` (10 assertions covering
+POST valid + 3 negative cases + PATCH + DELETE cleanup + audit
+log entry).

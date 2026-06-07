@@ -15,18 +15,19 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, Plus, Trash2, X, Package, Briefcase, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input, Textarea } from '@/components/ui/input';
-import { Select, Label } from '@/components/ui/select';
+import { Label } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
   productsApi, servicesApi, quotationsApi, settingsApi,
   type Product, type Service, type ServiceManDay,
-  type Quotation, type QuotationItem, type Deal,
+  type Quotation, type QuotationItem,
 } from '@/lib/api';
 import { formatCurrency } from '@/lib/utils';
 import { QuickCreateServiceDialog } from './quick-create-service-dialog';
 import { ProductDialog } from './product-dialog';
 import { CompanyAutocomplete } from './company-autocomplete';
+import { DealAutocomplete } from './deal-autocomplete';
 
 interface DraftLine {
   key: string;
@@ -146,7 +147,13 @@ export function QuotationBuilder({
 
   const [products, setProducts] = useState<Product[]>([]);
   const [services, setServices] = useState<Service[]>([]);
-  const [companyDeals, setCompanyDeals] = useState<Deal[]>([]);
+  // RG-2026-06-07-DEAL-AUTOCOMPLETE: removed the `companyDeals` state
+  // and its `useEffect` (formerly lines ~149, ~179-195) — the new
+  // <DealAutocomplete> component owns its own `deals-by-company` query
+  // (see apps/web/src/components/deal-autocomplete.tsx). Keeping the
+  // data inside the autocomplete means Quick-Create's local catalogue
+  // update is visible without a parent re-render, and the parent
+  // doesn't need to coordinate invalidations.
   const [loadingRefs, setLoadingRefs] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -175,24 +182,11 @@ export function QuotationBuilder({
     return () => { alive = false; };
   }, []);
 
-  // Load deals whenever companyId changes (for deal link dropdown)
-  useEffect(() => {
-    if (!companyId) { setCompanyDeals([]); return; }
-    let alive = true;
-    (async () => {
-      try {
-        const token = localStorage.getItem('crm:token');
-        const r = await fetch(`/api/deals?companyId=${companyId}&limit=50`, {
-          headers: { Authorization: `Bearer ${token ?? ''}` },
-        });
-        const d = await r.json();
-        if (alive) setCompanyDeals(Array.isArray(d) ? d : d.items ?? []);
-      } catch {
-        if (alive) setCompanyDeals([]);
-      }
-    })();
-    return () => { alive = false; };
-  }, [companyId]);
+  // RG-2026-06-07-DEAL-AUTOCOMPLETE: removed the `useEffect` that
+  // fetched `/api/deals?companyId=...` whenever companyId changed.
+  // The new <DealAutocomplete> handles its own scoping via the
+  // `companyId` prop and react-query cache. See the comment at the
+  // top of `companyDeals` removal above for the rationale.
 
   // Day 14.7 Step 9 — In CREATE mode, prefill the tax-rate input with the
   // system default from /api/settings/tax. The user can still override per
@@ -422,14 +416,20 @@ export function QuotationBuilder({
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="deal">關聯 Deal (可選)</Label>
-          <Select id="deal" value={dealId} onChange={(e) => setDealId(e.target.value)} disabled={!companyId}>
-            <option value="">-- 無 --</option>
-            {companyDeals.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.title} · {formatCurrency(d.value)} · {d.stage?.name ?? d.status}
-              </option>
-            ))}
-          </Select>
+          {/* RG-2026-06-07-DEAL-AUTOCOMPLETE: was a plain <Select>
+              backed by a useEffect-fetched `companyDeals` array.
+              Replaced with <DealAutocomplete> so Sales can also
+              create a new deal inline (e.g. when the customer just
+              landed and there are no deals on the kanban yet). The
+              autocomplete is disabled until a customer is picked
+              (matches the prior behaviour) and shows a placeholder
+              hint to guide the user. */}
+          <DealAutocomplete
+            value={dealId}
+            onChange={setDealId}
+            companyId={companyId}
+            label=""
+          />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="title">標題</Label>
