@@ -1,8 +1,14 @@
 import { Elysia, t } from 'elysia';
 import { prisma } from '@crm/db';
 import { logEvent } from '../middleware/audit';
+import { authContext } from '../lib/context';
+import { requirePermission } from '../middleware/rbac';
 
+// P0-2 (2026-06-07 review): all deal endpoints (GET list/kanban/:id,
+// POST, PATCH stage, PATCH, DELETE) were public. Now gated.
 export const dealRoutes = new Elysia({ prefix: '/deals', tags: ['deals'] })
+  .use(authContext)
+  .use(requirePermission('deal:read'))
   // List deals (flat)
   .get('/', async ({ query }) => {
     const { ownerId, stageId, status, companyId, limit = '50', offset = '0' } = query as {
@@ -33,6 +39,7 @@ export const dealRoutes = new Elysia({ prefix: '/deals', tags: ['deals'] })
   })
 
   // Day 8: Kanban view — returns stages with nested deals, perfect for drag-drop board
+  .use(requirePermission('deal:read'))
   .get('/kanban', async ({ query }) => {
     // 2026-06-06: accept companyId filter so the Kanban page can scope
     // the board to a single customer's deals. Same param name as the
@@ -80,6 +87,7 @@ export const dealRoutes = new Elysia({ prefix: '/deals', tags: ['deals'] })
   })
 
   // Day 8: Move deal to a different stage (Kanban drag-drop endpoint)
+  .use(requirePermission('deal:update'))
   .patch('/:id/stage', async ({ params, body, userId, request }) => {
     const { stageId, status } = body as { stageId: string; status?: 'OPEN' | 'WON' | 'LOST' };
     // Verify the new stage exists
@@ -119,6 +127,7 @@ export const dealRoutes = new Elysia({ prefix: '/deals', tags: ['deals'] })
     }),
   })
 
+  .use(requirePermission('deal:read'))
   .get('/:id', async ({ params, set }) => {
     const d = await prisma.deal.findUnique({
       where: { id: params.id },
@@ -134,6 +143,7 @@ export const dealRoutes = new Elysia({ prefix: '/deals', tags: ['deals'] })
     if (!d) { set.status = 404; return { error: 'Not found' }; }
     return d;
   })
+  .use(requirePermission('deal:create'))
   .post('/', async ({ body, set, userId, request }) => {
     const created = await prisma.deal.create({ data: body as never });
     set.status = 201;
@@ -148,6 +158,7 @@ export const dealRoutes = new Elysia({ prefix: '/deals', tags: ['deals'] })
     });
     return created;
   })
+  .use(requirePermission('deal:update'))
   .patch('/:id', async ({ params, body, userId, request }) => {
     const updated = await prisma.deal.update({ where: { id: params.id }, data: body as never });
     await logEvent({
@@ -161,6 +172,7 @@ export const dealRoutes = new Elysia({ prefix: '/deals', tags: ['deals'] })
     });
     return updated;
   })
+  .use(requirePermission('deal:delete'))
   .delete('/:id', async ({ params, userId, request }) => {
     const before = await prisma.deal.findUnique({ where: { id: params.id }, select: { title: true } });
     await prisma.deal.delete({ where: { id: params.id } });

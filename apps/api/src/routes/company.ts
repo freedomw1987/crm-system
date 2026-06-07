@@ -1,9 +1,18 @@
 import { Elysia, t } from 'elysia';
 import { prisma } from '@crm/db';
 import { logEvent } from '../middleware/audit';
+import { authContext } from '../lib/context';
+import { requirePermission } from '../middleware/rbac';
 
+// P0-2 (2026-06-07 review): all 4 company endpoints (GET list/detail,
+// POST, PATCH, DELETE) were public. Now gated by authContext and
+// permission matrix in docs/rbac.md.
 export const companyRoutes = new Elysia({ prefix: '/companies', tags: ['companies'] })
+  .use(authContext)
+  // P0-2: every verb gates the right permission. requirePermission is
+  // { as: 'scoped' } so each .use() applies only to the next .get/.post/etc.
   // List companies
+  .use(requirePermission('company:read'))
   .get('/', async ({ query }) => {
     const { search, status, region, limit = '20', offset = '0' } = query as {
       search?: string;
@@ -51,6 +60,7 @@ export const companyRoutes = new Elysia({ prefix: '/companies', tags: ['companie
   })
 
   // Get single company
+  .use(requirePermission('company:read'))
   .get('/:id', async ({ params, set }) => {
     const company = await prisma.company.findUnique({
       where: { id: params.id },
@@ -72,6 +82,7 @@ export const companyRoutes = new Elysia({ prefix: '/companies', tags: ['companie
   })
 
   // Create company
+  .use(requirePermission('company:create'))
   .post('/', async ({ body, set, userId, request }) => {
     const data = body as Record<string, unknown>;
     // Day 9: accept either `regionId` (cuid) or `region` (code). The Region
@@ -125,6 +136,7 @@ export const companyRoutes = new Elysia({ prefix: '/companies', tags: ['companie
   })
 
   // Update company
+  .use(requirePermission('company:update'))
   .patch('/:id', async ({ params, body, set, userId, request }) => {
     try {
       const data = body as Record<string, unknown>;
@@ -172,6 +184,7 @@ export const companyRoutes = new Elysia({ prefix: '/companies', tags: ['companie
   })
 
   // Delete company
+  .use(requirePermission('company:delete'))
   .delete('/:id', async ({ params, set, userId, request }) => {
     try {
       const before = await prisma.company.findUnique({ where: { id: params.id }, select: { name: true } });

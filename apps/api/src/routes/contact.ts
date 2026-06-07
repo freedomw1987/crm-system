@@ -1,8 +1,14 @@
 import { Elysia } from 'elysia';
 import { prisma } from '@crm/db';
 import { logEvent } from '../middleware/audit';
+import { authContext } from '../lib/context';
+import { requirePermission } from '../middleware/rbac';
 
+// P0-2 (2026-06-07 review): all 4 contact endpoints (GET list/detail,
+// POST, PATCH, DELETE) were public. Now gated.
 export const contactRoutes = new Elysia({ prefix: '/contacts', tags: ['contacts'] })
+  .use(authContext)
+  .use(requirePermission('contact:read'))
   .get('/', async ({ query }) => {
     const { companyId, search, limit = '50', offset = '0' } = query as {
       companyId?: string;
@@ -27,6 +33,7 @@ export const contactRoutes = new Elysia({ prefix: '/contacts', tags: ['contacts'
       include: { company: { select: { id: true, name: true } } },
     });
   })
+  .use(requirePermission('contact:read'))
   .get('/:id', async ({ params, set }) => {
     const c = await prisma.contact.findUnique({
       where: { id: params.id },
@@ -35,6 +42,7 @@ export const contactRoutes = new Elysia({ prefix: '/contacts', tags: ['contacts'
     if (!c) { set.status = 404; return { error: 'Not found' }; }
     return c;
   })
+  .use(requirePermission('contact:create'))
   .post('/', async ({ body, set, userId, request }) => {
     const created = await prisma.contact.create({ data: body as never });
     set.status = 201;
@@ -49,6 +57,7 @@ export const contactRoutes = new Elysia({ prefix: '/contacts', tags: ['contacts'
     });
     return created;
   })
+  .use(requirePermission('contact:update'))
   .patch('/:id', async ({ params, body, userId, request }) => {
     const updated = await prisma.contact.update({ where: { id: params.id }, data: body as never });
     await logEvent({
@@ -62,6 +71,7 @@ export const contactRoutes = new Elysia({ prefix: '/contacts', tags: ['contacts'
     });
     return updated;
   })
+  .use(requirePermission('contact:delete'))
   .delete('/:id', async ({ params, userId, request }) => {
     const before = await prisma.contact.findUnique({ where: { id: params.id }, select: { firstName: true, lastName: true } });
     await prisma.contact.delete({ where: { id: params.id } });
