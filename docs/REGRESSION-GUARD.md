@@ -169,6 +169,72 @@ The 403 message itself was a clue: "Forbidden: missing permission
 
 ---
 
+## RG-005 — AI chat was not streaming; tool calls rendered as standalone message bubbles
+
+- **Shipped (bug):** Day 10 (AI Assistant initial ship)
+- **Discovered:** 2026-06-09 (David screenshot feedback: "AI 助手有這個情況,
+  應該是調用工具時不用有 message bubble; AI 助手是沒有做流式，所以要等到
+  有晒全部結果才會有回覆")
+- **Files affected:** `apps/api/src/routes/chat.ts`,
+  `packages/ai/src/index.ts`, `apps/web/src/lib/api.ts`,
+  `apps/web/src/pages/ai-chat.tsx`
+- **Status:** ✅ Fixed (Day 10.1)
+
+### Root cause
+
+Two issues shipped together on Day 10:
+
+1. **No streaming.** `client.chat.completions.create()` was called
+   without `stream: true`, so the route waited for the entire LLM
+   completion before responding. The frontend `useMutation` showed
+   a "AI 諗緊..." spinner for 5-15 seconds, then the full reply
+   appeared at once. From the user's perspective the agent felt
+   unresponsive.
+
+2. **Tool calls were full-width message bubbles.** `MessageBubble`
+   treated `role: 'tool'` like a regular message: it wrapped the
+   tool invocation in `flex justify-start` + `max-w-[80%]` with a
+   bot icon. The result was a column of grey bubbles that looked
+   like the agent was sending multiple messages, instead of
+   metadata about what the agent was doing.
+
+### Invariant
+
+> **`/chat/send` MUST stream Server-Sent Events as the LLM
+> produces tokens, and the UI MUST render tool calls as small
+> inline pills adjacent to the assistant's reply — never as
+> standalone message bubbles.**
+
+Specifically:
+- The HTTP response is `Content-Type: text/event-stream` with
+  `Cache-Control: no-cache, no-transform` and
+  `X-Accel-Buffering: no` headers (so nginx doesn't buffer).
+- Each frame is `data: {json}\n\n`; json is one of:
+  `{type:'token',delta:string}`, `{type:'tool_start',name,args}`,
+  `{type:'tool_end',name,result,error?}`,
+  `{type:'done',conversationId,usage}`,
+  `{type:'error',message}`.
+- The frontend's `ToolPill` and `MessageBubble` (for persisted
+  `role: 'tool'`) MUST render tool invocations as inline pills
+  (small text, no max-w container, no bot icon). Pills sit above
+  the assistant bubble in the same column.
+
+### Prevention
+
+- The LLM call in `runAgentStream` is hard-coded with
+  `stream: true` + `stream_options: { include_usage: true }`. A
+  regression test would assert the response's `Content-Type`.
+- The `ToolPill` / `MessageBubble` (tool branch) components are
+  documented as "inline, not a message" in their JSDoc; any future
+  refactor that wraps them in a `max-w-[80%]` should be flagged in
+  code review.
+- The PRD's US-C1 acceptance criteria now explicitly require
+  "streaming" and "tool call inline pill" as separate bullets.
+- The PRD's US-C7 is a new permanent US locking the SSE protocol
+  in place.
+
+---
+
 ## How to add a new entry
 
 When you fix a bug:

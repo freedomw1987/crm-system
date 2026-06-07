@@ -38,10 +38,11 @@
 
 | US | Title | Status | Priority | Owner | Gaps / Notes |
 |----|-------|--------|----------|-------|--------------|
-| C1 | Chat UI + FAB | ✅ PASS | P0 | Day 10 | FAB hides on /ai, hover label works |
+| C1 | Chat UI + FAB | ✅ PASS | P0 | Day 10 | FAB hides on /ai, hover label works. **Day 10.1:** streaming + inline tool pill |
 | C2 | Read tools (×7) | ✅ PASS | P0 | Day 10 | 7 read tools verified; 6-iter loop cap prevents runaway |
 | C3 | Write tools (×3) | 🟨 PARTIAL | P1 | Day 10 | Tools work but no "AI proposes, human confirms" guardrail yet (US-C5) |
 | C4 | DB-driven config | ✅ PASS | P0 | **Day 10 + RG-002 fix** | Pre-check 503 (no env fallback). See RG-002 |
+| C7 | Streaming responses (SSE) | ✅ PASS | P0 | **Day 10.1 (this batch)** | Token-by-token + tool pills. See RG-005 |
 
 ## Epic D — Mobile
 
@@ -85,12 +86,44 @@
 
 ---
 
+## Day 10.1 batch — Streaming + tool pill UX (this commit)
+
+| Item | Type | Status | Linked RG | Commit |
+|------|------|--------|-----------|--------|
+| `runAgentStream` (async generator) — streaming agent loop | Backend | ✅ | — | This batch |
+| `/chat/send` SSE response (text/event-stream) | Backend | ✅ | **RG-005** | This batch |
+| `chatApi.send` returns Promise<{conversationId}> via callback | Frontend | ✅ | — | This batch |
+| `MessageBubble` tool branch → inline pill (no max-w, no bot icon) | Frontend | ✅ | **RG-005** | This batch |
+| `ToolPill` component (in-flight state: pulse + "執行中" / ok / failed) | Frontend | ✅ | — | This batch |
+| `StreamingBotMessage` (single bot-anchored bubble with pills above) | Frontend | ✅ | — | This batch |
+| `quotations.tsx` AI draft — collect `draft_quotation` from tool_end event | Frontend | ✅ | — | This batch |
+| `Cache-Control: no-cache, no-transform` + `X-Accel-Buffering: no` headers | Backend | ✅ | — | This batch |
+| PRD US-C1 acceptance: streaming + tool pill bullets | Doc | ✅ | — | This batch |
+| PRD US-C7 (new) — SSE protocol acceptance | Doc | ✅ | — | This batch |
+| `docs/REGRESSION-GUARD.md` RG-005 | Doc | ✅ | — | This batch |
+
+---
+
+## Day 10.1 smoke test results (this batch)
+
+| Check | Expected | Actual | Result |
+|--------|----------|--------|--------|
+| `Content-Type: text/event-stream` | yes | `text/event-stream; charset=utf-8` | ✅ |
+| `transfer-encoding: chunked` | yes | yes | ✅ |
+| Token events fire one per chunk | yes | e.g. `1`, `\n`, `2`, `\n`, `3` for "count 1 to 3" | ✅ |
+| `tool_start` event before tool executes | yes | yes | ✅ |
+| `tool_end` event after tool completes | yes | yes | ✅ |
+| `done` event with usage stats | yes | yes (prompt/completion/total tokens) | ✅ |
+| Browser: tool pills render as inline (no max-w) | yes | yes (screenshot verified) | ✅ |
+| Browser: streaming cursor blinks in bot bubble | yes | yes (`animate-pulse` cursor) | ✅ |
+| Browser: 0 console errors | yes | 0 errors, 0 warnings | ✅ |
+
 ## Open follow-ups (post-ship)
 
 | Item | Why | Owner |
 |------|-----|-------|
 | US-C5 "AI proposes, human confirms" guardrail | Day 10 ships full CRUD by design but humans should confirm dangerous ops | Next sprint |
 | US-C6 Token-cost dashboard | We already store `promptTokens` / `completionTokens` per message | Next sprint |
-| US-C7 Streaming responses | Currently batched on full completion | Next sprint |
+| US-C8 Multi-language | Currently 繁中 only | Future |
 | Test framework | TEST-COVERAGE has too many 🟨 rows | Sprint N+1 |
 | E2E suite (Playwright) | 1 critical regression (RG-001) would have been caught | Sprint N+1 |

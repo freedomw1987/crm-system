@@ -94,7 +94,7 @@
 ## Epic C — AI Assistant (Day 10)
 
 ### US-C1: Any user can chat with the AI Assistant
-- **Status:** ✅ Shipped (Day 10)
+- **Status:** ✅ Shipped (Day 10, **streaming + tool pill UX upgraded Day 10.1**)
 - **Priority:** P0
 - **As any** user with a valid session, **I want to** open the AI Assistant
   from anywhere in the app **so that** I can ask natural-language questions
@@ -105,7 +105,18 @@
   - [ ] `/ai` page has a 2-pane layout: conversation list (left) + active chat (right)
   - [ ] New conversation button creates a fresh `Conversation` row
   - [ ] Send button POSTs to `/chat/send` with `{ message, conversationId? }`
-  - [ ] Tool calls are visible in the message stream (collapsible)
+  - [ ] **Streaming (Day 10.1):** Server returns `text/event-stream` with
+        one frame per LLM token; the UI renders the assistant's reply
+        token-by-token as the LLM produces it (no waiting for full
+        completion). The cursor blinks in the streaming bubble.
+  - [ ] **Tool call inline pill (Day 10.1):** Tool invocations are
+        displayed as small inline pills above the assistant's reply
+        (NOT as separate message bubbles). Each pill shows the tool
+        name, a "running" / "ok" / "failed" status, and a caret to
+        expand args + result JSON.
+  - [ ] **Tool pill animation (Day 10.1):** While the tool is running
+        the pill is bordered in brand colour and pulses; once complete
+        it dims to muted-foreground.
   - [ ] Conversation list shows last 50, sorted by `updatedAt desc`
   - [ ] Delete button removes a conversation (with confirm)
 
@@ -161,7 +172,27 @@
 |----|-------|-------|
 | US-C5 | "AI proposes, human confirms" mutation guardrail | Block dangerous tool calls behind a confirm dialog |
 | US-C6 | Token-cost dashboard per user | Read from `ConversationMessage.promptTokens` / `completionTokens` |
-| US-C7 | Streaming responses (SSE) | Currently batched on full completion |
+### US-C7: AI Assistant streams responses (SSE)
+- **Status:** ✅ Shipped (Day 10.1)
+- **Priority:** P0 (Day 10.1 retrofit — David feedback: agent felt unresponsive
+  without streaming)
+- **Acceptance:**
+  - [ ] `/chat/send` returns `Content-Type: text/event-stream`
+  - [ ] Each SSE frame is `data: {json}\n\n` (one event per frame)
+  - [ ] Event types: `token` (LLM text delta), `tool_start`,
+        `tool_end`, `done` (with usage stats), `error`
+  - [ ] The LLM call uses `stream: true` + `stream_options: { include_usage: true }`
+  - [ ] Tool calls execute serially within a single run; the tool
+        result feeds back into the LLM for the next iteration
+  - [ ] On premature client disconnect, the agent's run is cancelled
+        (Node ReadableStream cancel propagates to `for await` loop)
+  - [ ] `Cache-Control: no-cache, no-transform` + `X-Accel-Buffering: no`
+        response headers so nginx doesn't buffer the stream
+
+## Backlog (not yet scheduled)
+
+| ID | Title | Notes |
+|----|-------|-------|
 | US-C8 | AI Assistant multi-language | Currently 繁中 only |
 | US-C9 | Schedule send for quotations | Cron-backed send later |
 | US-C10 | Mobile app (React Native) | Web is responsive but not native |
@@ -172,6 +203,7 @@
 
 | Date | Change | Why |
 |------|--------|-----|
+| 2026-06-09 | Day 10.1 US-C7 streaming + tool pill UX | David feedback: agent felt unresponsive; tool calls looked like messages |
 | 2026-06-09 | Day 10 US-B4 / B5 / C1-C4 added | AI Assistant ship |
 | 2026-06-09 | US-C4 acceptance clarified | RG-002 fix: env-var check removed |
 | 2026-06-07 | Day 9 US-A1-A3 / B1-B3 closed | SOW + GP ship |
