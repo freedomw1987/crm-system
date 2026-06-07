@@ -3,6 +3,7 @@ import { prisma } from '@crm/db';
 import { logEvent } from '../middleware/audit';
 import { authContext } from '../lib/context';
 import { requirePermission } from '../middleware/rbac';
+import { withAuditDelete } from '../lib/with-audit';
 
 // P0-2 (2026-06-07 review): all 4 contact endpoints (GET list/detail,
 // POST, PATCH, DELETE) were public. Now gated.
@@ -74,17 +75,14 @@ export const contactRoutes = new Elysia({ prefix: '/contacts', tags: ['contacts'
   .use(requirePermission('contact:delete'))
   .delete('/:id', async ({ params, userId, request }) => {
     const before = await prisma.contact.findUnique({ where: { id: params.id }, select: { firstName: true, lastName: true } });
-    await prisma.contact.delete({ where: { id: params.id } });
-    if (before) {
-      await logEvent({
-        actorId: userId ?? null,
-        action: 'CONTACT_DELETED',
-        resourceType: 'contact',
-        resourceId: params.id,
-        description: `Deleted contact ${before.firstName} ${before.lastName}`,
-        metadata: { name: `${before.firstName} ${before.lastName}` },
-        request,
-      });
-    }
-    return { success: true };
+    if (!before) return { success: true };
+    return withAuditDelete({
+      action: 'CONTACT_DELETED',
+      resourceType: 'contact',
+      resourceId: params.id,
+      userId,
+      request,
+      deleteFn: () => prisma.contact.delete({ where: { id: params.id } }),
+      label: `${before.firstName} ${before.lastName}`,
+    });
   });

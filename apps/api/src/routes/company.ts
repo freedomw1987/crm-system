@@ -3,6 +3,7 @@ import { prisma } from '@crm/db';
 import { logEvent } from '../middleware/audit';
 import { authContext } from '../lib/context';
 import { requirePermission } from '../middleware/rbac';
+import { withAuditDelete } from '../lib/with-audit';
 
 // P0-2 (2026-06-07 review): all 4 company endpoints (GET list/detail,
 // POST, PATCH, DELETE) were public. Now gated by authContext and
@@ -188,19 +189,19 @@ export const companyRoutes = new Elysia({ prefix: '/companies', tags: ['companie
   .delete('/:id', async ({ params, set, userId, request }) => {
     try {
       const before = await prisma.company.findUnique({ where: { id: params.id }, select: { name: true } });
-      await prisma.company.delete({ where: { id: params.id } });
-      if (before) {
-        await logEvent({
-          actorId: userId ?? null,
-          action: 'COMPANY_DELETED',
-          resourceType: 'company',
-          resourceId: params.id,
-          description: `Deleted company ${before.name}`,
-          metadata: { name: before.name },
-          request,
-        });
+      if (!before) {
+        set.status = 404;
+        return { error: 'Company not found' };
       }
-      return { success: true };
+      return await withAuditDelete({
+        action: 'COMPANY_DELETED',
+        resourceType: 'company',
+        resourceId: params.id,
+        userId,
+        request,
+        deleteFn: () => prisma.company.delete({ where: { id: params.id } }),
+        label: before.name,
+      });
     } catch {
       set.status = 404;
       return { error: 'Company not found' };
