@@ -917,16 +917,27 @@ export interface PipelineWithStages {
   isDefault: boolean;
   stages: (PipelineStage & { _count?: { deals: number } })[];
 }
+// **Day 14.7 Step 5 fix (caught in Step 7)**: Backend (`/api/settings/tax`)
+// uses `rate` (not `defaultTaxRate`) for the JSON field on BOTH the GET
+// response and the PUT body. The first client wrapper I wrote in Step 5
+// assumed `defaultTaxRate` based on the Plan doc wording, but per "backend
+// is source of truth" (user feedback 2026-06-04) we follow the wire format
+// that `prisma.systemConfig.upsert({ data: { value: rate } })` actually
+// returns. Also includes `key` + `description` (per backend) and `updatedBy`
+// may be `User | null` (admin hasn't been wired to the row yet) — not just
+// a string. See routes/settings.ts GET + PUT.
 export interface TaxConfig {
-  defaultTaxRate: number; // percent (0–100)
-  updatedAt?: string;
-  updatedBy?: string;
+  key: string;
+  rate: number; // percent (0–100)
+  description?: string | null;
+  updatedAt?: string | null;
+  updatedBy?: { id: string; name: string; email: string } | null;
 }
 
 export const settingsApi = {
   // Tax Rate (global default; per-quotation override still allowed in builder)
   getTax: () => request<TaxConfig>('/settings/tax'),
-  putTax: (data: { defaultTaxRate: number }) =>
+  putTax: (data: { rate: number }) =>
     request<TaxConfig>('/settings/tax', {
       method: 'PUT',
       body: JSON.stringify(data),

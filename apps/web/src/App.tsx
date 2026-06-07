@@ -24,6 +24,7 @@ import { AiConfigPage } from '@/pages/ai-config';
 import SettingsPage from '@/pages/settings';
 import { SettingsLayout } from '@/components/settings-layout';
 import { SettingsTabPlaceholder } from '@/pages/settings-tab-placeholder';
+import { SettingsTaxPage } from '@/pages/settings-tax';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -83,7 +84,7 @@ export function App() {
               <Route path="roles" element={<SettingsTabPlaceholder title="Roles" description="Role & permission management (moved from top-level)." step="Step 8" />} />
               <Route path="ai" element={<SettingsTabPlaceholder title="AI Config" description="AI provider config (moved from top-level)." step="Step 8" />} />
               <Route path="man-day" element={<SettingsTabPlaceholder title="Man-day Roles" description="Man-day role catalog (moved from top-level)." step="Step 8" />} />
-              <Route path="tax" element={<SettingsTabPlaceholder title="Tax Rate" description="Global default tax rate for new quotations. Per-quotation override remains available in the quotation builder." step="Step 7" />} />
+              <Route path="tax" element={<SettingsTaxPage />} />
               <Route path="audit" element={<SettingsTabPlaceholder title="Audit Log" description="System audit log (moved from top-level)." step="Step 8" />} />
             </Route>
           </Route>

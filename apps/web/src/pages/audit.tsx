@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { History } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
@@ -63,9 +64,13 @@ function getActionMeta(action: string) {
 }
 
 export function AuditPage() {
-  const [action, setAction] = useState<string>('');
-  const [actorId, setActorId] = useState<string>('');
-  const [search, setSearch] = useState('');
+  // Day 14.7 Step 7 — initial filter values can be passed via query string
+  // so cross-tab links (e.g. Settings → Tax → "View audit log" with
+  // `?action=SYSTEM_CONFIG_UPDATED`) land pre-filtered.
+  const [searchParams] = useSearchParams();
+  const [action, setAction] = useState<string>(searchParams.get('action') ?? '');
+  const [actorId, setActorId] = useState<string>(searchParams.get('actorId') ?? '');
+  const [search, setSearch] = useState(searchParams.get('resourceId') ?? '');
 
   const { data, isLoading } = useQuery({
     queryKey: ['audit', { action, actorId, search }],
