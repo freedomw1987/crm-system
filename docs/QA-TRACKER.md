@@ -118,6 +118,31 @@
 | Browser: streaming cursor blinks in bot bubble | yes | yes (`animate-pulse` cursor) | ✅ |
 | Browser: 0 console errors | yes | 0 errors, 0 warnings | ✅ |
 
+### Day 11 Phase 1 — Settings + Pipeline CRUD + AI `list_pipelines`
+
+#### US-S2 backend smoke
+
+| Check | Required | Actual | Result |
+|--------|----------|--------|--------|
+| `GET /settings/pipelines` returns 1 default pipeline + 6 stages | yes | yes (Lead/Qualified/Proposal/Negotiation/Won/Lost) | ✅ |
+| Each stage has `_count.deals` (Proposal=2, Negotiation=1, others=0) | yes | yes | ✅ |
+| `POST /settings/pipelines/stages` creates stage at `max+1` position | yes | yes (pos=7) | ✅ |
+| `PATCH /settings/pipelines/stages/:id` updates name + probability | yes | yes (renamed, prob=45) | ✅ |
+| `PATCH .../position=0` swaps with the stage at pos=0 (Lead) | yes | yes (Lead dropped to pos=1) | ✅ |
+| `DELETE` of empty stage returns `{ok: true}` | yes | yes | ✅ |
+| `DELETE` of stage with 2 deals returns 409 + `dealCount` | yes | yes (409, dealCount=2, message set) | ✅ |
+| Audit log rows for CREATE/UPDATE/DELETE | yes | yes (logEvent fires on every mutation) | ✅ |
+
+#### US-S3 AI tool smoke
+
+| Check | Required | Actual | Result |
+|--------|----------|--------|--------|
+| `list_pipelines` tool registered | yes | yes (in `toolRegistry`) | ✅ |
+| Tool returns `{id, name, isDefault, stages[]}` | yes | yes (1 pipeline, 6 stages) | ✅ |
+| Empty-string `pipelineId` treated as no filter | yes | yes (tool sent `pipelineId:''`, returned all 6 stages) | ✅ |
+| System prompt mentions `list_pipelines` | yes | yes (Day 11 line added) | ✅ |
+| Live chat: "What stages does our sales pipeline have?" → tool fires | yes | yes (TOOL_START `list_pipelines` + TOOL_END with 6 stages) | ✅ |
+
 ## Open follow-ups (post-ship)
 
 | Item | Why | Owner |

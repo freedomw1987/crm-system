@@ -189,10 +189,67 @@
   - [ ] `Cache-Control: no-cache, no-transform` + `X-Accel-Buffering: no`
         response headers so nginx doesn't buffer the stream
 
+### US-S1: 系統設置 entry + Pipeline tab (Day 11 Phase 1)
+- **Status:** ✅ Shipped (Day 11)
+- **Priority:** P0
+- **Why:** David wants admins to manage sales pipeline stages
+  without DB access (positions, names, probability, color). Phase 1
+  covers the page shell + Pipeline tab. Phase 2 adds the Tax rate
+  tab (deferred).
+- **Acceptance:**
+  - [ ] New `/settings` page reachable from the admin nav (Settings
+        icon, only visible to `user.role === 'ADMIN'`)
+  - [ ] Page renders a "Pipeline" tab + disabled "Tax rate" tab
+        (Phase 2 placeholder)
+  - [ ] Pipeline tab shows the default pipeline's stages in
+        `position` order, with `name` / `probability` / `color`
+        editable inline
+  - [ ] Each row is drag-and-drop reorderable; reorder fires
+        `PATCH /settings/pipelines/stages/:id` with the new
+        `position` (backend swaps with the stage currently there)
+  - [ ] "Add stage" appends a new stage at the end (position =
+        max + 1)
+  - [ ] DELETE is blocked with a 409-style dialog when the stage
+        has any active deals; otherwise a `confirm()` prompt
+- **Permissions:** `settings:read` (any logged-in user) +
+  `settings:update` (ADMIN only)
+
+### US-S2: Sales pipeline config — backend (Day 11 Phase 1)
+- **Status:** ✅ Shipped (Day 11)
+- **Priority:** P0
+- **Acceptance:**
+  - [ ] `GET /settings/pipelines` returns all pipelines with their
+        stages (ordered by position) and a `_count.deals` per
+        stage — any logged-in user (settings:read)
+  - [ ] `POST /settings/pipelines/stages` creates a stage in the
+        default pipeline, auto-assigning `position = max + 1` —
+        ADMIN only (settings:update)
+  - [ ] `PATCH /settings/pipelines/stages/:id` updates
+        name/probability/color/position — ADMIN only
+  - [ ] `DELETE /settings/pipelines/stages/:id` returns 409 with
+        `dealCount` if any deal is currently on the stage
+  - [ ] All mutations write a row to `audit_logs` with action
+        `CREATE` / `UPDATE` / `DELETE`
+
+### US-S3: AI tool `list_pipelines` (Day 11 Phase 1)
+- **Status:** ✅ Shipped (Day 11)
+- **Priority:** P1
+- **Why:** Sales reps occasionally ask the AI "what's our sales
+  pipeline?" or "what stage is this deal in?". Today the AI can
+  only mutate (`update_deal_stage`); it can't introspect.
+- **Acceptance:**
+  - [ ] New tool `list_pipelines` available in the AI agent
+  - [ ] Returns `{ id, name, isDefault, stages: [{ id, name,
+        position, probability, color, dealCount }] }`
+  - [ ] Empty-string `pipelineId` is treated as "no filter"
+        (defensive — LLMs often send `''` for optional args)
+  - [ ] System prompt updated to mention the tool
+
 ## Backlog (not yet scheduled)
 
 | ID | Title | Notes |
 |----|-------|-------|
+| US-S4 | Phase 2: Tax rate tab on Settings | `system_configs` table + `DEFAULT_TAX_RATE` key + Quotation create flow change |
 | US-C8 | AI Assistant multi-language | Currently 繁中 only |
 | US-C9 | Schedule send for quotations | Cron-backed send later |
 | US-C10 | Mobile app (React Native) | Web is responsive but not native |
@@ -203,6 +260,7 @@
 
 | Date | Change | Why |
 |------|--------|-----|
+| 2026-06-09 | Day 11 Phase 1 US-S1 / S2 / S3 shipped | Settings page + Pipeline CRUD + AI `list_pipelines` tool |
 | 2026-06-09 | Day 10.1 US-C7 streaming + tool pill UX | David feedback: agent felt unresponsive; tool calls looked like messages |
 | 2026-06-09 | Day 10 US-B4 / B5 / C1-C4 added | AI Assistant ship |
 | 2026-06-09 | US-C4 acceptance clarified | RG-002 fix: env-var check removed |
