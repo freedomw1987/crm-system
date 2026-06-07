@@ -21,6 +21,7 @@ import { RolesPage } from '@/pages/roles';
 import { ProductsPage } from '@/pages/products';
 import { ManDayRolesPage } from '@/pages/man-day-roles';
 import { AiConfigPage } from '@/pages/ai-config';
+import SettingsPage from '@/pages/settings';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -70,6 +71,7 @@ export function App() {
             <Route path="/roles" element={<RolesPage />} />
             <Route path="/man-day-roles" element={<ManDayRolesPage />} />
             <Route path="/ai-config" element={<AiConfigPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
           </Route>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

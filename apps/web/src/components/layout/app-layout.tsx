@@ -2,7 +2,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   Building2, FileText, KanbanSquare, LogOut,
   LayoutDashboard, Menu, X, Users, History, Briefcase, Shield, Package,
-  Sparkles, UserCog,
+  Sparkles, UserCog, Settings,
 } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '@/lib/auth';
@@ -31,6 +31,9 @@ const adminNavItems = [
   // form (see apps/web/src/pages/services.tsx); they don't need to
   // manage it themselves, so we keep it under the Admin section.
   { to: '/man-day-roles', label: 'Man day role', icon: UserCog, adminOnly: true },
+  // Day 11: System Settings — Phase 1 covers sales pipeline configuration.
+  // The page is admin-only; SALES/VIEWER see a 403 if they navigate here directly.
+  { to: '/settings', label: '系統設置', icon: Settings, adminOnly: true },
   { to: '/ai-config', label: 'AI 設定', icon: Sparkles, adminOnly: true },
   { to: '/audit', label: 'Audit Log', icon: History, adminOnly: true },
 ];

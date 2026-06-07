@@ -297,11 +297,34 @@ export interface QuotationItemInput {
   /** For SERVICE items: snapshot of the chosen service's man-day structure. */
   manDaySnapshot?: Array<{ role: string; dayRate: number; days: number; subtotal: number }>;
 }
+/**
+ * Add a multi-value query param to URLSearchParams. Uses the
+ * `?key=a&key=b` form (preferred by Elysia + standard HTTP — the
+ * backend's `toIdArray` helper understands both array and
+ * comma-separated forms, but the array form is what Elysia delivers
+ * when the client uses `qs.append`).
+ */
+function appendMulti(qs: URLSearchParams, key: string, values: string[] | undefined): void {
+  if (!values || values.length === 0) return;
+  for (const v of values) qs.append(key, v);
+}
+
 export const quotationsApi = {
-  list: (params: { companyId?: string; status?: string; dealId?: string; limit?: number } = {}) => {
+  list: (params: {
+    companyId?: string;
+    companyIds?: string[];
+    status?: string;
+    createdById?: string;
+    createdByIds?: string[];
+    dealId?: string;
+    limit?: number;
+  } = {}) => {
     const qs = new URLSearchParams();
     if (params.companyId) qs.set('companyId', params.companyId);
+    appendMulti(qs, 'companyIds', params.companyIds);
     if (params.status) qs.set('status', params.status);
+    if (params.createdById) qs.set('createdById', params.createdById);
+    appendMulti(qs, 'createdByIds', params.createdByIds);
     if (params.dealId) qs.set('dealId', params.dealId);
     if (params.limit) qs.set('limit', String(params.limit));
     return request<{ items: Quotation[]; total: number } | Quotation[]>(`/quotations${qs.toString() ? `?${qs}` : ''}`).then((r) =>
@@ -374,13 +397,21 @@ export const dealsApi = {
     );
   },
   get: (id: string) => request<Deal & { quotations: Array<{ id: string; number: string; status: string; total: number }> }>(`/deals/${id}`),
-  // 2026-06-06: accept companyId filter so the Kanban page can scope
-  // the board to a single customer's deals. Same param name as the
-  // flat /deals list — keeps the frontend API surface symmetric.
-  kanban: (params: { companyId?: string; ownerId?: string; pipelineId?: string } = {}) => {
+  // 2026-06-09: multi-select filter for the Kanban page. Accepts
+  // `companyIds` and `ownerIds` arrays; single-id `companyId` /
+  // `ownerId` are kept for back-compat with existing callers.
+  kanban: (params: {
+    companyId?: string;
+    companyIds?: string[];
+    ownerId?: string;
+    ownerIds?: string[];
+    pipelineId?: string;
+  } = {}) => {
     const qs = new URLSearchParams();
     if (params.companyId) qs.set('companyId', params.companyId);
+    appendMulti(qs, 'companyIds', params.companyIds);
     if (params.ownerId) qs.set('ownerId', params.ownerId);
+    appendMulti(qs, 'ownerIds', params.ownerIds);
     if (params.pipelineId) qs.set('pipelineId', params.pipelineId);
     return request<KanbanData>(`/deals/kanban${qs.toString() ? `?${qs}` : ''}`);
   },
@@ -874,4 +905,45 @@ export const aiConfigApi = {
     method: 'PUT',
     body: JSON.stringify(data),
   }),
+};
+
+// ---------- Settings (Day 11) ----------
+// Admin-only configuration for sales pipelines and (Phase 2) global
+// tax rate etc. The PipelineStage type re-uses the one declared above
+// for Deals (the wire shape is identical).
+export interface PipelineWithStages {
+  id: string;
+  name: string;
+  isDefault: boolean;
+  stages: (PipelineStage & { _count?: { deals: number } })[];
+}
+export const settingsApi = {
+  listPipelines: () => request<PipelineWithStages[]>('/settings/pipelines'),
+  createStage: (data: {
+    name: string;
+    probability?: number;
+    color?: string;
+    pipelineId?: string;
+  }) =>
+    request<PipelineStage>('/settings/pipelines/stages', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateStage: (
+    id: string,
+    data: {
+      name?: string;
+      probability?: number;
+      color?: string | null;
+      position?: number;
+    }
+  ) =>
+    request<PipelineStage>(`/settings/pipelines/stages/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  deleteStage: (id: string) =>
+    request<{ ok: boolean }>(`/settings/pipelines/stages/${id}`, {
+      method: 'DELETE',
+    }),
 };
