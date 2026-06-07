@@ -20,6 +20,7 @@ import { ServiceDetailPage } from '@/pages/service-detail';
 import { RolesPage } from '@/pages/roles';
 import { ProductsPage } from '@/pages/products';
 import { ManDayRolesPage } from '@/pages/man-day-roles';
+import { AiConfigPage } from '@/pages/ai-config';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -68,6 +69,7 @@ export function App() {
             <Route path="/products" element={<ProductsPage />} />
             <Route path="/roles" element={<RolesPage />} />
             <Route path="/man-day-roles" element={<ManDayRolesPage />} />
+            <Route path="/ai-config" element={<AiConfigPage />} />
           </Route>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

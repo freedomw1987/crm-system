@@ -306,7 +306,7 @@ function Composer({
 export function RecentActivitiesWidget({ limit = 10 }: { limit?: number }) {
   const { data, isLoading } = useQuery({
     queryKey: ['activities', { recent: true, limit }],
-    queryFn: () => activitiesApi.recent(limit),
+    queryFn: () => activitiesApi.recent({ limit }),
   });
   const items = data?.items ?? [];
   return (

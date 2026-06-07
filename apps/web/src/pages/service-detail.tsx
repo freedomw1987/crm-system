@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
-import { ArrowLeft, Loader2, Plus, Trash2, Save } from 'lucide-react';
+import { ArrowLeft, Loader2, Save } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input, Textarea } from '@/components/ui/input';
 import { Select, Label } from '@/components/ui/select';
 import { servicesApi, type ServiceManDay } from '@/lib/api';
+import { ManDayEditor, type ManDayRow, toWireRows } from '@/components/man-day-editor';
 import { formatCurrency } from '@/lib/utils';
 
 export function ServiceDetailPage() {
@@ -25,7 +26,7 @@ export function ServiceDetailPage() {
   const [description, setDescription] = useState('');
   const [currency, setCurrency] = useState('HKD');
   const [status, setStatus] = useState<'ACTIVE' | 'ARCHIVED' | 'DRAFT'>('ACTIVE');
-  const [manDays, setManDays] = useState<ServiceManDay[]>([]);
+  const [manDays, setManDays] = useState<ManDayRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -35,15 +36,28 @@ export function ServiceDetailPage() {
       setDescription(service.description ?? '');
       setCurrency(service.currency);
       setStatus(service.status ?? 'ACTIVE');
-      // Belt-and-suspenders: the api layer normalises manDayLines → manDays
-      // on response, so service.manDays is normally always an array. The
-      // fallback keeps the component resilient if the response shape ever
-      // regresses (e.g. an endpoint stops including the relation).
-      setManDays((service.manDays ?? []).map((m) => ({ role: m.role, dayRate: m.dayRate, days: m.days })));
+      // Day N: keep the catalogue binding on the row. The previous
+      // implementation spread the row to a { role, dayRate, days } triple
+      // which silently dropped `manDayRoleId` from the UI. After that
+      // round-trip the row was sent as free-form on save and the
+      // service lost its catalogue reference — even though the DB row
+      // still had it. Mounting ManDayEditor + the same row shape as
+      // the create dialog fixes the silent drop in one place.
+      setManDays(
+        (service.manDays ?? []).map((m) => ({
+          id: m.id,
+          role: m.role,
+          dayRate: m.dayRate,
+          days: m.days,
+          manDayRoleId: m.manDayRoleId ?? null,
+          costRate: m.costRate,
+          sortOrder: m.sortOrder,
+        }))
+      );
     }
   }, [service]);
 
-  const total = manDays.reduce((sum, m) => sum + m.dayRate * m.days, 0);
+  const total = manDays.reduce((sum, m) => sum + (Number(m.dayRate) || 0) * (Number(m.days) || 0), 0);
 
   const updateMutation = useMutation({
     mutationFn: () =>
@@ -53,7 +67,7 @@ export function ServiceDetailPage() {
         currency,
         status,
         unitPrice: total,
-        manDayLines: manDays,
+        manDayLines: toWireRows(manDays) as unknown as ServiceManDay[],
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['service', id] });
@@ -146,86 +160,14 @@ export function ServiceDetailPage() {
       </Card>
 
       <Card>
-        <CardContent className="p-6 space-y-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="font-semibold">人天結構 (SOW breakdown)</h2>
-              <p className="text-xs text-muted-foreground mt-1">
-                修改此處會即時更新服務總價;舊報價仍保留原 snapshot
-              </p>
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setManDays([...manDays, { role: '', dayRate: 0, days: 0 }])}
-            >
-              <Plus className="h-3 w-3 mr-1" />
-              加一行
-            </Button>
-          </div>
-
-          <div className="space-y-2">
-            <div className="grid grid-cols-12 gap-2 text-xs font-medium text-muted-foreground px-1">
-              <div className="col-span-5">Role</div>
-              <div className="col-span-3 text-right">Day rate</div>
-              <div className="col-span-3 text-right">Days</div>
-              <div className="col-span-1"></div>
-            </div>
-            {manDays.map((m, idx) => (
-              <div key={idx} className="grid grid-cols-12 gap-2 items-center">
-                <Input
-                  className="col-span-5"
-                  placeholder="Role"
-                  value={m.role}
-                  onChange={(e) => {
-                    const next = [...manDays];
-                    next[idx] = { ...next[idx], role: e.target.value };
-                    setManDays(next);
-                  }}
-                />
-                <Input
-                  className="col-span-3 text-right"
-                  type="number"
-                  value={m.dayRate || ''}
-                  onChange={(e) => {
-                    const next = [...manDays];
-                    next[idx] = { ...next[idx], dayRate: Number(e.target.value) };
-                    setManDays(next);
-                  }}
-                />
-                <Input
-                  className="col-span-3 text-right"
-                  type="number"
-                  value={m.days || ''}
-                  onChange={(e) => {
-                    const next = [...manDays];
-                    next[idx] = { ...next[idx], days: Number(e.target.value) };
-                    setManDays(next);
-                  }}
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="col-span-1"
-                  onClick={() => setManDays(manDays.filter((_, i) => i !== idx))}
-                  disabled={manDays.length === 1}
-                >
-                  <Trash2 className="h-3 w-3" />
-                </Button>
-              </div>
-            ))}
-          </div>
-
-          <div className="pt-3 border-t flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">
-              {manDays.length} role · {manDays.reduce((s, m) => s + m.days, 0)} days
-            </span>
-            <span className="text-lg font-bold">
-              {formatCurrency(total, currency)}
-            </span>
-          </div>
+        <CardContent className="p-6">
+          <ManDayEditor
+            rows={manDays}
+            onChange={setManDays}
+            currency={currency}
+            label="人天結構 (SOW breakdown)"
+            hint="修改此處會即時更新服務總價;舊報價仍保留原 snapshot"
+          />
         </CardContent>
       </Card>
 

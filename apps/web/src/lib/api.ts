@@ -374,8 +374,16 @@ export const dealsApi = {
     );
   },
   get: (id: string) => request<Deal & { quotations: Array<{ id: string; number: string; status: string; total: number }> }>(`/deals/${id}`),
-  /** Day 8: Kanban view — returns stages with nested deals. */
-  kanban: () => request<KanbanData>('/deals/kanban'),
+  // 2026-06-06: accept companyId filter so the Kanban page can scope
+  // the board to a single customer's deals. Same param name as the
+  // flat /deals list — keeps the frontend API surface symmetric.
+  kanban: (params: { companyId?: string; ownerId?: string; pipelineId?: string } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.companyId) qs.set('companyId', params.companyId);
+    if (params.ownerId) qs.set('ownerId', params.ownerId);
+    if (params.pipelineId) qs.set('pipelineId', params.pipelineId);
+    return request<KanbanData>(`/deals/kanban${qs.toString() ? `?${qs}` : ''}`);
+  },
   /** Day 8: Move deal to a new stage (drag-drop endpoint). */
   moveStage: (id: string, stageId: string) =>
     request<Deal>(`/deals/${id}/stage`, { method: 'PATCH', body: JSON.stringify({ stageId }) }),
@@ -521,6 +529,14 @@ export interface ServiceManDay {
   dayRate: number;
   /** Number of days for this role. */
   days: number;
+  /**
+   * Day N: optional FK to the ManDayRole catalogue row this line was
+   * snapshotted from. When set, the backend treats this as a catalogue
+   * line — the name/price/cost stored on the row are snapshots taken
+   * at write time, so renaming the role later doesn't break this
+   * service. Null on legacy free-form rows (pre-Day-N).
+   */
+  manDayRoleId?: string | null;
   /** Day N: cost per day in HKD. The backend snapshots this on the
    *  quotation item at create-time, but the service's own manDayLines
    *  also carry it so the quotation builder can render a live GP%
@@ -529,6 +545,8 @@ export interface ServiceManDay {
   costRate?: number;
   /** Computed: dayRate × days. */
   subtotal?: number;
+  /** Sort order within the service. Lower numbers first. */
+  sortOrder?: number;
 }
 export interface Service {
   id: string;
@@ -699,8 +717,13 @@ export const activitiesApi = {
     Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') qs.set(k, String(v)); });
     return request<{ items: Activity[]; total: number }>(`/activities${qs.toString() ? `?${qs}` : ''}`);
   },
-  recent: (limit = 10) =>
-    request<{ items: Activity[]; total: number }>(`/activities/recent?limit=${Math.min(limit, 50)}`),
+  recent: (params: { limit?: number; authorId?: string; since?: string } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.limit !== undefined) qs.set('limit', String(Math.min(params.limit, 50)));
+    if (params.authorId) qs.set('authorId', params.authorId);
+    if (params.since) qs.set('since', params.since);
+    return request<{ items: Activity[]; total: number }>(`/activities/recent${qs.toString() ? `?${qs}` : ''}`);
+  },
   create: (data: { companyId?: string; dealId?: string; type?: ActivityType; content: string }) =>
     request<Activity>('/activities', { method: 'POST', body: JSON.stringify(data) }),
   remove: (id: string) => request<{ success: boolean }>(`/activities/${id}`, { method: 'DELETE' }),
@@ -737,4 +760,46 @@ export const attachmentsApi = {
   },
   downloadUrl: (id: string) => `${API_BASE}/attachments/${id}/download`,
   remove: (id: string) => request<{ success: boolean }>(`/attachments/${id}`, { method: 'DELETE' }),
+};
+
+// ---------- AI Configuration (Day 10+) ----------
+// Admin-only page at /admin/ai-config. The PUT endpoint requires the
+// caller to re-enter the api key on every save (we never persist the
+// existing key on partial updates). The GET endpoint returns a masked
+// version of the key + a hasApiKey flag, never the ciphertext.
+export interface AiConfigResponse {
+  configured: boolean;
+  endpointUrl: string;
+  /** Always a masked representation, e.g. "sk-p...1234". */
+  apiKeyMasked: string;
+  hasApiKey: boolean;
+  modelName: string;
+  systemPrompt: string;
+  updatedAt: string | null;
+  updatedByName: string | null;
+}
+export interface AiConfigStatus {
+  configured: boolean;
+  reason?: string;
+  modelName?: string;
+  updatedAt?: string;
+}
+export const aiConfigApi = {
+  status: () => request<AiConfigStatus>('/ai/config/status'),
+  get: () => request<AiConfigResponse>('/ai/config'),
+  /**
+   * Upsert the singleton config row. apiKey is required — we never
+   * preserve the previous key on partial updates (defence-in-depth
+   * against an attacker who already has session access being able
+   * to keep the key alive by sending a modelName-only PATCH).
+   */
+  save: (data: {
+    endpointUrl: string;
+    apiKey: string;
+    modelName: string;
+    systemPrompt?: string;
+  }) => request<{ success: boolean; updatedAt: string }>('/ai/config', {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  }),
 };

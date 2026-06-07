@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { companiesApi, quotationsApi, contactsApi, type Contact, type Region } from '@/lib/api';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { ActivityFeed } from '@/components/activity-feed';
+import { AttachmentList } from '@/components/attachment-list';
 
 // Day 9: CompanyDetailRegionMeta is the fallback used while /api/regions
 // is still in flight (or if the request fails for offline browsing). It
@@ -27,6 +28,11 @@ export function CompanyDetailPage() {
   const { id } = useParams<{ id: string }>();
   const qc = useQueryClient();
   const [contactDialogOpen, setContactDialogOpen] = useState(false);
+  // Day N+1: tab nav. Default tab is the original "資料" view (cards for
+  // contacts/quotations/deals). Activity and Attachment are new tabs that
+  // David asked for on Day N+1. The tab state is local — deep-linking is
+  // not in scope yet, but the URL still drives the page via :id.
+  const [tab, setTab] = useState<'overview' | 'activity' | 'attachments'>('overview');
 
   const { data: company, isLoading } = useQuery({
     queryKey: ['company', id],
@@ -133,159 +139,54 @@ export function CompanyDetailPage() {
         </Card>
 
         <div className="md:col-span-2 space-y-4">
-          {/* Day 8: Contacts card */}
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle>聯絡人 ({(company as unknown as { contacts?: Contact[] }).contacts?.length ?? 0})</CardTitle>
-              <Button size="sm" onClick={() => setContactDialogOpen(true)}>
-                <Plus className="h-3 w-3 mr-1" /> 新增聯絡人
-              </Button>
-            </CardHeader>
-            <CardContent className="p-0">
-              {((company as unknown as { contacts?: Contact[] }).contacts?.length ?? 0) === 0 ? (
-                <p className="text-sm text-muted-foreground p-6 text-center">
-                  仲未有聯絡人
-                </p>
-              ) : (
-                <ul className="divide-y">
-                  {((company as unknown as { contacts?: Contact[] }).contacts ?? []).map((contact) => (
-                    <li key={contact.id} className="flex items-center gap-3 p-4">
-                      <div className="h-9 w-9 rounded-full bg-muted flex items-center justify-center shrink-0">
-                        <User className="h-4 w-4" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium">
-                            {contact.firstName} {contact.lastName}
-                          </span>
-                          {contact.isPrimary && (
-                            <Star className="h-3 w-3 text-yellow-500 fill-yellow-500" />
-                          )}
-                          {contact.title && (
-                            <span className="text-xs text-muted-foreground">· {contact.title}</span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                          {contact.email && <span>{contact.email}</span>}
-                          {contact.phone && <span>{contact.phone}</span>}
-                        </div>
-                      </div>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        onClick={() => {
-                          if (confirm(`刪除聯絡人 ${contact.firstName} ${contact.lastName}?`)) {
-                            deleteContact.mutate(contact.id);
-                          }
-                        }}
-                      >
-                        <Trash2 className="h-3 w-3 text-destructive" />
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
+          {/* Day N+1: tab nav. Stays inside the right-hand column so the
+              company summary card on the left is always visible. */}
+          <div className="flex items-center gap-1 border-b">
+            {([
+              { key: 'overview',    label: '資料', },
+              { key: 'activity',    label: 'Activity', },
+              { key: 'attachments', label: '附件', },
+            ] as const).map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setTab(t.key)}
+                className={`px-3 py-2 text-sm border-b-2 -mb-px transition-colors ${
+                  tab === t.key
+                    ? 'border-primary text-foreground font-medium'
+                    : 'border-transparent text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
 
-          {/* Quotations — always render the header with a "+ 新增 Quotation"
-              entry point so Sales can quote this company from its detail
-              page even when there are no existing quotations yet. The
-              builder receives the companyId via ?companyId=<id> and
-              pre-fills the company dropdown. */}
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-              <CardTitle>Quotations ({quotations.length})</CardTitle>
-              <Button asChild size="sm" variant="outline">
-                <Link to={`/quotations?companyId=${id}`}>
-                  <Plus className="h-3.5 w-3.5 mr-1" /> 新增 Quotation
-                </Link>
-              </Button>
-            </CardHeader>
-            <CardContent className="p-0">
-              {quotations.length === 0 ? (
-                <p className="text-sm text-muted-foreground p-6 text-center">
-                  仲未有報價單 · 撳右上「新增 Quotation」開第一份
-                </p>
-              ) : (
-                <ul className="divide-y">
-                  {quotations.map((q) => (
-                    <li key={q.id}>
-                      <Link
-                        to={`/quotations/${q.id}`}
-                        className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors"
-                      >
-                        <div>
-                          <div className="font-mono text-sm">{q.number}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {formatDate(q.createdAt)} · {q.status}
-                          </div>
-                        </div>
-                        <div className="font-semibold tabular-nums">
-                          {formatCurrency(q.total)}
-                        </div>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
+          {tab === 'overview' && (
+            <OverviewTab
+              company={company}
+              quotations={quotations}
+              deals={deals}
+              onAddContact={() => setContactDialogOpen(true)}
+              onDeleteContact={(id) => {
+                if (confirm('刪除呢個聯絡人?')) deleteContact.mutate(id);
+              }}
+            />
+          )}
 
-          {/* Deals — always render (even when empty) so the "+ 新增 Deal"
-              entry point is always visible. Without this, a brand-new
-              company has no UI affordance to start a deal. */}
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-              <CardTitle>Deals ({deals.length})</CardTitle>
-              <Button asChild size="sm" variant="outline">
-                <Link to={`/deals?companyId=${id}`}>
-                  <Plus className="h-3.5 w-3.5 mr-1" /> 新增 Deal
-                </Link>
-              </Button>
-            </CardHeader>
-            <CardContent className="p-0">
-              {deals.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-8">
-                  暫未有 deal · 撳右上「新增 Deal」開第一個
-                </p>
-              ) : (
-                <ul className="divide-y">
-                  {deals.map((d: { id: string; title: string; value: number; status: string; stage?: { name: string; color: string } }) => (
-                    <li key={d.id}>
-                      <Link
-                        to={`/deals`}
-                        className="flex items-center justify-between p-4 hover:bg-muted/50"
-                      >
-                        <div>
-                          <div className="font-medium">{d.title}</div>
-                          {d.stage && (
-                            <div className="text-xs mt-0.5">
-                              <span
-                                className="inline-block px-2 py-0.5 rounded text-white text-[10px]"
-                                style={{ background: d.stage.color }}
-                              >
-                                {d.stage.name}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                        <div className="font-semibold tabular-nums">
-                          {formatCurrency(d.value)}
-                        </div>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
-          {/* Day N: Activity feed — chronological record of all
-              follow-up activity for this company. Composer at the top
-              creates a NOTE and optionally uploads attachments. The
-              feed query is keyed on companyId so subsequent company
-              detail pages don't share cache. */}
-          <ActivityFeed companyId={id} />
+          {tab === 'activity' && (
+            /* Day N+1: Activity feed moved into its own tab. The composer
+               and attachment upload still work the same way (they read
+               companyId from the props). */
+            <ActivityFeed companyId={id} title="公司 Activity" />
+          )}
+
+          {tab === 'attachments' && (
+            /* Day N+1: dedicated attachments list. Reads the same
+               /companies/:id/attachments endpoint the activity composer
+               uploads to, but flattens it into one scrollable list. */
+            <AttachmentList companyId={id!} />
+          )}
         </div>
       </div>
 
@@ -296,6 +197,166 @@ export function CompanyDetailPage() {
         onCreated={() => qc.invalidateQueries({ queryKey: ['company', id] })}
       />
     </div>
+  );
+}
+
+// Day N+1: Overview tab content — moved into its own component so the
+// tab routing above stays readable. The component takes plain data
+// props (not a `company` object with side-effects) which makes it
+// obvious what each card reads.
+type DealRow = { id: string; title: string; value: number; status: string; stage?: { name: string; color: string } };
+type QuoteRow = { id: string; number: string; total: number; status: string; createdAt: string };
+
+function OverviewTab({
+  company,
+  quotations,
+  deals,
+  onAddContact,
+  onDeleteContact,
+}: {
+  company: { id: string; name: string; contacts?: Contact[] };
+  quotations: QuoteRow[];
+  deals: DealRow[];
+  onAddContact: () => void;
+  onDeleteContact: (id: string) => void;
+}) {
+  const contacts = company.contacts ?? [];
+  return (
+    <>
+      {/* Contacts card */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>聯絡人 ({contacts.length})</CardTitle>
+          <Button size="sm" onClick={onAddContact}>
+            <Plus className="h-3 w-3 mr-1" /> 新增聯絡人
+          </Button>
+        </CardHeader>
+        <CardContent className="p-0">
+          {contacts.length === 0 ? (
+            <p className="text-sm text-muted-foreground p-6 text-center">仲未有聯絡人</p>
+          ) : (
+            <ul className="divide-y">
+              {contacts.map((contact) => (
+                <li key={contact.id} className="flex items-center gap-3 p-4">
+                  <div className="h-9 w-9 rounded-full bg-muted flex items-center justify-center shrink-0">
+                    <User className="h-4 w-4" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">
+                        {contact.firstName} {contact.lastName}
+                      </span>
+                      {contact.isPrimary && (
+                        <Star className="h-3 w-3 text-yellow-500 fill-yellow-500" />
+                      )}
+                      {contact.title && (
+                        <span className="text-xs text-muted-foreground">· {contact.title}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                      {contact.email && <span>{contact.email}</span>}
+                      {contact.phone && <span>{contact.phone}</span>}
+                    </div>
+                  </div>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => onDeleteContact(contact.id)}
+                  >
+                    <Trash2 className="h-3 w-3 text-destructive" />
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Quotations — always render the header so the "+ 新增 Quotation"
+          entry point is visible even when there are no quotations yet. */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+          <CardTitle>Quotations ({quotations.length})</CardTitle>
+          <Button asChild size="sm" variant="outline">
+            <Link to={`/quotations?companyId=${company.id}`}>
+              <Plus className="h-3.5 w-3.5 mr-1" /> 新增 Quotation
+            </Link>
+          </Button>
+        </CardHeader>
+        <CardContent className="p-0">
+          {quotations.length === 0 ? (
+            <p className="text-sm text-muted-foreground p-6 text-center">
+              仲未有報價單 · 撳右上「新增 Quotation」開第一份
+            </p>
+          ) : (
+            <ul className="divide-y">
+              {quotations.map((q) => (
+                <li key={q.id}>
+                  <Link
+                    to={`/quotations/${q.id}`}
+                    className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors"
+                  >
+                    <div>
+                      <div className="font-mono text-sm">{q.number}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {formatDate(q.createdAt)} · {q.status}
+                      </div>
+                    </div>
+                    <div className="font-semibold tabular-nums">
+                      {formatCurrency(q.total)}
+                    </div>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Deals — same treatment as Quotations. */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+          <CardTitle>Deals ({deals.length})</CardTitle>
+          <Button asChild size="sm" variant="outline">
+            <Link to={`/deals?companyId=${company.id}`}>
+              <Plus className="h-3.5 w-3.5 mr-1" /> 新增 Deal
+            </Link>
+          </Button>
+        </CardHeader>
+        <CardContent className="p-0">
+          {deals.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-8">
+              暫未有 deal · 撳右上「新增 Deal」開第一個
+            </p>
+          ) : (
+            <ul className="divide-y">
+              {deals.map((d) => (
+                <li key={d.id}>
+                  <Link to="/deals" className="flex items-center justify-between p-4 hover:bg-muted/50">
+                    <div>
+                      <div className="font-medium">{d.title}</div>
+                      {d.stage && (
+                        <div className="text-xs mt-0.5">
+                          <span
+                            className="inline-block px-2 py-0.5 rounded text-white text-[10px]"
+                            style={{ background: d.stage.color }}
+                          >
+                            {d.stage.name}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="font-semibold tabular-nums">
+                      {formatCurrency(d.value)}
+                    </div>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+    </>
   );
 }
 

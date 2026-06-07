@@ -1,17 +1,24 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { KanbanSquare, Plus, GripVertical, X, Edit2, FileText } from 'lucide-react';
+import { useQuery, useMutation, useQueryClient, type QueryKey } from '@tanstack/react-query';
+import { KanbanSquare, Plus, GripVertical, X, Edit2, FileText, StickyNote } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/select';
+import { Label, Select } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { dealsApi, companiesApi, type KanbanData, type Deal, type Company } from '@/lib/api';
 import { formatCurrency } from '@/lib/utils';
 import { CompanyAutocomplete } from '@/components/company-autocomplete';
 import { QuotationBuilder } from '@/components/quotation-builder';
+import { DealActivityDialog } from '@/components/deal-activity-dialog';
+import { DealsActivityPanel } from '@/components/deals-activity-panel';
+
+// 2026-06-06: "ALL" sentinel for the company filter <select>. Kept as a
+// module-level constant (not a magic string) so it's easy to grep for
+// when the kanban query key changes.
+const COMPANY_FILTER_ALL = '__all__';
 
 export function DealsPage() {
   const qc = useQueryClient();
@@ -24,9 +31,19 @@ export function DealsPage() {
   // deal in this state so the inline <QuotationBuilder> modal opens
   // pre-filled with deal + company. No navigation, no page change.
   const [quotationFor, setQuotationFor] = useState<Deal | null>(null);
+  // Day N+1: same pattern for "＋ Activity". We keep the deal object so
+  // the dialog title can show "{dealTitle} · 新增 Activity".
+  const [activityFor, setActivityFor] = useState<Deal | null>(null);
+  // 2026-06-06: Company filter — empty string means "all companies".
+  // The kanban query is keyed on this so changing the filter refetches
+  // the board on the server (no client-side filtering after the fact).
+  const [filterCompanyId, setFilterCompanyId] = useState<string>('');
   const { data: kanban, isLoading } = useQuery({
-    queryKey: ['deals-kanban'],
-    queryFn: () => dealsApi.kanban(),
+    // Include filterCompanyId in the key so a different filter triggers
+    // a fresh request rather than showing stale data from the previous
+    // company.
+    queryKey: ['deals-kanban', { companyId: filterCompanyId || null }],
+    queryFn: () => dealsApi.kanban(filterCompanyId ? { companyId: filterCompanyId } : {}),
   });
   const { data: companies = [] } = useQuery({
     queryKey: ['companies-all'],
@@ -50,41 +67,60 @@ export function DealsPage() {
     }
   }
 
-  // Move-deal mutation with optimistic update
+  // Move-deal mutation. Once a Company filter is active the kanban
+  // queryKey becomes ['deals-kanban', { companyId: 'X' }] — but this
+  // mutation handler doesn't know which filter is in play. We do an
+  // optimistic update on the *currently cached* kanban (whichever
+  // filter is active) and invalidate the prefix, so the next render
+  // refetches the right view.
   const moveStage = useMutation({
     mutationFn: ({ dealId, stageId }: { dealId: string; stageId: string }) =>
       dealsApi.moveStage(dealId, stageId),
     onMutate: async ({ dealId, stageId }) => {
+      // Cancel all kanban queries (any filter active) so an in-flight
+      // request doesn't clobber our optimistic snapshot.
       await qc.cancelQueries({ queryKey: ['deals-kanban'] });
-      const previous = qc.getQueryData<KanbanData>(['deals-kanban']);
-      if (previous) {
-        const next: KanbanData = {
-          ...previous,
-          buckets: previous.buckets.map((b) => ({ ...b, deals: [...b.deals] })),
-        };
-        // Find and remove the deal from its current bucket
-        let movedDeal: Deal | undefined;
-        for (const b of next.buckets) {
-          const idx = b.deals.findIndex((d) => d.id === dealId);
-          if (idx !== -1) {
-            movedDeal = b.deals[idx];
-            b.deals.splice(idx, 1);
-            break;
+      // Snapshot + optimistically patch every cached kanban variant.
+      // The user's currently-visible variant will be the one they see
+      // the change on; the others will be re-fetched on next access.
+      const entries = qc.getQueriesData<KanbanData>({ queryKey: ['deals-kanban'] });
+      const snapshots: Array<readonly [QueryKey, KanbanData | undefined]> = entries.map(
+        ([key, data]) => {
+          if (!data) return [key, undefined] as const;
+          const next: KanbanData = {
+            ...data,
+            buckets: data.buckets.map((b) => ({ ...b, deals: [...b.deals] })),
+          };
+          let movedDeal: Deal | undefined;
+          for (const b of next.buckets) {
+            const idx = b.deals.findIndex((d) => d.id === dealId);
+            if (idx !== -1) {
+              movedDeal = b.deals[idx];
+              b.deals.splice(idx, 1);
+              break;
+            }
           }
+          const targetBucket = next.buckets.find((b) => b.stage.id === stageId);
+          if (targetBucket && movedDeal) {
+            targetBucket.deals.unshift({ ...movedDeal, stage: targetBucket.stage });
+          }
+          qc.setQueryData(key, next);
+          return [key, data] as const;
         }
-        // Add it to the new bucket
-        const targetBucket = next.buckets.find((b) => b.stage.id === stageId);
-        if (targetBucket && movedDeal) {
-          targetBucket.deals.unshift({ ...movedDeal, stage: targetBucket.stage });
-        }
-        qc.setQueryData(['deals-kanban'], next);
-      }
-      return { previous };
+      );
+      return { snapshots };
     },
     onError: (_err, _vars, ctx) => {
-      if (ctx?.previous) qc.setQueryData(['deals-kanban'], ctx.previous);
+      // Roll back all snapshots we took. For variants that had no
+      // data originally, remove the (now-polluted) cache entry so the
+      // next read refetches from the server.
+      ctx?.snapshots.forEach(([key, data]) => {
+        if (data === undefined) qc.removeQueries({ queryKey: key });
+        else qc.setQueryData(key, data);
+      });
     },
     onSettled: () => {
+      // Refetch whichever kanban variant is currently active.
       qc.invalidateQueries({ queryKey: ['deals-kanban'] });
     },
   });
@@ -128,6 +164,51 @@ export function DealsPage() {
         </div>
       </div>
 
+      {/* 2026-06-06: Company filter — scopes the kanban to one customer.
+          Sits above the stats so the page opens with the most common
+          question answered ("where are we with Acme?") before the user
+          has to look at numbers. The "全部" option restores the
+          unfiltered view. Native <select> keeps it simple; if the
+          company list grows past ~50 we can swap to a Combobox. */}
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="space-y-1.5">
+          <Label htmlFor="deal-company-filter" className="text-xs text-muted-foreground">
+            Company
+          </Label>
+          <Select
+            id="deal-company-filter"
+            value={filterCompanyId || COMPANY_FILTER_ALL}
+            onChange={(e) => {
+              const v = e.target.value;
+              setFilterCompanyId(v === COMPANY_FILTER_ALL ? '' : v);
+            }}
+            className="w-56"
+          >
+            <option value={COMPANY_FILTER_ALL}>全部 Company</option>
+            {companies.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </Select>
+        </div>
+        {filterCompanyId && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setFilterCompanyId('')}
+            className="text-muted-foreground"
+          >
+            清除 filter
+          </Button>
+        )}
+        {filterCompanyId && (
+          <div className="text-sm text-muted-foreground pb-2">
+            顯示「{companies.find((c) => c.id === filterCompanyId)?.name ?? '…'}」嘅 deals
+          </div>
+        )}
+      </div>
+
       {/* Stats row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatCard label="Open Deals" value={`${stats.openCount}`} />
@@ -139,21 +220,31 @@ export function DealsPage() {
       {isLoading || !kanban ? (
         <p className="text-sm text-muted-foreground">載入中...</p>
       ) : (
-        <div className="overflow-x-auto pb-4">
-          <div className="flex gap-3 min-w-max">
-            {kanban.buckets.map((bucket) => (
-              <KanbanColumn
-                key={bucket.stage.id}
-                stage={bucket.stage}
-                deals={bucket.deals}
-                onDrop={(dealId) => moveStage.mutate({ dealId, stageId: bucket.stage.id })}
-                isMoving={moveStage.isPending}
-                onEdit={(deal) => setEditing(deal)}
-                onNewQuotation={(deal) => setQuotationFor(deal)}
-              />
-            ))}
+        <>
+          {/* Kanban board first — sales reps see the funnel layout as
+              the primary view. The recent-activity panel moves BELOW
+              the board (was ABOVE on Day N+1) so the eye scans the
+              pipeline top-to-bottom, and the activity feed is what
+              you read at the end of the page (closer to "wrap up /
+              weekly review" mental mode). */}
+          <div className="overflow-x-auto pb-4">
+            <div className="flex gap-3 min-w-max">
+              {kanban.buckets.map((bucket) => (
+                <KanbanColumn
+                  key={bucket.stage.id}
+                  stage={bucket.stage}
+                  deals={bucket.deals}
+                  onDrop={(dealId) => moveStage.mutate({ dealId, stageId: bucket.stage.id })}
+                  isMoving={moveStage.isPending}
+                  onEdit={(deal) => setEditing(deal)}
+                  onNewQuotation={(deal) => setQuotationFor(deal)}
+                  onNewActivity={(deal) => setActivityFor(deal)}
+                />
+              ))}
+            </div>
           </div>
-        </div>
+          <DealsActivityPanel />
+        </>
       )}
 
       <DealDialog
@@ -201,6 +292,16 @@ export function DealsPage() {
           )}
         </DialogContent>
       </Dialog>
+      {/* Day N+1: same inline-modal pattern for "新增 Activity". Mounts
+          the DealActivityDialog pre-filled with the deal id. The dialog
+          itself owns the composer / file picker / submit logic; the page
+          just needs to track which deal (if any) is being logged. */}
+      <DealActivityDialog
+        open={activityFor !== null}
+        onOpenChange={(v) => { if (!v) setActivityFor(null); }}
+        dealId={activityFor?.id ?? ''}
+        dealTitle={activityFor?.title}
+      />
     </div>
   );
 }
@@ -223,6 +324,7 @@ function KanbanColumn({
   isMoving,
   onEdit,
   onNewQuotation,
+  onNewActivity,
 }: {
   stage: { id: string; name: string; probability: number; color: string };
   deals: Deal[];
@@ -233,6 +335,8 @@ function KanbanColumn({
    *  Replaces the previous navigate('/quotations?dealId=...') flow so the
    *  user never leaves the Kanban board to draft a quote. */
   onNewQuotation?: (deal: Deal) => void;
+  /** Day N+1: open DealActivityDialog pre-filled with this deal. */
+  onNewActivity?: (deal: Deal) => void;
 }) {
   const [dragOver, setDragOver] = useState(false);
   // Prisma returns Decimal as a string; coerce each value so we don't
@@ -285,6 +389,7 @@ function KanbanColumn({
               disabled={isMoving}
               onEdit={onEdit}
               onNewQuotation={onNewQuotation}
+              onNewActivity={onNewActivity}
             />
           ))
         )}
@@ -301,12 +406,15 @@ function DealCard({
   disabled,
   onEdit,
   onNewQuotation,
+  onNewActivity,
 }: {
   deal: Deal;
   disabled: boolean;
   onEdit: (d: Deal) => void;
   /** Day N: open QuotationBuilder inline-modal pre-filled with this deal. */
   onNewQuotation?: (d: Deal) => void;
+  /** Day N+1: open DealActivityDialog pre-filled with this deal. */
+  onNewActivity?: (d: Deal) => void;
 }) {
   // Track drag state so a click on the card body doesn't open the edit
   // dialog while the user is mid-drag.
@@ -368,6 +476,23 @@ function DealCard({
             <FileText className="h-3 w-3" />
             {quoteCount > 0 ? `${quoteCount} 份報價 · ＋` : '＋ 報價'}
           </button>
+          {/* Day N+1: "新增 Activity" — log a follow-up note for this
+              deal without leaving the Kanban board. Uses the same
+              deal-level activity the dashboard's recent-activity widget
+              pulls from, so the entry shows up in both places. */}
+          {onNewActivity && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onNewActivity(deal);
+              }}
+              className="mt-1 ml-1 inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded hover:bg-primary/10 transition-colors text-muted-foreground hover:text-foreground"
+              title="為此 deal 記錄跟進"
+            >
+              <StickyNote className="h-3 w-3" /> ＋ Activity
+            </button>
+          )}
         </div>
         <button
           type="button"
