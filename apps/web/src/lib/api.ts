@@ -917,7 +917,21 @@ export interface PipelineWithStages {
   isDefault: boolean;
   stages: (PipelineStage & { _count?: { deals: number } })[];
 }
+export interface TaxConfig {
+  defaultTaxRate: number; // percent (0–100)
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
 export const settingsApi = {
+  // Tax Rate (global default; per-quotation override still allowed in builder)
+  getTax: () => request<TaxConfig>('/settings/tax'),
+  putTax: (data: { defaultTaxRate: number }) =>
+    request<TaxConfig>('/settings/tax', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
   listPipelines: () => request<PipelineWithStages[]>('/settings/pipelines'),
   createStage: (data: {
     name: string;
