@@ -32,8 +32,12 @@ import { settingsApi, type PipelineWithStages } from '@/lib/api';
 //   - inline edit name / probability / color
 //   - delete (blocked if stage has active deals — Q2=A in the spec)
 //
-// Phase 2 (deferred) will add a Quotation 稅率 tab here, reading/writing
-// the SystemConfig table.
+// **Day 14.7 Step 6 note**: This page is now rendered as a CHILD of
+// `<SettingsLayout />` at `/settings/pipelines`. The Layout already provides
+// the page header + 7-tab nav, so the inner header + button-style tab strip
+// that lived here in Day 11/12 has been removed (would otherwise render
+// twice). Step 8 will extract the per-tab pages into their own files
+// (settings-pipelines.tsx etc.) and this file can shrink to a re-export.
 
 interface StageDraft {
   name: string;
@@ -194,30 +198,10 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">系統設置</h1>
-        <p className="text-sm text-muted-foreground">
-          管理 deals sales pipeline 嘅 stage 同 quotation 系統 tax rate(Phase 2)。
-        </p>
-      </div>
-
-      {/* Tab nav — Phase 1 only has the Pipeline tab. Phase 2 adds Tax rate. */}
-      <div className="border-b flex gap-1">
-        <button
-          type="button"
-          className="px-4 py-2 text-sm font-medium border-b-2 border-primary text-primary"
-        >
-          Pipeline
-        </button>
-        <button
-          type="button"
-          disabled
-          title="Phase 2"
-          className="px-4 py-2 text-sm font-medium text-muted-foreground cursor-not-allowed"
-        >
-          Tax rate
-        </button>
-      </div>
+      {/* Header + tab strip are rendered by <SettingsLayout /> (Day 14.7 Step 6).
+          Step 8 will extract this page's body into settings-pipelines.tsx; this
+          file is kept as a default-export wrapper for backward compat with the
+          Step 5 import in App.tsx. */}
 
       <Card>
         <CardHeader>

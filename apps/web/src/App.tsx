@@ -73,19 +73,18 @@ export function App() {
             <Route path="/roles" element={<RolesPage />} />
             <Route path="/man-day-roles" element={<ManDayRolesPage />} />
             <Route path="/ai-config" element={<AiConfigPage />} />
-            {/* /settings (Pipeline config) — kept as legacy direct route. The sub-routes below
-                also start at /settings/* and share the same prefix, so react-router v6 will
-                match the more specific path first (e.g. /settings/users hits the sub-route,
-                /settings alone hits SettingsPage). */}
-            <Route path="/settings" element={<SettingsPage />} />
-            {/* Day 14.7 — Settings sub-routes (Step 5: route tree + placeholders; Step 6-8 fill tabs) */}
+            {/* /settings (Pipeline config) — Day 14.7 Step 6 redirects to the new sub-route.
+                Bookmarks / deep links from before today still land on Pipeline. */}
+            <Route path="/settings" element={<Navigate to="/settings/pipelines" replace />} />
+            {/* Day 14.7 — Settings sub-routes under SettingsLayout (Step 6: Tabs nav done; Step 7-8 fill children). */}
             <Route path="/settings" element={<SettingsLayout />}>
-              <Route path="users" element={<SettingsTabPlaceholder title="Users" description="User management (moved from top-level)." step="Step 6-8" />} />
-              <Route path="roles" element={<SettingsTabPlaceholder title="Roles" description="Role & permission management (moved from top-level)." step="Step 6-8" />} />
-              <Route path="ai" element={<SettingsTabPlaceholder title="AI Config" description="AI provider config (moved from top-level)." step="Step 6-8" />} />
-              <Route path="man-day" element={<SettingsTabPlaceholder title="Man-day Roles" description="Man-day role catalog (moved from top-level)." step="Step 6-8" />} />
+              <Route path="pipelines" element={<SettingsPage />} />
+              <Route path="users" element={<SettingsTabPlaceholder title="Users" description="User management (moved from top-level)." step="Step 8" />} />
+              <Route path="roles" element={<SettingsTabPlaceholder title="Roles" description="Role & permission management (moved from top-level)." step="Step 8" />} />
+              <Route path="ai" element={<SettingsTabPlaceholder title="AI Config" description="AI provider config (moved from top-level)." step="Step 8" />} />
+              <Route path="man-day" element={<SettingsTabPlaceholder title="Man-day Roles" description="Man-day role catalog (moved from top-level)." step="Step 8" />} />
               <Route path="tax" element={<SettingsTabPlaceholder title="Tax Rate" description="Global default tax rate for new quotations. Per-quotation override remains available in the quotation builder." step="Step 7" />} />
-              <Route path="audit" element={<SettingsTabPlaceholder title="Audit Log" description="System audit log (moved from top-level)." step="Step 6-8" />} />
+              <Route path="audit" element={<SettingsTabPlaceholder title="Audit Log" description="System audit log (moved from top-level)." step="Step 8" />} />
             </Route>
           </Route>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
