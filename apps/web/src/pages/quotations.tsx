@@ -5,7 +5,8 @@ import { FileText, Plus, Sparkles, Loader2, X } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Label, Select } from '@/components/ui/select';
+import { MultiCompanyAutocomplete } from '@/components/multi-company-autocomplete';
+import { MultiUserAutocomplete } from '@/components/multi-user-autocomplete';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
@@ -13,10 +14,6 @@ import { Textarea } from '@/components/ui/input';
 import { QuotationBuilder } from '@/components/quotation-builder';
 import { quotationsApi, chatApi, companiesApi, type Quotation } from '@/lib/api';
 import { formatCurrency, formatDate } from '@/lib/utils';
-
-// 2026-06-06: "ALL" sentinel for the company filter <select>. Kept as a
-// module-level constant so it's easy to grep and matches the deals page.
-const COMPANY_FILTER_ALL = '__all__';
 
 export function QuotationsPage() {
   const navigate = useNavigate();
@@ -30,22 +27,36 @@ export function QuotationsPage() {
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
-  // 2026-06-06: Company filter — empty string means "all companies".
-  // Wired into the quotations list queryKey so changing the filter
-  // refetches the table from the server.
-  const [filterCompanyId, setFilterCompanyId] = useState<string>('');
-  // Pull all companies for the filter dropdown. Same pattern the deals
-  // page uses; limit 200 covers the realistic customer count.
+  // 2026-06-09: multi-select Company + sales-rep (createdById) filters.
+  // Empty array means "no filter". Wired into the queryKey so a
+  // different selection triggers a fresh server fetch.
+  const [filterCompanyIds, setFilterCompanyIds] = useState<string[]>([]);
+  const [filterCreatedByIds, setFilterCreatedByIds] = useState<string[]>([]);
+  // Keep the company list cached so the MultiCompanyAutocomplete and
+  // the "X 份" hint can render synchronously.
   const { data: companies = [] } = useQuery({
     queryKey: ['companies-all'],
     queryFn: () => companiesApi.list({ limit: 200 }),
   });
   const { data: quotations = [], isLoading } = useQuery({
-    // Include the filter in the queryKey so a different selection
-    // triggers a fresh server fetch (not a stale cache hit).
-    queryKey: ['quotations', { companyId: filterCompanyId || null }],
-    queryFn: () => quotationsApi.list(filterCompanyId ? { companyId: filterCompanyId, limit: 50 } : { limit: 50 }),
+    // Stable key — empty array is fine because `JSON.stringify`
+    // serializes [] and ['a'] differently.
+    queryKey: ['quotations', {
+      companyIds: filterCompanyIds,
+      createdByIds: filterCreatedByIds,
+    }],
+    queryFn: () => quotationsApi.list({
+      companyIds: filterCompanyIds.length ? filterCompanyIds : undefined,
+      createdByIds: filterCreatedByIds.length ? filterCreatedByIds : undefined,
+      limit: 50,
+    }),
   });
+
+  const hasFilter = filterCompanyIds.length > 0 || filterCreatedByIds.length > 0;
+  function clearFilters() {
+    setFilterCompanyIds([]);
+    setFilterCreatedByIds([]);
+  }
 
   // Auto-open the builder when navigated in with ?dealId=... or
   // ?companyId=... so a deal-card shortcut (「＋ 報價」) or a
@@ -123,47 +134,43 @@ export function QuotationsPage() {
         </div>
       </div>
 
-      {/* 2026-06-06: Company filter for the quotation list. Mirrors the
-          deals page filter — same <Select> pattern, same "全部" sentinel
-          semantics. Lives on its own row below the page header so it
-          doesn't crowd the action buttons on the right. */}
+      {/* 2026-06-09: Multi-select Company + sales-rep filters for the
+          quotation list. Both live in the same row below the page
+          header. Each filter is an autocomplete dropdown with chip
+          display; the "X 份" hint shows the active filter's company
+          names (or sales-rep names) and a clear-all button. */}
       <div className="flex flex-wrap items-end gap-3">
-        <div className="space-y-1.5">
-          <Label htmlFor="quotation-company-filter" className="text-xs text-muted-foreground">
-            Company
-          </Label>
-          <Select
-            id="quotation-company-filter"
-            value={filterCompanyId || COMPANY_FILTER_ALL}
-            onChange={(e) => {
-              const v = e.target.value;
-              setFilterCompanyId(v === COMPANY_FILTER_ALL ? '' : v);
-            }}
-            className="w-56"
-          >
-            <option value={COMPANY_FILTER_ALL}>全部 Company</option>
-            {companies.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </Select>
+        <div className="min-w-[260px] flex-1 max-w-md">
+          <MultiCompanyAutocomplete
+            value={filterCompanyIds}
+            onChange={setFilterCompanyIds}
+            companies={companies}
+            label="Company"
+            placeholder="搜尋公司..."
+          />
         </div>
-        {filterCompanyId && (
+        <div className="min-w-[260px] flex-1 max-w-md">
+          <MultiUserAutocomplete
+            value={filterCreatedByIds}
+            onChange={setFilterCreatedByIds}
+            label="銷售員"
+            placeholder="搜尋銷售員..."
+          />
+        </div>
+        {hasFilter && (
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => setFilterCompanyId('')}
+            onClick={clearFilters}
             className="text-muted-foreground"
           >
             <X className="h-3 w-3 mr-1" />
             清除 filter
           </Button>
         )}
-        {filterCompanyId && (
-          <div className="text-sm text-muted-foreground pb-2">
-            顯示「{companies.find((c) => c.id === filterCompanyId)?.name ?? '…'}」嘅 quotation
-            {quotations.length === 1 ? '' : 's'} · {quotations.length} 份
+        {hasFilter && (
+          <div className="text-sm text-muted-foreground pb-2 w-full">
+            顯示 {quotations.length} 份 quotation
           </div>
         )}
       </div>

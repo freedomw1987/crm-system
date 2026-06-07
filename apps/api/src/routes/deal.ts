@@ -6,24 +6,59 @@ import { requirePermission } from '../middleware/rbac';
 
 // P0-2 (2026-06-07 review): all deal endpoints (GET list/kanban/:id,
 // POST, PATCH stage, PATCH, DELETE) were public. Now gated.
+
+/**
+ * Coerce a `?ids=a&ids=b` (array) or `?ids=a,b` (single string) query
+ * value into a uniform `string[]`. Used by the multi-select filter
+ * params (companyIds, ownerIds, createdByIds). Returns [] when the
+ * input is missing or only contains empty strings.
+ */
+function toIdArray(v: string | string[] | undefined): string[] {
+  if (v === undefined || v === null) return [];
+  const arr = Array.isArray(v) ? v : v.split(',');
+  return arr.map((s) => s.trim()).filter((s) => s.length > 0);
+}
+
 export const dealRoutes = new Elysia({ prefix: '/deals', tags: ['deals'] })
   .use(authContext)
   .use(requirePermission('deal:read'))
   // List deals (flat)
   .get('/', async ({ query }) => {
-    const { ownerId, stageId, status, companyId, limit = '50', offset = '0' } = query as {
+    // 2026-06-09: accept comma-separated `ownerIds` / `companyIds` /
+    // `ownerId` / `companyId` so the Deals + Quotation pages can do
+    // multi-select filtering. The two shapes are kept in sync so old
+    // callers passing a single id still work.
+    const {
+      ownerId, stageId, status, companyId,
+      ownerIds, companyIds,
+      limit = '50', offset = '0',
+    } = query as {
       ownerId?: string;
       stageId?: string;
       status?: string;
       companyId?: string;
+      ownerIds?: string | string[];
+      companyIds?: string | string[];
       limit?: string;
       offset?: string;
     };
     const where: Record<string, unknown> = {};
+    // Single-id shorthand (back-compat with the previous API surface)
     if (ownerId) where.ownerId = ownerId;
+    if (companyId) where.companyId = companyId;
+    // Multi-id: parse `?ownerIds=a&ownerIds=b` (Elysia delivers this as
+    // an array) and `?ownerIds=a,b` (single comma-separated string) into
+    // a uniform array. Empty / missing means "no filter".
+    if (ownerIds) {
+      const ids = toIdArray(ownerIds);
+      if (ids.length) where.ownerId = { in: ids };
+    }
+    if (companyIds) {
+      const ids = toIdArray(companyIds);
+      if (ids.length) where.companyId = { in: ids };
+    }
     if (stageId) where.stageId = stageId;
     if (status) where.status = status;
-    if (companyId) where.companyId = companyId;
     return prisma.deal.findMany({
       where,
       take: Number(limit),
@@ -41,13 +76,16 @@ export const dealRoutes = new Elysia({ prefix: '/deals', tags: ['deals'] })
   // Day 8: Kanban view — returns stages with nested deals, perfect for drag-drop board
   .use(requirePermission('deal:read'))
   .get('/kanban', async ({ query }) => {
-    // 2026-06-06: accept companyId filter so the Kanban page can scope
-    // the board to a single customer's deals. Same param name as the
-    // flat /deals list — keeps the frontend API surface symmetric.
-    const { ownerId, pipelineId, companyId } = query as {
+    // 2026-06-09: same multi-select filter as the flat /deals list.
+    // `?companyIds=a,b` or `?companyIds=a&companyIds=b` (and same for
+    // ownerIds) all work. Single-id shorthand `companyId` / `ownerId`
+    // is kept for back-compat.
+    const { ownerId, pipelineId, companyId, ownerIds, companyIds } = query as {
       ownerId?: string;
       pipelineId?: string;
       companyId?: string;
+      ownerIds?: string | string[];
+      companyIds?: string | string[];
     };
     // 1) pick the pipeline (default if not specified)
     const pipeline = pipelineId
@@ -63,6 +101,14 @@ export const dealRoutes = new Elysia({ prefix: '/deals', tags: ['deals'] })
     const where: Record<string, unknown> = { pipelineId: pipeline.id };
     if (ownerId) where.ownerId = ownerId;
     if (companyId) where.companyId = companyId;
+    if (ownerIds) {
+      const ids = toIdArray(ownerIds);
+      if (ids.length) where.ownerId = { in: ids };
+    }
+    if (companyIds) {
+      const ids = toIdArray(companyIds);
+      if (ids.length) where.companyId = { in: ids };
+    }
     const deals = await prisma.deal.findMany({
       where,
       orderBy: { createdAt: 'desc' },

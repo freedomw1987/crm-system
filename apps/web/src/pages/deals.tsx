@@ -6,19 +6,16 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label, Select } from '@/components/ui/select';
+import { Label } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { dealsApi, companiesApi, type KanbanData, type Deal, type Company } from '@/lib/api';
 import { formatCurrency } from '@/lib/utils';
 import { CompanyAutocomplete } from '@/components/company-autocomplete';
+import { MultiCompanyAutocomplete } from '@/components/multi-company-autocomplete';
+import { MultiUserAutocomplete } from '@/components/multi-user-autocomplete';
 import { QuotationBuilder } from '@/components/quotation-builder';
 import { DealActivityDialog } from '@/components/deal-activity-dialog';
 import { DealsActivityPanel } from '@/components/deals-activity-panel';
-
-// 2026-06-06: "ALL" sentinel for the company filter <select>. Kept as a
-// module-level constant (not a magic string) so it's easy to grep for
-// when the kanban query key changes.
-const COMPANY_FILTER_ALL = '__all__';
 
 export function DealsPage() {
   const qc = useQueryClient();
@@ -34,16 +31,20 @@ export function DealsPage() {
   // Day N+1: same pattern for "＋ Activity". We keep the deal object so
   // the dialog title can show "{dealTitle} · 新增 Activity".
   const [activityFor, setActivityFor] = useState<Deal | null>(null);
-  // 2026-06-06: Company filter — empty string means "all companies".
-  // The kanban query is keyed on this so changing the filter refetches
-  // the board on the server (no client-side filtering after the fact).
-  const [filterCompanyId, setFilterCompanyId] = useState<string>('');
+  // 2026-06-09: multi-select Company + sales-rep (ownerId) filters.
+  // Empty array = no filter. The kanban query is keyed on these so
+  // changing them triggers a fresh server fetch.
+  const [filterCompanyIds, setFilterCompanyIds] = useState<string[]>([]);
+  const [filterOwnerIds, setFilterOwnerIds] = useState<string[]>([]);
   const { data: kanban, isLoading } = useQuery({
-    // Include filterCompanyId in the key so a different filter triggers
-    // a fresh request rather than showing stale data from the previous
-    // company.
-    queryKey: ['deals-kanban', { companyId: filterCompanyId || null }],
-    queryFn: () => dealsApi.kanban(filterCompanyId ? { companyId: filterCompanyId } : {}),
+    queryKey: ['deals-kanban', {
+      companyIds: filterCompanyIds,
+      ownerIds: filterOwnerIds,
+    }],
+    queryFn: () => dealsApi.kanban({
+      companyIds: filterCompanyIds.length ? filterCompanyIds : undefined,
+      ownerIds: filterOwnerIds.length ? filterOwnerIds : undefined,
+    }),
   });
   const { data: companies = [] } = useQuery({
     queryKey: ['companies-all'],
@@ -164,47 +165,42 @@ export function DealsPage() {
         </div>
       </div>
 
-      {/* 2026-06-06: Company filter — scopes the kanban to one customer.
-          Sits above the stats so the page opens with the most common
-          question answered ("where are we with Acme?") before the user
-          has to look at numbers. The "全部" option restores the
-          unfiltered view. Native <select> keeps it simple; if the
-          company list grows past ~50 we can swap to a Combobox. */}
+      {/* 2026-06-09: Multi-select Company + sales-rep filters for the
+          kanban. Sits above the stats so the page opens with the most
+          common question answered ("where are we with Acme?") before
+          the user has to look at numbers. The clear-all button resets
+          both filters. The "X deals" hint counts after both filters. */}
       <div className="flex flex-wrap items-end gap-3">
-        <div className="space-y-1.5">
-          <Label htmlFor="deal-company-filter" className="text-xs text-muted-foreground">
-            Company
-          </Label>
-          <Select
-            id="deal-company-filter"
-            value={filterCompanyId || COMPANY_FILTER_ALL}
-            onChange={(e) => {
-              const v = e.target.value;
-              setFilterCompanyId(v === COMPANY_FILTER_ALL ? '' : v);
-            }}
-            className="w-56"
-          >
-            <option value={COMPANY_FILTER_ALL}>全部 Company</option>
-            {companies.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </Select>
+        <div className="min-w-[260px] flex-1 max-w-md">
+          <MultiCompanyAutocomplete
+            value={filterCompanyIds}
+            onChange={setFilterCompanyIds}
+            companies={companies}
+            label="Company"
+            placeholder="搜尋公司..."
+          />
         </div>
-        {filterCompanyId && (
+        <div className="min-w-[260px] flex-1 max-w-md">
+          <MultiUserAutocomplete
+            value={filterOwnerIds}
+            onChange={setFilterOwnerIds}
+            label="銷售員"
+            placeholder="搜尋銷售員..."
+          />
+        </div>
+        {(filterCompanyIds.length > 0 || filterOwnerIds.length > 0) && (
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => setFilterCompanyId('')}
+            onClick={() => { setFilterCompanyIds([]); setFilterOwnerIds([]); }}
             className="text-muted-foreground"
           >
-            清除 filter
+            <X className="h-3 w-3 mr-1" /> 清除 filter
           </Button>
         )}
-        {filterCompanyId && (
-          <div className="text-sm text-muted-foreground pb-2">
-            顯示「{companies.find((c) => c.id === filterCompanyId)?.name ?? '…'}」嘅 deals
+        {(filterCompanyIds.length > 0 || filterOwnerIds.length > 0) && kanban && (
+          <div className="text-sm text-muted-foreground pb-2 w-full">
+            顯示 {kanban.buckets.reduce((sum, b) => sum + b.deals.length, 0)} 個 deal
           </div>
         )}
       </div>

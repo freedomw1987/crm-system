@@ -457,6 +457,22 @@ async function main() {
   });
   console.log('✅ Created 1 sample quotation');
 
+  // System Configuration defaults (Day 14+)
+  // Seeded via upsert so re-running `bun run db:seed` doesn't wipe
+  // admin's in-flight edits to these values.
+  await prisma.systemConfig.upsert({
+    where: { key: 'default_tax_rate' },
+    update: {},
+    create: {
+      key: 'default_tax_rate',
+      // Stored as a JSON number so the same column can later hold
+      // e.g. { byRegion: { HK: 0, CN: 13 } } without a migration.
+      value: 0,
+      description: 'Default tax rate (%) applied to NEW quotations. Per-quotation override available; existing quotations keep their snapshot.',
+    },
+  });
+  console.log('✅ Seeded system_config.default_tax_rate = 0%');
+
   console.log('\n🎉 Seed complete!');
   console.log('\n📝 Login credentials:');
   console.log('   Admin:  admin@crm.local / admin123');
