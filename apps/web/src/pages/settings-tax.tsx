@@ -195,7 +195,7 @@ export function SettingsTaxPage() {
         </CardHeader>
         <CardContent>
           <Link
-            to={`/audit?action=SYSTEM_CONFIG_UPDATED`}
+            to={`/settings/audit?action=SYSTEM_CONFIG_UPDATED`}
             className="text-sm text-primary hover:underline inline-flex items-center gap-1"
           >
             <History className="h-3.5 w-3.5" />
