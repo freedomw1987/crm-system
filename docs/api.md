@@ -291,6 +291,65 @@
 
 ---
 
+## Settings (Day 11 Phase 1)
+
+Admin-only configuration for sales pipelines. Phase 1 covers pipeline
+stages; Phase 2 will add `/settings/system-configs` for global tax rate.
+
+### GET /settings/pipelines
+- **Auth:** required (`settings:read`)
+- **200:** array of pipelines with nested stages ordered by `position`,
+  plus a `_count.deals` per stage:
+  ```json
+  [
+    {
+      "id": "pl_…",
+      "name": "Default Sales Pipeline",
+      "isDefault": true,
+      "stages": [
+        { "id": "st_…", "name": "Lead", "position": 0, "probability": 10, "color": "#94A3B8", "_count": { "deals": 0 } }
+      ]
+    }
+  ]
+  ```
+- **Used by:** AI tool `list_pipelines` (Day 11), Settings page Pipeline tab
+
+### POST /settings/pipelines/stages
+- **Auth:** required (`settings:update` — ADMIN only)
+- **Body:**
+  ```json
+  { "name": "Negotiation", "probability": 75, "color": "#F97316", "pipelineId": "pl_…" }
+  ```
+  - `pipelineId` is optional; defaults to the `isDefault` pipeline
+  - `probability` defaults to 0; `color` defaults to `null`
+- **Position:** auto-assigned to `max(position) + 1` within the pipeline
+- **201:** the created `PipelineStage`
+- **404:** if the named `pipelineId` doesn't exist
+
+### PATCH /settings/pipelines/stages/:id
+- **Auth:** required (`settings:update` — ADMIN only)
+- **Body:** any of `name`, `probability`, `color`, `position` (all optional)
+- **Position swap:** if `position` changes, the backend swaps with
+  whatever stage is currently at the target position so the DB
+  `@@unique([pipelineId, position])` constraint never blocks the call
+- **200:** the updated `PipelineStage`
+- **404:** if the stage doesn't exist
+
+### DELETE /settings/pipelines/stages/:id
+- **Auth:** required (`settings:update` — ADMIN only)
+- **200:** `{ "ok": true }`
+- **409:** if any deal is currently on this stage:
+  ```json
+  {
+    "error": "Stage has active deals",
+    "dealCount": 2,
+    "message": "Stage \"Proposal\" has 2 active deal(s). Reassign them to another stage before deleting."
+  }
+  ```
+- **404:** if the stage doesn't exist
+
+---
+
 ## Error codes
 
 | Status | When |
