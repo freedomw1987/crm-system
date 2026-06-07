@@ -1,6 +1,11 @@
 [install]
-# Use exact versions in lockfile for reproducible builds
-exact = false
+# P0-5 (2026-06-07 review): was 'exact = false' which allowed caret
+# ranges in package.json. Combined with bun.lock not being in npm's
+# lockfile format, that meant dependency drift was invisible to
+# 'npm audit' / 'snyk test' and could ship unreviewed transitive
+# versions on every install. Switch to exact pinning so lockfile
+# drift becomes a build-time error.
+exact = true
 
 [install.cache]
 disable = false
