@@ -12,7 +12,7 @@
  * params (companyIds, ownerIds, createdByIds). Returns [] when the
  * input is missing or only contains empty strings.
  */
-export function toIdArray(v: string | string[] | undefined): string[] {
+export function toIdArray(v: string | string[] | null | undefined): string[] {
   if (v === undefined || v === null) return [];
   const arr = Array.isArray(v) ? v : v.split(',');
   return arr.map((s) => s.trim()).filter((s) => s.length > 0);
