@@ -11,9 +11,19 @@
 
 | Severity | Count | Ship-blocking? |
 |----------|-------|----------------|
-| 🔴 **P0** (critical, blocks ship) | 6 | Yes |
+| 🔴 **P0** (critical, blocks ship) | 6 | Yes (all 6 ✅ Fixed in Day 17 P0 sprint) |
 | 🟠 **P1** (high, must fix this sprint) | 7 | No (but should) |
-| 🟡 **P2** (medium, backlog) | 12 | No |
+| 🟡 **P2** (medium, backlog) | 13 | No |
+
+**Day 17 P1 sprint (2026-06-08) shipped:**
+- ✅ P1-7 — `/ai/config/status` perm gate
+- ✅ P1-5 — strong password policy
+- ✅ P1-1 / P1-2 — typecheck critical errors (PARTIAL: 11 of 36 fixed; 25 P2-10-bound)
+- ✅ P1-6 — audit log retention script + endpoint (PARTIAL: cron scheduling deferred to US-OPS-2)
+- ✅ P1-3 (was already done in commit 42ef13b/7d79357)
+- ✅ P1-4 (was already done in commit 726b23c)
+- 📌 Critical follow-up: RG-007 — Day 17 AI tool confirmation migration was
+   never applied to prod (also fixed in this sprint)
 
 **Target:** all P0 done before next prod ship. P1 in this sprint. P2
 maintained as a known backlog.
@@ -116,6 +126,20 @@ maintained as a known backlog.
 - **Est:** 2-4 hours (one focused subagent sprint)
 - **Linked:** no regression entry — these are pre-existing latent
   failures masked by the typecheck skip, not bugs that have surfaced.
+- **Status (2026-06-08):** ✅ PARTIAL — fixed in commit f7eb183
+  - 11 of 36 errors fixed: 6 `WorkSheet` type-only imports, 1
+    `ContactInclude.activities` (latent 500), 1 `prisma.activityLog` →
+    `prisma.activity` (latent 500 in AI tools.ts), and 7
+    `AuditAction` enum values (now in schema + migration
+    `20260608000000_p1-1_audit_action_enum` applied to prod).
+  - 25 errors REMAIN — all `Property 'jwt' / 'userId' does not exist
+    on type 'Context'`. These are Elysia 1.2 plugin-composition
+    typecheck limitations (the actual values are present at runtime).
+    Filed under P2-10 (Elysia 1.3 release will fix this). Full PR
+    rationale in commit f7eb183.
+  - RG-007 (Day 17 AI tool confirmation migration not applied to
+    prod) was also fixed in commit 9829de2 — a hidden critical bug
+    surfaced by the P1-1 work.
 
 ### P1-2 — `prisma.aiConfig` model referenced but not exported
 - **Where:** `apps/api/src/routes/chat.ts:78`, `ai-config.ts:57,84,173,199,258`
@@ -127,6 +151,9 @@ maintained as a known backlog.
 - **Fix:** Part of P1-1; verify the `AiConfig` model is in
   `packages/db/prisma/schema.prisma` and regenerate.
 - **Est:** included in P1-1
+- **Status (2026-06-08):** ✅ Fixed in commit f7eb183 — `bunx prisma
+  generate` regenerated the client; `prisma.aiConfig` now exists in
+  the typed surface.
 
 ### P1-3 — Per-route audit log boilerplate duplication
 - **Where:** `deal.ts:209-222`, `contact.ts:65-78`, `company.ts:175-194`
@@ -137,6 +164,9 @@ maintained as a known backlog.
   `apps/api/src/lib/with-audit.ts`; refactor the three delete handlers
   (and any future ones) to use it.
 - **Est:** 2 hours
+- **Status (2026-06-08):** ✅ Fixed in commits 42ef13b + 7d79357 (P1-3a
+  introduced `withAuditDelete` helper, P1-3b adopted it in 4 delete
+  handlers).
 
 ### P1-4 — `toIdArray` query helper duplicated in `deal.ts` and `quotation.ts`
 - **Where:** `apps/api/src/routes/deal.ts:11-15`,
@@ -146,6 +176,9 @@ maintained as a known backlog.
 - **Fix:** Move to `apps/api/src/lib/query-helpers.ts`; import from
   both routes.
 - **Est:** 30 minutes
+- **Status (2026-06-08):** ✅ Fixed in commit 726b23c — `toIdArray`
+  moved to `lib/query-helpers.ts`, both routes import from there.
+  Covered by 8 unit tests (commit d653f1b).
 
 ### P1-5 — Password policy too weak
 - **Where:** `apps/api/src/routes/auth.ts:62-67, 94-103, 155-159`
@@ -159,6 +192,11 @@ maintained as a known backlog.
   migration that bumps the floor on next login).
 - **Est:** 1 hour
 - **Linked:** RG-006 (proposed — see below)
+- **Status (2026-06-08):** ✅ Fixed in commit 571bb02 — `minLength: 12`
+  + `validateStrongPassword` (digit + special char) enforced in
+  register and change-password. Login stays at `minLength: 6`
+  (grandfathered; RG-006 documents the Day 18+ login-floor
+  migration). 40 unit tests cover the policy helper.
 
 ### P1-6 — Audit log retention spec (committed Day 14)
 - **Where:** `docs/architecture/0014-audit-log-retention.md`
@@ -171,6 +209,14 @@ maintained as a known backlog.
   extend the ADR.
 - **Est:** 4-6 hours
 - **Linked:** ADR-0014
+- **Status (2026-06-08):** ✅ PARTIAL — fixed in commit 7982d3d
+  - `apps/api/src/scripts/audit-log-prune.ts` implements ADR 0014
+    Phase A (script + dry-run + batched DELETE + sensitive list).
+  - `GET /audit/retention-policy` endpoint exposes the current policy.
+  - 6 unit tests cover the policy constants.
+  - **Cron scheduling deferred to US-OPS-2 (Day 18+).** Manual
+    invocation works: `docker compose exec api bun run
+    apps/api/src/scripts/audit-log-prune.ts --dry-run --verbose`.
 
 ### P1-7 — AI Config `status` endpoint reachable by all users
 - **Where:** `apps/api/src/routes/ai-config.ts` (status endpoint)
