@@ -665,3 +665,104 @@ be extended) and in the Day 18+ backlog.
 - Day 18+: rate limiting on `/auth/login` (P2-6) becomes
   urgent now that passwords are stronger — a strong password is
   no defence against a million-guess brute force.
+
+---
+
+## RG-007 — Day 17 AI tool confirmation migration not applied to prod DB
+
+- **Shipped (bug introduced):** 2026-06-08 (commit 8484b9a, US-C5)
+- **Discovered:** 2026-06-08 (during P1-1 typecheck work in Day 17 P1 sprint)
+- **File:** `packages/db/prisma/migrations/20260609000002_day17_ai_tool_confirmation/migration.sql` (lines 28-32)
+- **Status:** ✅ Fixed (migration applied; column + enum values now in prod)
+
+### Root cause
+
+US-C5 added a new migration that:
+1. Extended `AuditAction` enum with `AI_TOOL_CONFIRMED` / `AI_TOOL_DENIED`
+2. Added `aiToolConfirmationHash TEXT` column to the
+   `ConversationMessage` table
+
+The commit landed in `main` (commit 8484b9a → fcfbc29 chain) but
+the **runtime Docker image was not rebuilt** before being deployed.
+The Dockerfile bakes the migrations folder into the image at build
+time (see `apps/api/Dockerfile` + `docker-entrypoint.sh`), so a
+`docker compose up -d` against the existing image runs `migrate
+deploy` against the OLD folder contents — it never saw the new
+migration.
+
+**Symptoms in production**:
+- `_prisma_migrations` table had 11 rows (latest
+  `20260609000001_day9_region_table_actual_ddl`), 0 of which were
+  Day 17's `20260609000002_day17_ai_tool_confirmation`.
+- DB schema had no `aiToolConfirmationHash` column on
+  `conversation_messages` (which is the actual on-disk table name —
+  see below).
+- DB enum `AuditAction` had no `AI_TOOL_CONFIRMED` / `AI_TOOL_DENIED`
+  values.
+
+This means every `AI_TOOL_CONFIRMED` / `AI_TOOL_DENIED` write to
+`audit_logs.action` would have failed with a PG enum type error
+the first time a user confirmed or denied a tool call in chat.
+US-C5's "human-in-the-loop guardrail" silently never wrote a
+confirmation record to the audit log.
+
+### Two compounding bugs
+
+1. **Migration never ran** (above)
+2. **Migration SQL had a typo**: the new migration used
+   `ALTER TABLE "ConversationMessage"` (PascalCase) but the table
+   on disk is `"conversation_messages"` (snake_case, created by
+   the Day 1 init migration). The init migration explicitly
+   double-quotes the snake_case name, making it case-sensitive
+   and NOT subject to PG's default case-folding. So even if the
+   migration had run as-is, it would have failed with
+   `relation "ConversationMessage" does not exist`.
+
+### Fix
+
+- Edited `20260609000002_day17_ai_tool_confirmation/migration.sql`
+  to use `"conversation_messages"` (matching the init migration).
+- `docker cp` the corrected migration folder into the running
+  container (since the image is not being rebuilt today).
+- `prisma migrate resolve --rolled-back 20260609000002_day17_ai_tool_confirmation`
+  to clear the failed-migration marker.
+- `prisma migrate deploy` to apply the now-corrected migration.
+- Verified: column `aiToolConfirmationHash` exists on
+  `conversation_messages`; enum `AuditAction` now has
+  `AI_TOOL_CONFIRMED` and `AI_TOOL_DENIED` as the last two values.
+
+### Invariant
+
+> **Every Prisma migration file MUST reference on-disk table /
+> column names exactly as the init migration created them, not
+> the Prisma model name. The init migration uses double-quoted
+> snake_case identifiers (`"conversation_messages"`,
+> `"audit_logs"`, etc.); subsequent raw-SQL migrations must
+> follow the same convention.** Grep the migration history for
+> `ALTER TABLE "C` (PascalCase after `ALTER TABLE`) and you'll
+> find any drift; this entry exists because one slipped through.
+
+> **A migration in `main` MUST be in the runtime image before
+> `migrate deploy` will see it. The Dockerfile bakes the
+> migrations folder in at build time. After landing a migration
+> commit, rebuild the image AND restart the container, in that
+> order. The `docker compose up -d` workflow without `--build`
+> is a silent foot-gun for schema changes.**
+
+### Prevention
+
+- **CI / pre-deploy check**: a `migrate status` smoke test in the
+  ship gate that compares `ls prisma/migrations/` on the host
+  vs. inside the running container. Mismatch = block deploy.
+- **Schema change SOP**: any PR that adds a migration file
+  MUST also update the `migrations_baked_at` tag in
+  `docker-compose.yml` (or a similar build-time marker) so it's
+  obvious the image needs a rebuild.
+- **Lint rule**: a custom `migration-lint.sh` that greps
+  `ALTER TABLE "C` / `CREATE TABLE "C` in every new migration
+  and fails if PascalCase is used where the init migration's
+  style is snake_case. Filed as a backlog task (US-OPS-1, not yet
+  scheduled).
+- **Day 18**: schedule a full migration-applied audit — re-run
+  `prisma migrate status` in prod for every deployed commit since
+  Day 1 and verify nothing else was lost.
