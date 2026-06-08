@@ -3,6 +3,12 @@ import { prisma } from '@crm/db';
 import { authContext } from '../lib/context';
 import { logEvent } from '../middleware/audit';
 import { requirePermission } from '../middleware/rbac';
+import { validateStrongPassword } from '../lib/password-policy';
+
+// P1-5 (2026-06-08): see lib/password-policy.ts for validateStrongPassword.
+// Imported at the top of this file. Login intentionally does not use it
+// — see TECH-DEBT.md P1-5 for the rationale (existing user passwords
+// below 12 chars are grandfathered; see RG-006 for the migration plan).
 
 export const authRoutes = new Elysia({ prefix: '/auth', tags: ['auth'] })
   .use(authContext)
@@ -83,6 +89,12 @@ export const authRoutes = new Elysia({ prefix: '/auth', tags: ['auth'] })
         password: string;
         name: string;
       };
+      // P1-5: enforce strong password policy server-side.
+      const pwError = validateStrongPassword(password);
+      if (pwError) {
+        set.status = 422;
+        return { error: pwError };
+      }
       const existing = await prisma.user.findUnique({ where: { email } });
       if (existing) {
         set.status = 409;
@@ -114,7 +126,11 @@ export const authRoutes = new Elysia({ prefix: '/auth', tags: ['auth'] })
     {
       body: t.Object({
         email: t.String({ format: 'email' }),
-        password: t.String({ minLength: 8 }),
+        // P1-5: server-side complexity check via validateStrongPassword
+        // below. Elysia 1.2 String doesn't take a regex param, so we
+        // keep schema minLength at 12 (the first rule of the policy)
+        // and let the handler reject on missing digit/special.
+        password: t.String({ minLength: 12 }),
         name: t.String({ minLength: 1 }),
       }),
     }
@@ -153,6 +169,12 @@ export const authRoutes = new Elysia({ prefix: '/auth', tags: ['auth'] })
   .post('/change-password', async ({ body, request, jwt, userId, set }) => {
     if (!userId) { set.status = 401; return { error: 'Unauthorized' }; }
     const { currentPassword, newPassword } = body as { currentPassword: string; newPassword: string };
+    // P1-5: enforce strong password policy server-side.
+    const pwError = validateStrongPassword(newPassword);
+    if (pwError) {
+      set.status = 422;
+      return { error: pwError };
+    }
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) { set.status = 404; return { error: 'User not found' }; }
     const valid = await Bun.password.verify(currentPassword, user.passwordHash);
@@ -171,6 +193,8 @@ export const authRoutes = new Elysia({ prefix: '/auth', tags: ['auth'] })
   }, {
     body: t.Object({
       currentPassword: t.String({ minLength: 1 }),
-      newPassword: t.String({ minLength: 8 }),
+      // P1-5: server-side complexity check via validateStrongPassword
+      // in the handler. Elysia schema keeps minLength 12 here.
+      newPassword: t.String({ minLength: 12 }),
     }),
   });

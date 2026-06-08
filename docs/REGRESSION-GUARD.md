@@ -600,3 +600,68 @@ cd packages/ai && bun test src/__tests__/confirm.test.ts
 **Future work**:
 - `US-C5` status flips from PARTIAL to PASS in
   `docs/QA-TRACKER.md` (Day 17 batch, this entry).
+
+---
+
+## RG-006 — Weak password policy (no complexity, min 6/8)
+
+- **Shipped (vulnerability existed since):** Day 1 (initial auth routes)
+- **Discovered:** 2026-06-07 (Security A review in TECH-DEBT.md P1-5)
+- **Fixed:** 2026-06-08 (Day 17 P1 sprint)
+- **File:** `apps/api/src/lib/password-policy.ts` + `apps/api/src/routes/auth.ts`
+- **Status:** ✅ Fixed (server-side; login grandfathered — see Migration)
+
+### Root cause
+
+`/auth/login` accepted `minLength: 6`, `/auth/register` and
+`/auth/change-password` accepted `minLength: 8`. No complexity
+requirement at all. `Bun.password.hash` uses argon2id (good) but
+the input space was too small to be safe against dictionary attacks
+at scale. Brute-force / credential-stuffing threshold was effectively
+the size of the 6-8 character dictionary.
+
+### Invariant
+
+> **All password-creation endpoints (`/auth/register`,
+> `/auth/change-password`) MUST enforce: ≥12 chars + ≥1 digit +
+> ≥1 special character. The server is the source of truth — the
+> client UI can hint, but cannot relax, this policy.** Login does
+> not enforce the new policy (see Migration below).
+
+The invariant is enforced by `validateStrongPassword` in
+`apps/api/src/lib/password-policy.ts`. Grep for that export name
+to find every enforcement point.
+
+### Prevention
+
+- Unit test in `apps/api/src/lib/__tests__/password-policy.test.ts`
+  covers length rule, digit rule, special-char rule, and the full
+  ASCII special-char set (32 chars). 40 tests, all pass.
+- `t.String({ minLength: 12 })` on the Elysia body schema gives
+  shape-level rejection (400-class) before the handler runs, so
+  the complexity check is a defence-in-depth 422 on top.
+- Any future "we just need a quick reset endpoint" must call
+  `validateStrongPassword` from the shared helper, NOT a local
+  one-off check.
+
+### Migration (login floor)
+
+`/auth/login` still accepts `minLength: 6` because we cannot
+retroactively reject existing users with 6–11 char passwords
+without locking them out. A separate migration (proposed, not
+yet scheduled) will bump the floor on next successful login:
+when a user with a sub-12 password successfully authenticates,
+silently force them to `/auth/change-password` before issuing
+the JWT. Tracking lives in
+[ADR-0014-followup](architecture/0014-audit-log-retention.md) (to
+be extended) and in the Day 18+ backlog.
+
+### Future work
+
+- Day 18+: add the login-floor migration described above.
+- Day 18+: add frontend hints (e.g. zxcvbn-style strength meter
+  on the register + change-password forms) so users don't get
+  surprised by 422s.
+- Day 18+: rate limiting on `/auth/login` (P2-6) becomes
+  urgent now that passwords are stronger — a strong password is
+  no defence against a million-guess brute force.
