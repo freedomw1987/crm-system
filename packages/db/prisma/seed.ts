@@ -35,7 +35,10 @@ async function main() {
   // Cleanup (in correct order due to FK constraints)
   await prisma.conversationMessage.deleteMany();
   await prisma.conversation.deleteMany();
-  await prisma.activityLog.deleteMany();
+  // Day 8+ schema rename: ActivityLog → Activity (+ Attachment)
+  // Attachment must be deleted before Activity (FK onDelete: Cascade).
+  await prisma.attachment.deleteMany();
+  await prisma.activity.deleteMany();
   await prisma.deal.deleteMany();
   await prisma.quotationItem.deleteMany();
   await prisma.quotation.deleteMany();
@@ -426,31 +429,27 @@ async function main() {
   });
   console.log('✅ Created 3 deals');
 
-  // 9. Create activity logs
-  await prisma.activityLog.createMany({
+  // 9. Create activity logs (Day 8+ schema: model Activity, content field, authorId required)
+  await prisma.activity.createMany({
     data: [
       {
         type: ActivityType.CALL,
-        subject: 'Initial discovery call with ACME',
-        body: 'Discussed Q4 hardware refresh. John mentioned budget approval needed by month-end.',
+        content: 'Initial discovery call with ACME — Discussed Q4 hardware refresh. John mentioned budget approval needed by month-end.',
         companyId: acme.id,
-        contactId: johnAcme.id,
+        authorId: salesRep.id,
         assignedToId: salesRep.id,
-        metadata: { duration: 1800, outcome: 'positive' },
       },
       {
         type: ActivityType.EMAIL,
-        subject: 'Sent proposal to TechCorp',
-        body: 'Sent enterprise license proposal with 10% early-bird discount.',
+        content: 'Sent proposal to TechCorp — Enterprise license proposal with 10% early-bird discount.',
         companyId: techCorp.id,
-        assignedToId: salesRep.id,
+        authorId: salesRep.id,
       },
       {
         type: ActivityType.MEETING,
-        subject: 'On-site demo at ACME HQ',
-        body: 'Product demo with 5 stakeholders. Strong interest in Widget B.',
+        content: 'On-site demo at ACME HQ — Product demo with 5 stakeholders. Strong interest in Widget B.',
         companyId: acme.id,
-        assignedToId: salesRep.id,
+        authorId: salesRep.id,
       },
     ],
   });

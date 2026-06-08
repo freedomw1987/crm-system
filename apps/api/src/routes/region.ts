@@ -38,7 +38,7 @@ export const regionRoutes = new Elysia({ prefix: '/regions', tags: ['regions'] }
     return r;
   })
   // Admin-only mutations.
-  .use(requirePermission('company:write'))
+  .use(requirePermission('company:update'))
   .post('/', async ({ body, set, userId, request }) => {
     const data = body as { code: string; name: string; flag?: string; sortOrder?: number };
     const r = await prisma.region.create({ data });

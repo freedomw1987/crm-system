@@ -31,6 +31,18 @@ export const PERMISSIONS = {
   'ai-config:read':   'View AI Assistant endpoint and model settings',
   'ai-config:update': 'Edit AI Assistant endpoint URL, API key, and model name',
 
+  // Service catalogue (admin-managed)
+  'service:read':   'View services',
+  'service:create': 'Create services',
+  'service:update': 'Edit services',
+  'service:delete': 'Delete services',
+
+  // Role management (admin-only)
+  'role:read':   'View roles and the permission matrix',
+  'role:create': 'Create custom roles',
+  'role:update': 'Edit role permissions',
+  'role:delete': 'Delete custom roles',
+
   // CRM resources
   'company:read':   'View companies',
   'company:create': 'Create companies',
