@@ -49,11 +49,29 @@ export const aiConfigRoutes = new Elysia({ prefix: '/ai/config', tags: ['ai-conf
   // ----------------------------------------------------------------
   // GET /ai/config/status — lightweight check (any authenticated user)
   // Used by the chat page to decide whether to show a "go configure"
-  // banner. Intentionally does NOT require ai-config:read permission.
+  // banner.
+  //
+  // P1-7 (2026-06-08): now requires `ai-config:read` permission.
+  // Anonymous leak fixed — `configured: true/false` reveals admin
+  // env state. Anyone reaching the chat page already needs
+  // `chat:use` permission, so gating with `ai-config:read` only
+  // blocks misconfigured VIEWERs who somehow hit the chat page
+  // (defence in depth). The status endpoint no longer serves
+  // unauthenticated traffic; it returns 401 like the rest.
   // ----------------------------------------------------------------
-  .get('/status', async ({ request }) => {
+  .get('/status', async ({ request, set }) => {
     const userId = await getUserIdFromRequest(request);
-    if (!userId) return { configured: false, reason: 'unauthenticated' };
+    if (!userId) {
+      set.status = 401;
+      return { error: 'Unauthorized' };
+    }
+    const allowed = await import('../middleware/rbac').then((m) =>
+      m.userHasPermission(userId, 'ai-config:read')
+    );
+    if (!allowed) {
+      set.status = 403;
+      return { error: "Forbidden: missing permission 'ai-config:read'" };
+    }
     const row = await prisma.aiConfig.findUnique({
       where: { id: 1 },
       select: { endpointUrl: true, modelName: true, updatedAt: true },
