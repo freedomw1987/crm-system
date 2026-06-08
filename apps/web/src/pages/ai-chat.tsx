@@ -4,13 +4,10 @@ import { Send, Sparkles, Trash2, Plus, Loader2, User, Bot, Wrench } from 'lucide
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  chatApi,
-  type ConversationSummary,
-  type ChatMessage,
-  type StreamEvent,
-} from '@/lib/api';
+import { chatApi, type ConversationSummary, type ChatMessage, type StreamEvent } from '@/lib/api';
 import { cn, formatDateTime } from '@/lib/utils';
+import { MarkdownContent, StreamingMarkdown } from '@/components/MarkdownContent';
+import { isToolMarker } from '@/lib/chat-helpers';
 
 /**
  * Tools invoked by the agent during the current run. We keep these in
@@ -346,7 +343,14 @@ function ConversationItem({
  * rendered as inline pills (no bubble, no max-w container) — the
  * feedback we got on Day 10 was that tool calls should not look like
  * a message; they're metadata about what the agent is doing.
+ *
+ * Empty-bubble guard (RG-CHAT-001, 2026-06-08): the backend persists
+ * a sentinel row (role: 'assistant' + content: '🔧 {toolName}' +
+ * toolName) for every tool invocation as the LLM history marker.
+ * `isToolMarker` (lib/chat-helpers.ts) detects this and we render
+ * the row as a metadata pill instead of an empty assistant bubble.
  */
+
 function MessageBubble({
   message,
   index,
@@ -360,8 +364,9 @@ function MessageBubble({
 }) {
   const isUser = message.role === 'user';
   const isTool = message.role === 'tool';
+  const isToolMarkerRow = isToolMarker(message);
 
-  if (isTool) {
+  if (isTool || isToolMarkerRow) {
     return (
       <button
         type="button"
@@ -373,7 +378,13 @@ function MessageBubble({
         <span aria-hidden="true">{expanded ? '▾' : '▸'}</span>
         {expanded && (
           <pre className="ml-2 text-xs bg-muted p-2 rounded overflow-x-auto scrollbar-thin max-w-full text-left">
-            {JSON.stringify(message.toolResult, null, 2)}
+            {JSON.stringify(
+              isToolMarkerRow
+                ? { args: message.toolArgs }
+                : { args: message.toolArgs, result: message.toolResult },
+              null,
+              2,
+            )}
           </pre>
         )}
       </button>
@@ -389,13 +400,20 @@ function MessageBubble({
       )}
       <div
         className={cn(
-          'max-w-[80%] rounded-lg px-4 py-2 text-sm whitespace-pre-wrap',
-          isUser
-            ? 'bg-primary text-primary-foreground'
-            : 'bg-muted'
+          'max-w-[80%] rounded-lg px-4 py-2 text-sm',
+          isUser ? 'bg-primary text-primary-foreground' : 'bg-muted'
         )}
       >
-        {message.content}
+        {isUser ? (
+          // User messages: keep plain text + preserve line breaks. No
+          // Markdown — the user types into a textarea and we want a
+          // faithful echo of what they sent, not interpreted HTML.
+          <div className="whitespace-pre-wrap break-words">{message.content}</div>
+        ) : (
+          // Assistant messages: render as Markdown with chart.js
+          // support (see MarkdownContent.tsx for the fence contract).
+          <MarkdownContent source={message.content} />
+        )}
       </div>
       {isUser && (
         <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center shrink-0">
@@ -435,9 +453,8 @@ function StreamingBotMessage({
           </div>
         )}
         {reply && (
-          <div className="rounded-lg px-4 py-2 text-sm whitespace-pre-wrap bg-muted">
-            {reply}
-            <span className="inline-block w-1.5 h-4 bg-primary ml-0.5 align-middle animate-pulse" />
+          <div className="rounded-lg px-4 py-2 text-sm bg-muted">
+            <StreamingMarkdown source={reply} />
           </div>
         )}
       </div>

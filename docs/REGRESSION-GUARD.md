@@ -405,3 +405,68 @@ CRM `quotationId ↔ BoardPro rowid` in step.
   `apps/api/src/lib/excel/quotation.ts`'s `generateQuotationExcel()`
   **and** add a row to the smoke test fixture so the new worksheet
   shows up in the next `/tmp/quotation-smoke.xlsx` run.
+
+## RG-CHAT-001 — AI assistant: empty bubble on tool call, no Markdown / charts (2026-06-08)
+
+**Symptom (David, 2026-06-08)**: when the AI agent invoked any
+tool, the chat UI rendered an empty assistant bubble (just a grey
+box with `max-w-[80%] rounded-lg px-4 py-2` and nothing inside)
+between the user's question and the actual reply. Additionally,
+assistant replies were rendered as plain text — no Markdown, no
+charts, no formatting of any kind.
+
+**Root cause** (two parts):
+1. `packages/ai/src/index.ts` persists a marker row for every
+   tool invocation as `role: 'assistant', content: '', toolName: 'foo'`.
+   This row is needed to reconstruct the LLM history (tool_calls
+   shape on subsequent turns). The frontend fell through to the
+   generic assistant bubble branch and rendered the empty `content`
+   as a styled box.
+2. `apps/web/src/pages/ai-chat.tsx` rendered `message.content` as
+   plain text (`{message.content}` + `whitespace-pre-wrap`). No
+   Markdown parsing, no chart support.
+
+**Prevention**:
+- The marker row's `content` is now written as `` `🔧 ${toolName}` ``
+  (sentinel string). The frontend detects it via
+  `isToolMarker()` (in `lib/chat-helpers.ts`, extracted for
+  testability) and renders it as an inline metadata pill instead
+  of a bubble. Pinned by 7 unit tests in
+  `apps/web/src/lib/__tests__/chat-helpers.test.ts`.
+- Assistant messages are now rendered through
+  `<MarkdownContent source={...} />` (in
+  `apps/web/src/components/MarkdownContent.tsx`), which uses
+  `react-markdown` + `remark-gfm` and supports a
+  `` ```chart `` fence that maps to a `<ChartBlock />`
+  (`apps/web/src/components/ChartBlock.tsx`, react-chartjs-2
+  wrapping Chart.js v4). The LLM is taught the chart syntax in
+  `packages/ai/src/prompts.ts` (Markdown and charts section).
+- The streaming path uses `<StreamingMarkdown />` which holds
+  back rendering when a ```chart fence is still open (so a
+  partial fence doesn't get half-rendered as a broken code block).
+
+**Invariants**:
+- An assistant message with `role: 'assistant'`, `toolName` set,
+  and `content` matching `^🔧` (or empty) MUST be treated as
+  metadata, not a bubble. `isToolMarker()` is the single source
+  of truth.
+- The LLM history reconstructor (lines 97-127 of
+  `packages/ai/src/index.ts`) coerces marker `content` to `null`
+  before pushing into the OpenAI request — required by
+  chat-completions spec for an assistant message that only
+  carries `tool_calls`.
+- Any future "marker" row the backend writes MUST start with
+  `🔧` (sentinel family is reserved). Anything else is prose and
+  will render as a real bubble.
+
+**Re-test**:
+```
+cd apps/web && bun test src/lib/__tests__/chat-helpers.test.ts
+# 7 pass, 0 fail
+```
+
+**Future work** (not part of this fix): the chart sandbox is
+intentionally limited to bar / line / pie / doughnut. If we want
+scatter, radar, or mixed charts, add the controller registration
+in `ChartBlock.tsx` and extend the union in
+`packages/ai/src/prompts.ts`.

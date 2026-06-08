@@ -103,10 +103,15 @@ export async function* runAgentStream(input: AgentRunInput): AsyncGenerator<Stre
         };
       }
       if (m.role === 'assistant' && m.toolName) {
-        // Tool call message
+        // Tool call message. The marker rows we persist have a
+        // 🔧-prefixed sentinel `content` so the frontend can hide
+        // them as metadata. OpenAI's chat-completions API requires
+        // `content: null` for an assistant message that only carries
+        // `tool_calls`, so we coerce both empty and sentinel values
+        // to null here.
         return {
           role: 'assistant' as const,
-          content: m.content || null,
+          content: null,
           tool_calls: [
             {
               id: m.toolName,
@@ -155,10 +160,13 @@ export async function* runAgentStream(input: AgentRunInput): AsyncGenerator<Stre
     } as Parameters<typeof client.chat.completions.create>[0]);
 
     // Accumulated assistant message we're building from chunks
-    const assistantMsg: OpenAI.Chat.ChatCompletionMessage = {
-      role: 'assistant',
-      content: null,
-      tool_calls: [],
+    // (cast through unknown because OpenAI's ChatCompletionMessage
+    // type in some SDK versions expects a `refusal` field we don't
+    // need for our accumulator).
+    const assistantMsg = {
+      role: 'assistant' as const,
+      content: null as string | null,
+      tool_calls: [] as Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>,
     };
     const toolCallAccumulators = new Map<
       number,
@@ -237,15 +245,19 @@ export async function* runAgentStream(input: AgentRunInput): AsyncGenerator<Stre
     }
 
     // We have tool calls. Push the assistant message with tool_calls into history.
+    // Cast through `unknown` to keep the local object literal concise;
+    // OpenAI's ChatCompletionMessageParam type requires a `refusal` field
+    // on its output-side ChatCompletionMessage sibling which we don't need
+    // when reconstructing the request.
     messages.push({
-      role: 'assistant' as const,
+      role: 'assistant',
       content: assistantMsg.content || null,
       tool_calls: finalToolCalls.map((tc) => ({
         id: tc.id,
         type: 'function' as const,
         function: { name: tc.function.name, arguments: tc.function.arguments },
       })),
-    });
+    } as OpenAI.Chat.ChatCompletionMessageParam);
 
     // Execute each tool call, yielding tool_start / tool_end
     for (const tc of finalToolCalls) {
@@ -272,12 +284,19 @@ export async function* runAgentStream(input: AgentRunInput): AsyncGenerator<Stre
 
       yield { type: 'tool_end', name: toolName, result, error: toolError };
 
-      // Persist tool call + tool result as separate messages
+      // Persist tool call + tool result as separate messages.
+      // The first row (role: 'assistant' + toolName) is the LLM's
+      // "I invoked this tool" marker. The second (role: 'tool') is
+      // the actual result. We tag the marker's `content` with a
+      // 🔧-prefixed sentinel string so the frontend can distinguish
+      // it from a real reply (which would have prose). See
+      // apps/web/src/pages/ai-chat.tsx `isToolMarker` helper — the
+      // two pieces of code share an implicit contract.
       await prisma.conversationMessage.create({
         data: {
           conversationId,
           role: 'assistant',
-          content: '',
+          content: `🔧 ${toolName}`,
           toolName,
           toolArgs: parsedArgs as never,
         },
