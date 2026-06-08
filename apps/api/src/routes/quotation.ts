@@ -26,61 +26,13 @@ function lineTotalOf(qty: number, price: number, disc: number) {
   return qty * price * (1 - disc / 100);
 }
 
-/**
- * Day N: GP calculation for a single line item.
- *   - PRODUCT: costSnapshot = 0  → lineGp = lineTotal, lineGpPercent = 100
- *   - SERVICE: costSnapshot = sum(manDayLine.costRate * days) at line
- *     creation time. lineGp = lineTotal - (costSnapshot * quantity for
- *     the "man-day units"). The "man-day units" here is the *quantity*
- *     because a service quotation line's quantity is already the
- *     man-day count. lineGpPercent = lineGp / lineTotal.
- *
- *   Example: Senior Engineer (¥1000 sell, ¥600 cost) × 5 days
- *     lineTotal = 1000 * 5 = 5000
- *     costSnapshot = 600 * 5 = 3000  (per line cost)
- *     lineGp = 5000 - 3000 = 2000
- *     lineGpPercent = 2000 / 5000 = 40%
- */
-function gpOf(
-  itemType: string,
-  lineTotal: number,
-  costSnapshot: number,
-): { lineGp: number; lineGpPercent: number } {
-  if (itemType === 'PRODUCT') {
-    return { lineGp: lineTotal, lineGpPercent: 100 };
-  }
-  const gp = lineTotal - costSnapshot;
-  const percent = lineTotal > 0 ? (gp / lineTotal) * 100 : 0;
-  return { lineGp: gp, lineGpPercent: percent };
-}
+// GP% + SOW helpers are extracted into `lib/quotation-gp.ts` so they
+// can be unit-tested without spinning up the Elysia app / Prisma
+// (US-A3 follow-up, 2026-06-08). Re-import here to keep all
+// existing call sites working without behavioural change.
+import { gpOf, costPerManDayFromSnapshot } from '../lib/quotation-gp';
 
-/**
- * Extract the per-line cost (per *man-day unit*) from a manDaySnapshot.
- * The snapshot is the JSON object stored on QuotationItem.manDaySnapshot
- * that captures the SOW breakdown at quotation-creation time:
- *   { lines: [{ role, dayRate, days, costRate, subtotal }], notes }
- *
- * Returns cost per man-day unit (i.e. weighted-average cost across the
- * snapshot's lines). The line's "quantity" field in the quotation is
- * then the number of man-days, so multiplying costPerManDay by quantity
- * gives the line's costSnapshot.
- */
-function costPerManDayFromSnapshot(snap: unknown): number {
-  if (!snap || typeof snap !== 'object') return 0;
-  const lines = (snap as { lines?: unknown }).lines;
-  if (!Array.isArray(lines) || lines.length === 0) return 0;
-  let totalCost = 0;
-  let totalDays = 0;
-  for (const l of lines) {
-    if (!l || typeof l !== 'object') continue;
-    const days = Number((l as { days?: number }).days ?? 0);
-    const costRate = Number((l as { costRate?: number }).costRate ?? 0);
-    totalCost += costRate * days;
-    totalDays += days;
-  }
-  if (totalDays <= 0) return 0;
-  return totalCost / totalDays;
-}
+
 
 /**
  * Recalculate every line item's GP fields and the header subtotal/tax/

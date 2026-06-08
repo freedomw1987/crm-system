@@ -30,7 +30,7 @@
 |----|-------|------|-------------|-----|--------------|
 | A1 | Companies CRUD | 🟨 planned | 🟨 planned | 🟨 planned | ✅ Done Day 6+ |
 | A2 | Deal Kanban | 🟨 planned | 🟨 planned | 🟨 planned | ✅ Done Day 8 |
-| A3 | Quotation builder + GP% | 🟨 planned | 🟨 planned | 🟨 planned | ✅ Done Day 9 |
+| A3 | Quotation builder + GP% | ✅ done 2026-06-08 (`apps/api/src/__tests__/quotation-gp.test.ts` 14/14) | 🟨 planned | 🟨 planned | ✅ Done Day 9 (RG-2026-06-08-A3) |
 | A4 | Deal Autocomplete + Quick-Create in QuotationBuilder | 🟨 planned | ✅ done 2026-06-07 (`/tmp/rg_deal_smoke.ts` 10/10) | 🟨 planned | ✅ Done 2026-06-07 (RG-2026-06-07-DEAL-AUTOCOMPLETE) |
 | A5 | Quotation 5-worksheet Excel download | ✅ done 2026-06-07 (`apps/api/src/lib/excel/crm-adapter.test.ts`) | 🟨 planned (real-DB audit log + RBAC) | 🟨 planned | ✅ done 2026-06-07 (Q-2026-0001 → 36670 bytes, 3 sheets, HTTP 200, xlsx Content-Type verified) |
 
@@ -52,6 +52,7 @@
 | C2 | Read tools (×7) | — | ✅ partial (tools.ts manually verified) | 🟨 planned | ✅ Done Day 10 |
 | C3 | Write tools (×3) | — | ✅ partial (manually verified) | 🟨 planned | ✅ Done Day 10 |
 | **C4** | **DB-driven config (no env)** | **—** | **✅ done this batch (RG-002)** | **🟨 planned** | **✅ Done this batch** |
+| **C5** | **"AI proposes, human confirms" guardrail** | **✅ done 2026-06-08 (`packages/ai/src/__tests__/confirm.test.ts` 13/13 — `hashArgs` + `createConfirmationController`)** | **✅ done 2026-06-08 (backend dispatch + `confirmation_required` SSE event verified manually)** | **🟨 planned (Day 18+ frontend Radix Dialog)** | **✅ Done Day 17 batch (RG-CHAT-002)** |
 
 ### Epic D — Mobile
 

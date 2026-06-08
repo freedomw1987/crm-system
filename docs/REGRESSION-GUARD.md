@@ -470,3 +470,133 @@ intentionally limited to bar / line / pie / doughnut. If we want
 scatter, radar, or mixed charts, add the controller registration
 in `ChartBlock.tsx` and extend the union in
 `packages/ai/src/prompts.ts`.
+
+## RG-2026-06-08-A3 — Quotation GP% formula was un-tested, P0 PARTIAL closed
+
+**Symptom (Day 9 → 2026-06-08)**: US-A3 (`Quotation builder + GP%`)
+shipped Day 9 with the formula coded correctly, but without
+unit tests. The QA-TRACKER flagged it 🟨 PARTIAL P0 for the same
+reason (`GP% formula correct but not unit-tested`).
+
+**Root cause**: `gpOf()` and `costPerManDayFromSnapshot()` lived
+as private functions inside `apps/api/src/routes/quotation.ts`,
+alongside the Elysia route definition. Importing the file to
+test the helpers would have spun up the Elysia app, the Prisma
+client, and the DB connection — too heavy for a unit test, and
+frowned on as a test pattern.
+
+**Fix**: extracted both helpers into
+`apps/api/src/lib/quotation-gp.ts` (no behavioural change to the
+formula, just relocated). The route file now imports them. The
+new module is testable in isolation. 14 unit tests in
+`apps/api/src/__tests__/quotation-gp.test.ts` pin the formulas.
+
+**Re-test**:
+```
+cd apps/api && bun test src/__tests__/quotation-gp.test.ts
+# 14 pass, 0 fail
+```
+
+**Invariants**:
+- `gpOf('PRODUCT', total, cost)` MUST return `{lineGp: total,
+  lineGpPercent: 100}` regardless of `cost` (PRODUCT lines have
+  no man-day cost).
+- `gpOf('SERVICE', 0, cost)` MUST return `{lineGp: -cost,
+  lineGpPercent: 0}` (not NaN) — the lineTotal = 0 case is
+  guarded.
+- `gpOf(<unknown>, total, cost)` MUST fall through to the
+  SERVICE branch (so future item types get the correct GP% by
+  default, not a forced 100%).
+- `costPerManDayFromSnapshot()` MUST return 0 (not throw) for
+  `null`, `undefined`, non-objects, snapshots with no `lines`
+  array, and snapshots with all-zero days.
+
+**Future work**: US-A3 status flips from PARTIAL to PASS in
+`docs/QA-TRACKER.md` (Day 17 batch).
+
+## RG-CHAT-002 — AI tool confirmation guardrail: never bypassed, audit-logged, testable (2026-06-08)
+
+**Symptom (David, 2026-06-08)**: US-C5 (`"AI proposes, human
+confirms" mutation guardrail`) is the highest-risk P0 in the AI
+assistant. The PRD acceptance criteria explicitly state that the
+guardrail MUST NOT be bypassable — even if the LLM claims to be
+in a "trusted" path. Day 10 shipped the 3 write tools
+(`draftQuotation`, `updateDealStage`, `logActivity`) with the
+flag, and Day 17 (this entry) added the dispatch interception
+in `runAgentStream`, the audit-log wiring, and the test coverage
+to pin the contract.
+
+**Root cause**: The guardrail is the linchpin of "AI doesn't
+silently mutate the CRM". A regression where the dispatch loop
+forgets to check `requiresConfirmation`, or where `hashArgs()`
+becomes unstable, would silently re-open the hole. The
+acceptance criteria are 8 items long and span backend (registry
++ dispatch + audit) and frontend (Radix Dialog).
+
+**Prevention**:
+- The 3 write tools in `packages/ai/src/tools.ts` carry
+  `requiresConfirmation: true` (lines 239, 338, 527). Read tools
+  do NOT have the flag, so the default `false` is the safe path
+  for any new tool.
+- `runAgentStream` (in `packages/ai/src/index.ts:339-410`)
+  intercepts the tool execution, yields a `confirmation_required`
+  SSE event with the full proposed args, awaits the controller
+  response, and either executes (approved) or feeds a synthetic
+  denial result to the LLM (denied). The synthetic result has
+  `{denied: true, reason: '...', error: 'denied by user'}` so the
+  LLM can gracefully explain to the user.
+- `hashArgs()` produces a stable 16-char hex of
+  `JSON.stringify(args)` with keys sorted. The audit log
+  (`AI_TOOL_CONFIRMED` / `AI_TOOL_DENIED` rows in
+  `AuditLog.metadata.hash`) and the conversation tool-call row
+  both carry this hash, so support can join them.
+- `AuditAction` enum in `prisma/schema.prisma` has
+  `AI_TOOL_CONFIRMED` and `AI_TOOL_DENIED` (lines 798-799).
+- 13 unit tests in
+  `packages/ai/src/__tests__/confirm.test.ts` pin `hashArgs()`
+  stability and the `createConfirmationController()` timeout /
+  no-op / concurrent-pending behaviour.
+
+**Invariants** (the things a future refactor MUST NOT break):
+- `hashArgs(a)` MUST equal `hashArgs(b)` when `a` and `b` have
+  the same key/value pairs, even if the keys are in different
+  order. (Audit-log join invariant.)
+- `hashArgs(null)` and `hashArgs(undefined)` MUST return a valid
+  16-char hex string, not throw.
+- `createConfirmationController()`'s `respond(id, ...)` MUST
+  return `false` (not throw) for an unknown id.
+- `createConfirmationController()`'s `awaitResponse(id, ...)`
+  MUST reject (not hang) on timeout. The timeout default is
+  5 minutes.
+- A late `respond()` after timeout MUST be a no-op, not a stale
+  resolve that affects a subsequent request.
+- The 3 write tools (`draftQuotation`, `updateDealStage`,
+  `logActivity`) MUST keep `requiresConfirmation: true`. Adding
+  a new write tool? Set the flag explicitly. Don't rely on
+  defaults.
+
+**Re-test**:
+```
+cd packages/ai && bun test src/__tests__/confirm.test.ts
+# 13 pass, 0 fail
+```
+
+**What's still pending** (Day 18+ scope, NOT part of this fix):
+- Frontend Radix Dialog with the proposed-args diff and
+  Confirm/Cancel buttons (`apps/web/src/pages/ai-chat.tsx`).
+- Frontend handling of the `confirmation_required` SSE event
+  (currently the frontend ignores it, so the dialog never
+  appears; the backend's auto-deny kicks in and the LLM gets
+  a "denied by user" result that it surfaces as a plain text
+  explanation).
+- Client-disconnect handling: the spec says "if the client
+  disconnects while waiting for a confirmation, the agent run
+  is cancelled and a 'user abandoned' sentinel is written".
+  Currently the auto-deny path runs and the conversation
+  records the denial, but the run isn't explicitly cancelled
+  and no "abandoned" sentinel is written. Punted to the
+  frontend-Round-2 batch.
+
+**Future work**:
+- `US-C5` status flips from PARTIAL to PASS in
+  `docs/QA-TRACKER.md` (Day 17 batch, this entry).

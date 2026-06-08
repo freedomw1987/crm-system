@@ -22,7 +22,7 @@
 |----|-------|--------|----------|-------|--------------|
 | A1 | Companies CRUD | ✅ PASS | P0 | Day 1-5 | — |
 | A2 | Deal Kanban | ✅ PASS | P0 | Day 8 | Drag-drop test done |
-| A3 | Quotation builder + GP% | 🟨 PARTIAL | P0 | Day 9 | GP% formula correct but not unit-tested (TEST-COVERAGE) |
+| A3 | Quotation builder + GP% | ✅ PASS | P0 | **Day 17 (this batch)** | GP% formula pinned by 14 unit tests in `apps/api/src/__tests__/quotation-gp.test.ts` (extracted to `lib/quotation-gp.ts` for testability). See **RG-2026-06-08-A3**. |
 | A4 | Deal Autocomplete + Quick-Create in QuotationBuilder | ✅ PASS | P0 | 2026-06-07 | RG-2026-06-07-DEAL-AUTOCOMPLETE — backend validation 10/10 PASS, frontend `DealAutocomplete` + `DealDialog` pre-fill (+90d close date) shipped |
 | A5 | Quotation 5-worksheet Excel download (bc-quotation parity) | 🟨 PARTIAL | P1 | 2026-06-07 | Endpoint + adapter + 5 worksheet helpers ported; Excel generated from real DB data (Q-2026-0001 = 36KB, 3 sheets). Gaps: 8 BoardPro-only fields (`notice/sow/assumption/sector/isOptional/isIncluded/salesCost/barcoSaleCost`) hard-coded to 0/"" — see US-A6 to fill. Unit test for crm-adapter passes; integration test for endpoint + frontend smoke pending. |
 
@@ -44,6 +44,7 @@
 | C2 | Read tools (×7) | ✅ PASS | P0 | Day 10 | 7 read tools verified; 6-iter loop cap prevents runaway |
 | C3 | Write tools (×3) | 🟨 PARTIAL | P1 | Day 10 | Tools work but no "AI proposes, human confirms" guardrail yet (US-C5) |
 | C4 | DB-driven config | ✅ PASS | P0 | **Day 10 + RG-002 fix** | Pre-check 503 (no env fallback). See RG-002 |
+| C5 | "AI proposes, human confirms" guardrail | ✅ PASS (backend) / 🟨 PARTIAL (frontend dialog) | P0 | **Day 17 (this batch)** | Backend complete: registry `requiresConfirmation` flag on 3 write tools (`draftQuotation`, `updateDealStage`, `logActivity`) + `runAgentStream` intercepts + `confirmation_required` SSE event + `AI_TOOL_CONFIRMED` / `AI_TOOL_DENIED` audit logging via stable `hashArgs()`. Pinned by 13 unit tests in `packages/ai/src/__tests__/confirm.test.ts`. **Frontend gap:** Radix Dialog with diff preview and Confirm/Cancel buttons not yet wired — `confirmation_required` SSE events are ignored client-side, so user experience today is the LLM's auto-deny explanation. Punted to Day 18+ frontend batch. See **RG-CHAT-002**. |
 | C7 | Streaming responses (SSE) | ✅ PASS | P0 | **Day 10.1 (this batch)** | Token-by-token + tool pills. See RG-005 |
 
 ## Epic D — Mobile
