@@ -24,6 +24,18 @@ cd crm-system
 # Login: admin@crm.local / admin123  (or sales@crm.local / sales123)
 ```
 
+`docker-dev.sh` will:
+- copy `.env.example` to `.env` if missing
+- auto-generate `AI_CONFIG_ENCRYPTION_KEY` and `JWT_SECRET` if the
+  `__GENERATE_*__` placeholders are still in `.env` (both are 32-byte
+  hex secrets; missing/weak values cause the API to refuse to boot)
+- run `SEED_DB=true docker compose up -d --build`
+- wait for the API health check to pass before exiting
+
+If you want to manage `.env` yourself, you can skip the wrapper and
+run `docker compose up -d --build` directly, as long as `.env` has
+real values for everything the compose file requires.
+
 Postgres + API + Web (nginx) all run in containers. The script
 also tails the API logs so you can watch migrations and seed output.
 
@@ -60,21 +72,26 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
 ### Environment variables
 
-All set in `.env` at the project root (copy `.env.example`):
+All set in `.env` at the project root. The shipped `.env.example` uses
+`__GENERATE_*__` placeholders for secrets — `./scripts/docker-dev.sh`
+auto-fills them on first run. If you manage `.env` by hand, fill in:
 
-| Var                 | Default        | Notes                                                  |
-| ------------------- | -------------- | ------------------------------------------------------ |
-| `POSTGRES_USER`     | `crm`          | DB user                                                |
-| `POSTGRES_PASSWORD` | `crm_dev_password` | **Must change for prod**                            |
-| `POSTGRES_DB`       | `crm_system`   | DB name                                                |
-| `JWT_SECRET`        | dev default    | **Must be long random in prod**                        |
-| `OPENAI_API_KEY`    | (empty)        | Required for the AI agent                              |
-| `OPENAI_MODEL`      | `gpt-4o-mini`  | Override to use `gpt-4o` etc.                          |
-| `API_PORT`          | `3001`         | Internal API port                                      |
-| `WEB_PORT`          | `80`           | Host port for `web`                                    |
-| `ADMINER_PORT`      | `8080`         | Host port for `adminer` (when profile enabled)         |
-| `SEED_DB`           | (empty)        | Set to `true` to run `prisma/seed.ts` on container start |
-| `SKIP_MIGRATE`      | (empty)        | Set to `1` to skip `prisma migrate deploy` on start    |
+| Var                          | Default                       | Notes                                                                                                |
+| ---------------------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `POSTGRES_USER`              | `crm`                         | DB user                                                                                              |
+| `POSTGRES_PASSWORD`          | `crm_dev_password`            | **Must change for prod**                                                                             |
+| `POSTGRES_DB`                | `crm_system`                  | DB name                                                                                              |
+| `JWT_SECRET`                 | dev default / `__GENERATE`    | **Must be ≥ 32 chars.** The API hard-fails at boot if shorter. Use `openssl rand -hex 32`.           |
+| `AI_CONFIG_ENCRYPTION_KEY`   | `__GENERATE`                  | **Must be 64 hex chars (32 bytes).** Used to AES-256-GCM encrypt the admin-supplied OpenAI key. Use `openssl rand -hex 32`. Compose fails fast with `${VAR:?...}` if missing. |
+| `CORS_ORIGIN`                | `http://localhost,http://localhost:5173` | Comma-separated Origin allowlist forwarded to the API. Include both the compose web port and the vite dev port if you `bun run dev:web` against the same `.env`. |
+| `OPENAI_API_KEY`             | (empty)                       | Required for the AI agent (admin can also set it from the /admin/ai-config page)                     |
+| `OPENAI_MODEL`               | `gpt-4o`                      | Override to use a different model                                                                    |
+| `API_PORT`                   | `3001`                        | Internal API port                                                                                    |
+| `WEB_PORT`                   | `80`                          | Host port for `web`                                                                                  |
+| `ADMINER_PORT`               | `8080`                        | Host port for `adminer` (when profile enabled)                                                       |
+| `SEED_DB`                    | (empty)                       | Set to `true` to run `prisma/seed.ts` on container start. The `--seed` flag in `docker-dev.sh` sets this for you. |
+| `SKIP_MIGRATE`               | (empty)                       | Set to `1` to skip `prisma migrate deploy` on start                                                  |
+| `BACKUP_KEEP_DAYS`           | `7`                           | Retention for the `backup` profile's `pg_dump` cron                                                  |
 
 ---
 

@@ -1,0 +1,41 @@
+# Build artefacts — never copy into the docker build context
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+**/.vite
+**/.cache
+
+# Source control + IDE + local config
+.git
+.gitignore
+.gitattributes
+.idea
+.vscode
+.DS_Store
+*.swp
+*.swo
+
+# Env files (compose injects these at runtime; never bake them in)
+.env
+.env.*
+!.env.example
+
+# Logs + runtime data
+*.log
+backups
+data
+**/coverage
+**/.nyc_output
+
+# Editor/AI scratch
+.claude
+.cursor
+
+# Tooling that bakes in CI but not in image
+.github
+docker-compose.prod.yml
+
+# Note: Dockerfile and docker-compose.yml are intentionally NOT
+# excluded — compose's `dockerfile: apps/api/Dockerfile` needs the
+# Dockerfile to be visible inside the build context.

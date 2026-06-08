@@ -46,6 +46,14 @@ services:
       # .env (32-byte hex). Generate one with:
       #   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
       AI_CONFIG_ENCRYPTION_KEY: ${AI_CONFIG_ENCRYPTION_KEY:?AI_CONFIG_ENCRYPTION_KEY must be set in .env}
+      # Comma-separated Origin allowlist. The .env file is the source
+      # of truth (CORS_ORIGIN); this just forwards it to the api
+      # container. Must include the web origin you actually visit
+      # (http://localhost for docker compose prod, http://localhost:5173
+      # for vite dev). Without this, the API falls back to its code
+      # default of http://localhost:5173 which CORS-blocks the prod
+      # web frontend's same-origin /api calls.
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost,http://localhost:5173}
       NODE_ENV: production
       PORT: 3001
       HOST: 0.0.0.0
