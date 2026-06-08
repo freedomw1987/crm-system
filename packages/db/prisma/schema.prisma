@@ -723,6 +723,11 @@ model ConversationMessage {
   toolName         String?
   toolArgs         Json?
   toolResult       Json?
+  // Day 17 (US-C5): SHA-256(first 8 bytes) of the proposed args for
+  // confirmation-required tool calls. Lets us correlate the persisted
+  // row with the matching AI_TOOL_CONFIRMED / AI_TOOL_DENIED audit
+  // log entry without storing PII in the audit log itself.
+  aiToolConfirmationHash String?
   // Token tracking (for cost monitoring)
   promptTokens     Int?
   completionTokens Int?
@@ -789,6 +794,9 @@ enum AuditAction {
   ATTACHMENT_DELETED
   // AI Configuration (Day 10+)
   AI_CONFIG_UPDATED
+  // AI tool confirmation guardrail (Day 17, US-C5)
+  AI_TOOL_CONFIRMED
+  AI_TOOL_DENIED
   // System Configuration (Day 14+)
   SYSTEM_CONFIG_UPDATED
 }

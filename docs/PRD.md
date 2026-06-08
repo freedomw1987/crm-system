@@ -213,6 +213,43 @@
         when missing (no LLM key guess from env)
   - [ ] **No LLM request is ever made using an env var**
 
+### US-C5: "AI proposes, human confirms" mutation guardrail
+- **Status:** 🟨 PARTIAL (Day 10 wrote a note; shipped in Day 17 with
+  RG-CHAT-002)
+- **Priority:** P0 (David: AI should never silently mutate CRM data)
+- **Risk class:** HIGH — once AI can `create_quotation`,
+  `update_deal_stage`, or `log_activity`, a hallucinated tool call
+  can write to the DB with no human in the loop. Day 10 shipped the
+  write tools by design with a follow-up US-C5 to add the guardrail.
+- **Acceptance:**
+  - [ ] Each tool in the registry carries a `requiresConfirmation:
+        boolean` flag (default: false). The 3 write tools
+        (`create_quotation`, `update_deal_stage`, `log_activity`)
+        are flagged `true`.
+  - [ ] `runAgentStream` pauses BEFORE executing a confirmation-
+        required tool and emits a `confirmation_required` SSE event
+        with the full proposed args + a human-readable diff.
+  - [ ] The frontend shows a modal (Radix Dialog) with the diff,
+        [Cancel] and [Confirm & execute] buttons.
+  - [ ] The user replies by sending a new SSE `confirmation_response`
+        event (id matches the `confirmation_required` id).
+  - [ ] If approved: tool executes normally and result feeds back
+        to LLM. If denied: a synthetic `{error: "denied by user",
+        denied: true}` result is fed back to the LLM so it can
+        gracefully explain to the user.
+  - [ ] Cancellation: if the client disconnects while waiting for
+        a confirmation, the agent run is cancelled and a "user
+        abandoned" sentinel is written to the conversation (so
+        re-opening the conversation shows the pending state).
+  - [ ] Read tools (`list_*`, `get_*`, `search_*`) NEVER trigger
+        a confirmation — they're idempotent and have no side
+        effects.
+  - [ ] The 3 write tools NEVER bypass the guardrail — even if
+        the LLM claims to be in a "trusted" path.
+  - [ ] Audit log: every confirmation / denial writes an
+        `AI_TOOL_CONFIRMED` / `AI_TOOL_DENIED` row with the
+        user, the tool name, and a hash of the proposed args.
+
 ## Epic D — Mobile / responsive (running thread)
 
 ### US-D1: All pages are RWD-mobile compatible
@@ -230,8 +267,8 @@
 
 | ID | Title | Notes |
 |----|-------|-------|
-| US-C5 | "AI proposes, human confirms" mutation guardrail | Block dangerous tool calls behind a confirm dialog |
 | US-C6 | Token-cost dashboard per user | Read from `ConversationMessage.promptTokens` / `completionTokens` |
+
 ### US-C7: AI Assistant streams responses (SSE)
 - **Status:** ✅ Shipped (Day 10.1)
 - **Priority:** P0 (Day 10.1 retrofit — David feedback: agent felt unresponsive

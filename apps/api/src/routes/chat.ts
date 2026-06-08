@@ -9,9 +9,32 @@
 
 import { Elysia } from 'elysia';
 import { prisma } from '@crm/db';
-import { runAgentStream, AiNotConfiguredError, type StreamEvent } from '@crm/ai';
+import {
+  runAgentStream,
+  AiNotConfiguredError,
+  createConfirmationController,
+  type StreamEvent,
+} from '@crm/ai';
 import { authContext } from '../lib/context';
 import { requirePermission, getUserIdFromRequest } from '../middleware/rbac';
+
+// =============================================================================
+// US-C5 (Day 17, 2026-06-08): pending confirmation registry
+// =============================================================================
+//
+// The /chat/send handler creates a fresh ConfirmationController for each
+// run and stores it in this map. The `POST /chat/confirm/:id` endpoint
+// looks it up and resolves the pending promise. We key by confirmation
+// id (a per-run nonce) rather than by user id because a single user
+// could have multiple in-flight confirmations across tabs.
+//
+// Cleanup: when a /chat/send stream ends, the controller is removed
+// from the map (in a `finally` block) so we don't leak. Timeouts on
+// the controller side also remove themselves.
+const pendingConfirmations = new Map<
+  string,
+  { controller: ReturnType<typeof createConfirmationController>; userId: string }
+>();
 
 /**
  * Wrap a `StreamEvent` in a Server-Sent Events (SSE) frame.
@@ -87,10 +110,40 @@ export const chatRoutes = new Elysia({ prefix: '/chat', tags: ['ai-chat'] })
     // instead of returning a plain JSON object so the connection
     // stays open and the frontend can read tokens as they're emitted.
     const encoder = new TextEncoder();
+    // US-C5: build a per-run confirmation controller and register
+    // it BEFORE we start the agent. The /chat/confirm/:id endpoint
+    // resolves promises on this controller. The map key is the
+    // confirmation id (set by the agent loop when it yields a
+    // `confirmation_required` event), so the frontend posts back to
+    // the same id it just received.
+    const confirmationCtl = createConfirmationController();
+    // Forward registrations: when the agent loop calls
+    // `awaitResponse(id)`, we look it up; we don't pre-register
+    // anything here. The map's value is `{controller, userId}` so
+    // /chat/confirm/:id can verify the caller's identity matches.
+    // We wrap `awaitResponse` so every call also stores the entry
+    // in the map for the duration of the wait.
+    const wrappedController = {
+      awaitResponse: async (id: string, toolName: string) => {
+        pendingConfirmations.set(id, { controller: confirmationCtl, userId });
+        try {
+          return await confirmationCtl.awaitResponse(id, toolName);
+        } finally {
+          pendingConfirmations.delete(id);
+        }
+      },
+      respond: confirmationCtl.respond,
+    };
+
     const stream = new ReadableStream({
       async start(controller) {
         try {
-          for await (const event of runAgentStream({ userId, message, conversationId })) {
+          for await (const event of runAgentStream({
+            userId,
+            message,
+            conversationId,
+            confirmationController: wrappedController,
+          })) {
             controller.enqueue(encoder.encode(sseFrame(event)));
           }
         } catch (err) {
@@ -120,6 +173,36 @@ export const chatRoutes = new Elysia({ prefix: '/chat', tags: ['ai-chat'] })
         'Connection': 'keep-alive',
       },
     });
+  })
+
+  // US-C5: frontend posts the user's decision back here. Idempotent
+  // — if no pending confirmation matches, returns 404. Verifies
+  // the caller's userId matches the one that opened the chat
+  // session, so a confirmation can't be hijacked by another user
+  // (e.g. by guessing the nonce).
+  .post('/confirm/:id', async ({ params, request, body, set }) => {
+    const userId = await getUserIdFromRequest(request);
+    if (!userId) { set.status = 401; return { error: 'Unauthorized' }; }
+    const { approved, reason } = body as { approved: boolean; reason?: string };
+    if (typeof approved !== 'boolean') {
+      set.status = 400;
+      return { error: '`approved` must be a boolean' };
+    }
+    const entry = pendingConfirmations.get(params.id);
+    if (!entry) {
+      set.status = 404;
+      return { error: 'No pending confirmation with that id (may have timed out or already been answered)' };
+    }
+    if (entry.userId !== userId) {
+      set.status = 403;
+      return { error: 'Confirmation does not belong to this user' };
+    }
+    const ok = entry.controller.respond(params.id, approved, reason);
+    if (!ok) {
+      set.status = 409;
+      return { error: 'Confirmation already resolved' };
+    }
+    return { ok: true };
   })
 
   .delete('/conversations/:id', async ({ params, request, set }) => {

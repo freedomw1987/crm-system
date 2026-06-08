@@ -12,7 +12,9 @@
  */
 
 import OpenAI from 'openai';
+import { createHash } from 'node:crypto';
 import { prisma } from '@crm/db';
+import { Prisma } from '@crm/db';
 import { toolRegistry, type ToolContext } from './tools';
 import { SYSTEM_PROMPT } from './prompts';
 import { getAiConfig } from './config';
@@ -21,6 +23,16 @@ export interface AgentRunInput {
   userId: string;
   conversationId?: string;
   message: string;
+  /**
+   * US-C5: optional confirmation controller. If the run is for a
+   * synchronous user session (e.g. a real chat through `/chat/send`),
+   * the caller passes a controller so confirmation-required tool
+   * calls can pause and ask the user. If absent (e.g. background
+   * re-summarisation, eval harness), confirmation-required tools
+   * are auto-denied with a synthetic result so the run still
+   * completes.
+   */
+  confirmationController?: ConfirmationController;
 }
 
 /**
@@ -31,8 +43,55 @@ export type StreamEvent =
   | { type: 'token'; delta: string }
   | { type: 'tool_start'; name: string; args: unknown }
   | { type: 'tool_end'; name: string; result: unknown; error?: string }
+  // US-C5 (Day 17, 2026-06-08): when a tool flagged
+  // `requiresConfirmation: true` is about to execute, the agent
+  // pauses and yields a `confirmation_required` event. The
+  // frontend shows a Radix Dialog with the proposed args, and the
+  // user replies by calling `respondToConfirmation(id, approved,
+  // reason?)` on the controller returned by `/chat/send`.
+  //
+  // The `id` is a per-run unique nonce so the frontend can
+  // correlate the response back even if multiple tool calls are
+  // queued (we don't currently queue more than one at a time, but
+  // the design accommodates it).
+  | {
+      type: 'confirmation_required';
+      id: string;
+      toolName: string;
+      args: unknown;
+      sideEffectSummary?: string;
+    }
   | { type: 'done'; conversationId: string; usage: { promptTokens: number; completionTokens: number; totalTokens: number } }
   | { type: 'error'; message: string };
+
+/**
+ * Controller returned by `/chat/send` (alongside the SSE response)
+ * to let the HTTP layer post user responses back to the in-flight
+ * agent run. Each pending confirmation registers a resolver with
+ * a unique id; the response from the frontend resolves that
+ * promise and the agent loop continues.
+ *
+ * The controller is transport-agnostic — `/chat/send` could plumb
+ * it through a WebSocket, a second HTTP request, or a queue. For
+ * now we expose it via a small admin endpoint, but the agent
+ * loop doesn't care.
+ */
+export interface ConfirmationController {
+  /**
+   * Register a pending confirmation and return a promise that
+   * resolves when the user responds (or rejects on timeout /
+   * disconnect).
+   */
+  awaitResponse: (
+    id: string,
+    toolName: string,
+  ) => Promise<{ approved: boolean; reason?: string }>;
+  /**
+   * Submit a user response to a pending confirmation. Idempotent —
+   * if no pending confirmation matches the id, the call is a no-op.
+   */
+  respond: (id: string, approved: boolean, reason?: string) => boolean;
+}
 
 /**
  * Errors thrown from runAgent() that the chat route should translate to
@@ -269,6 +328,86 @@ export async function* runAgentStream(input: AgentRunInput): AsyncGenerator<Stre
       const tool = toolRegistry.find((t) => t.name === toolName);
       let result: unknown;
       let toolError: string | undefined;
+      // US-C5 (Day 17, 2026-06-08): confirmation-required tools
+      // pause before executing and yield a `confirmation_required`
+      // event. The frontend collects user input and resolves back
+      // via the ConfirmationController. If no controller is
+      // supplied (background / eval runs), we auto-deny with a
+      // synthetic result — the LLM can then gracefully explain the
+      // refusal to the user.
+      let confirmedHash: string | null = null;
+      if (tool?.requiresConfirmation) {
+        const confirmationId = `cfm_${Date.now().toString(36)}_${Math.random()
+          .toString(36)
+          .slice(2, 8)}`;
+        yield {
+          type: 'confirmation_required',
+          id: confirmationId,
+          toolName,
+          args: parsedArgs,
+          sideEffectSummary: tool.sideEffectSummary,
+        };
+
+        let userResponse: { approved: boolean; reason?: string };
+        if (input.confirmationController) {
+          try {
+            userResponse = await input.confirmationController.awaitResponse(
+              confirmationId,
+              toolName,
+            );
+          } catch (err) {
+            // Disconnect / timeout: auto-deny so the run completes.
+            userResponse = { approved: false, reason: 'controller error' };
+          }
+        } else {
+          userResponse = { approved: false, reason: 'no controller (background run)' };
+        }
+
+        if (!userResponse.approved) {
+          result = {
+            error: 'denied by user',
+            denied: true,
+            reason: userResponse.reason ?? 'user clicked Cancel',
+          };
+          toolError = 'denied';
+          // Audit log: AI_TOOL_DENIED
+          confirmedHash = hashArgs(parsedArgs);
+          await writeAiToolAudit({
+            userId: input.userId,
+            toolName,
+            hash: confirmedHash,
+            approved: false,
+            reason: userResponse.reason,
+          }).catch((e) => console.error('[ai] audit log failed:', e));
+          yield { type: 'tool_end', name: toolName, result, error: toolError };
+          // Persist the synthetic denial result and feed back to
+          // the LLM so it can explain to the user.
+          await persistToolPair({
+            conversationId,
+            toolName,
+            parsedArgs,
+            result,
+            hash: confirmedHash,
+          });
+          messages.push({
+            role: 'tool',
+            tool_call_id: tc.id,
+            content: JSON.stringify(result),
+          });
+          continue;
+        }
+        // Approved — fall through to normal execute path below.
+        // Hash and audit BEFORE running so we can correlate the
+        // audit row with the tool_call row in the conversation
+        // (the hash is persisted on both).
+        confirmedHash = hashArgs(parsedArgs);
+        await writeAiToolAudit({
+          userId: input.userId,
+          toolName,
+          hash: confirmedHash,
+          approved: true,
+        }).catch((e) => console.error('[ai] audit log failed:', e));
+      }
       if (!tool) {
         const msg = `Unknown tool: ${toolName}`;
         toolError = msg;
@@ -292,23 +431,15 @@ export async function* runAgentStream(input: AgentRunInput): AsyncGenerator<Stre
       // it from a real reply (which would have prose). See
       // apps/web/src/pages/ai-chat.tsx `isToolMarker` helper — the
       // two pieces of code share an implicit contract.
-      await prisma.conversationMessage.create({
-        data: {
-          conversationId,
-          role: 'assistant',
-          content: `🔧 ${toolName}`,
-          toolName,
-          toolArgs: parsedArgs as never,
-        },
-      });
-      await prisma.conversationMessage.create({
-        data: {
-          conversationId,
-          role: 'tool',
-          content: typeof result === 'string' ? result : JSON.stringify(result),
-          toolName,
-          toolResult: result as never,
-        },
+      // US-C5: if this was a confirmation-required tool, we also
+      // store the confirmation hash so the conversation row can
+      // be joined to the audit log row at replay / debugging time.
+      await persistToolPair({
+        conversationId,
+        toolName,
+        parsedArgs,
+        result,
+        hash: confirmedHash,
       });
 
       // Feed result back to the LLM on the next iteration
@@ -348,3 +479,135 @@ export { SYSTEM_PROMPT } from './prompts';
 export { getAiConfig, invalidateAiConfigCache } from './config';
 export { encryptSecret, decryptSecret, maskApiKey } from './encryption';
 export type { Tool, ToolContext } from './tools';
+
+// =============================================================================
+// US-C5 (Day 17, 2026-06-08) helpers
+// =============================================================================
+
+/**
+ * Stable, short hash of a tool's proposed args. Used to correlate
+ * a `ConversationMessage` row with the matching `AI_TOOL_CONFIRMED`
+ * / `AI_TOOL_DENIED` audit log entry without storing PII in the
+ * audit log itself.
+ *
+ * Format: 16-char hex of SHA-256(JSON.stringify(args)).
+ */
+export function hashArgs(args: unknown): string {
+  const json = JSON.stringify(args ?? null, Object.keys(args as object || {}).sort());
+  return createHash('sha256').update(json).digest('hex').slice(0, 16);
+}
+
+/**
+ * Persist the (assistant tool-call marker, tool result) pair that
+ * the chat UI uses to render the inline tool pill. US-C5 also
+ * stores the confirmation hash on both rows for audit
+ * traceability.
+ */
+async function persistToolPair({
+  conversationId,
+  toolName,
+  parsedArgs,
+  result,
+  hash,
+}: {
+  conversationId: string;
+  toolName: string;
+  parsedArgs: unknown;
+  result: unknown;
+  hash: string | null;
+}): Promise<void> {
+  await prisma.conversationMessage.create({
+    data: {
+      conversationId,
+      role: 'assistant',
+      content: `🔧 ${toolName}`,
+      toolName,
+      toolArgs: parsedArgs as Prisma.InputJsonValue,
+      ...(hash ? { aiToolConfirmationHash: hash } : {}),
+    },
+  });
+  await prisma.conversationMessage.create({
+    data: {
+      conversationId,
+      role: 'tool',
+      content: typeof result === 'string' ? result : JSON.stringify(result),
+      toolName,
+      toolResult: result as Prisma.InputJsonValue,
+      ...(hash ? { aiToolConfirmationHash: hash } : {}),
+    },
+  });
+}
+
+/**
+ * Write a single row to the audit log capturing the user's
+ * decision on a confirmation-required tool call. We use the
+ * `description` field to carry the tool name + a short marker
+ * (`#<hash>`) that the user can grep against the conversation
+ * row's `aiToolConfirmationHash` column.
+ *
+ * Audit log row shape is the same as any other CRM action
+ * (actorId, action, entityType, entityId, description, metadata).
+ * We deliberately do NOT put the full proposed args in `metadata`
+ * to keep the audit log PII-light — the conversation row holds
+ * the args, the audit row holds the hash + decision.
+ */
+async function writeAiToolAudit({
+  userId,
+  toolName,
+  hash,
+  approved,
+  reason,
+}: {
+  userId: string;
+  toolName: string;
+  hash: string;
+  approved: boolean;
+  reason?: string;
+}): Promise<void> {
+  await prisma.auditLog.create({
+    data: {
+      actorId: userId,
+      action: approved ? 'AI_TOOL_CONFIRMED' : 'AI_TOOL_DENIED',
+      resourceType: 'AiTool',
+      resourceId: toolName,
+      description: `${approved ? 'CONFIRMED' : 'DENIED'} ${toolName} #${hash}${reason ? ` (${reason})` : ''}`,
+      metadata: { toolName, confirmationHash: hash } as Prisma.InputJsonValue,
+    },
+  });
+}
+
+/**
+ * Build an in-memory confirmation controller. Each call returns a
+ * fresh controller scoped to one agent run — resolvers are kept on
+ * the closure so responses from the HTTP route can find them.
+ *
+ * The 5-minute timeout matches typical human reaction time for a
+ * confirm dialog; if the user walks away, we auto-deny rather than
+ * holding the connection open indefinitely.
+ */
+export function createConfirmationController(timeoutMs = 5 * 60 * 1000): ConfirmationController {
+  const pending = new Map<string, (r: { approved: boolean; reason?: string }) => void>();
+  return {
+    awaitResponse(id, _toolName) {
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          if (pending.has(id)) {
+            pending.delete(id);
+            reject(new Error(`confirmation ${id} timed out after ${timeoutMs}ms`));
+          }
+        }, timeoutMs);
+        pending.set(id, (r) => {
+          clearTimeout(timer);
+          resolve(r);
+        });
+      });
+    },
+    respond(id, approved, reason) {
+      const resolver = pending.get(id);
+      if (!resolver) return false;
+      pending.delete(id);
+      resolver({ approved, reason });
+      return true;
+    },
+  };
+}

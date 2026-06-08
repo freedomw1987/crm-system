@@ -20,6 +20,26 @@ export interface Tool {
     required?: string[];
   };
   execute: (args: any, ctx: ToolContext) => Promise<unknown>;
+  /**
+   * US-C5 (Day 17, 2026-06-08): if true, the agent loop pauses before
+   * executing this tool and emits a `confirmation_required` SSE event
+   * so the human user can approve or deny. Defaults to false. The
+   * three write tools (`draftQuotation`, `updateDealStage`,
+   * `logActivity`) are the only ones currently flagged true.
+   *
+   * Why a registry-level flag and not a per-call decision: the LLM
+   * should never get to decide whether a mutation is safe — that
+   * decision is a property of the tool itself, not of the prompt
+   * context. A hallucinated "trust me" assertion must not be enough
+   * to skip the guardrail.
+   */
+  requiresConfirmation?: boolean;
+  /**
+   * Optional human-readable description of the side-effect, used by
+   * the frontend's DiffPreview to render the confirmation dialog.
+   * If absent, the tool name + raw args are shown.
+   */
+  sideEffectSummary?: string;
 }
 
 // ============================================================
@@ -210,6 +230,14 @@ const listDeals: Tool = {
 const draftQuotation: Tool = {
   name: 'draft_quotation',
   description: 'Create a draft quotation for a company. Returns the new quotation ID. The quotation is saved as DRAFT status.',
+  // US-C5: the LLM is explicitly NOT trusted to make this call
+  // without a human-in-the-loop sign-off. Even though the quotation
+  // is created in DRAFT status (so it's not yet sent to the
+  // customer), creating a draft still writes a row to the DB, fires
+  // an audit log entry, and consumes a quotation number — all of
+  // which should require explicit intent.
+  requiresConfirmation: true,
+  sideEffectSummary: 'Creates a new quotation row in DRAFT status. Generates a quotation number and writes a QUOTATION_CREATED audit log entry.',
   parameters: {
     type: 'object',
     properties: {
@@ -303,6 +331,12 @@ const draftQuotation: Tool = {
 const logActivity: Tool = {
   name: 'log_activity',
   description: 'Log a sales activity (call, email, meeting, note) against a company, contact, or deal.',
+  // US-C5: even "just" logging an activity writes to the DB and
+  // fires ACTIVITY_CREATED. The user should see what the LLM is
+  // about to attribute to them (e.g. "I called ACME on Tuesday and
+  // discussed Q4 plans") before it's persisted in their name.
+  requiresConfirmation: true,
+  sideEffectSummary: 'Creates a new Activity row attributed to the current user. Visible on the company/contact/deal timeline.',
   parameters: {
     type: 'object',
     properties: {
@@ -485,6 +519,13 @@ const listPipelines: Tool = {
 // the audit trail is intact.
 const updateDealStage: Tool = {
   name: 'update_deal_stage',
+  // US-C5: moving a deal between pipeline stages is one of the
+  // highest-signal mutations in the CRM. The stage drives
+  // forecasting, dashboard counts, and downstream automations; a
+  // hallucinated move would cascade everywhere. Always require
+  // confirmation.
+  requiresConfirmation: true,
+  sideEffectSummary: 'Moves a deal to a different pipeline stage. Affects forecasting, dashboard counts, and writes an Activity for the audit trail.',
   description: 'Move a deal to a different pipeline stage (kanban column). Does not change OPEN/WON/LOST status — that requires explicit close action. Logs an Activity for audit trail.',
   parameters: {
     type: 'object',
