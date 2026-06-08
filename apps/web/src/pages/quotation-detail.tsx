@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Sparkles, User, Printer, Edit, Send, Check, X, Trash2 } from 'lucide-react';
+import { ArrowLeft, Sparkles, User, Printer, Edit, Send, Check, X, Trash2, FileDown, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -23,6 +23,28 @@ export function QuotationDetailPage() {
 
   const [editOpen, setEditOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState<QuotationStatus | null>(null);
+  // 2026-06-07 (US-A5): Excel download state. error shown inline; filename
+  // is the actual file delivered (so toast/tooltip can echo it).
+  const [excelDownloading, setExcelDownloading] = useState(false);
+  const [excelError, setExcelError] = useState<string | null>(null);
+
+  // 2026-06-07 (US-A5): Trigger xlsx download via quotationsApi.downloadExcel.
+  // Resets error on each attempt so a previous failure doesn't bleed across.
+  async function handleDownloadExcel() {
+    if (!id) return;
+    setExcelError(null);
+    setExcelDownloading(true);
+    try {
+      const filename = await quotationsApi.downloadExcel(id, { lang: 'zh', version: 'v2' });
+      console.log('[excel-download] saved as', filename);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setExcelError(msg);
+      console.error('[excel-download] failed:', msg);
+    } finally {
+      setExcelDownloading(false);
+    }
+  }
 
   if (isLoading) return <p>載入中...</p>;
   if (!quotation) return <p>搵唔到呢張報價單</p>;
@@ -189,6 +211,28 @@ export function QuotationDetailPage() {
             <Printer className="h-4 w-4 mr-2" />
             列印
           </Button>
+          {/* 2026-06-07 (US-A5): Download as .xlsx — available for ALL statuses
+              (DRAFT, SENT, ACCEPTED, ...) so sales can re-download historical
+              quotations. Backend route: GET /api/quotations/:id/export-xlsx */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleDownloadExcel}
+            disabled={excelDownloading}
+            data-testid="quotation-download-excel"
+          >
+            {excelDownloading ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <FileDown className="h-4 w-4 mr-2" />
+            )}
+            下載 Excel
+          </Button>
+          {excelError && (
+            <p className="text-sm text-destructive self-center" role="alert">
+              {excelError}
+            </p>
+          )}
           {isDraft && (
             <>
               <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>

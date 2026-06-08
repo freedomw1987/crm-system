@@ -350,3 +350,58 @@ docker exec crm-api bun run /tmp/rg_deal_smoke.ts
 Expected: `=== ALL PASS ===` (10 assertions covering
 POST valid + 3 negative cases + PATCH + DELETE cleanup + audit
 log entry).
+
+---
+
+## RG-2026-06-07-EXPORT-XLSX — `bc-quotation` xlsx helpers must be ported, not proxied
+
+- **Shipped:** 2026-06-07
+- **Files:**
+  - `apps/api/src/lib/excel/{quotation.ts, crm-adapter.ts, helpers/*.ts, constants/*.ts}`
+  - `apps/api/src/lib/excel/assets/{ma_sow, terraMind_server, OCDP_server}.xlsx`
+  - `apps/api/src/routes/quotation.ts` (route handler)
+  - `apps/web/src/lib/api.ts` (`quotationsApi.downloadExcel`)
+  - `apps/web/src/pages/quotation-detail.tsx` (button)
+- **Status:** ✅ Fixed (port-and-adapt path chosen over the proxy-to-bc-quotation
+  path, see the original question in the conversation for rationale)
+
+### Root cause
+
+CRM had no Quotation Excel export. The user requested parity with the
+legacy `~/www/bc-quotation` system. Two options were considered:
+
+1. **Proxy** the CRM request to bc-quotation's `/download?rowid=<BoardProId>`.
+   This requires every CRM Quotation to carry a BoardPro rowid and adds
+   a runtime HTTP dependency on a service that is being phased out.
+2. **Port** the 5 worksheet helpers (1:1 source copy) into CRM and
+   adapt Prisma's `Quotation + QuotationItem + Company + User` shape into
+   the bc-quotation shape that the helpers consume.
+
+Option 2 was chosen because it makes the CRM self-contained, removes
+the runtime dependency, and avoids the data-sync burden of keeping
+CRM `quotationId ↔ BoardPro rowid` in step.
+
+### Invariant
+
+> **CRM `GET /api/quotations/:id/export-xlsx` must produce a .xlsx whose
+> 5 worksheets are byte-for-byte equivalent (modulo the dynamic cell
+> values) to what `bc-quotation` produced for the same data.** A change
+> that drops a worksheet, removes a column, or renames a worksheet must
+> be flagged in the PR description with a before/after diff of the
+> generated xlsx structure.
+
+### Prevention
+
+- A `crm-adapter.test.ts` (Bun test) snapshots the shape that
+  `adaptCrmQuotationForExcel` produces for 3 fixture scenarios
+  (product-only, service-only, mixed). If a future refactor changes
+  the field names or units, the snapshot test will fail and force
+  the author to update the snapshot.
+- The 3 xlsx templates (`ma_sow`, `terraMind_server`, `OCDP_server`)
+  are committed as binary files. A change to one of them must be
+  accompanied by an update to the corresponding layout spec in
+  `docs/architecture/0007-quotation-excel.md` (TODO US-A6).
+- Adding a new worksheet? Add a new branch in
+  `apps/api/src/lib/excel/quotation.ts`'s `generateQuotationExcel()`
+  **and** add a row to the smoke test fixture so the new worksheet
+  shows up in the next `/tmp/quotation-smoke.xlsx` run.

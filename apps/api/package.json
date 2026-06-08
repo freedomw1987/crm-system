@@ -13,15 +13,19 @@
     "test:watch": "bun test --watch"
   },
   "dependencies": {
+    "@crm/ai": "workspace:*",
     "@crm/db": "workspace:*",
     "@crm/shared": "workspace:*",
-    "@crm/ai": "workspace:*",
     "@elysiajs/cors": "^1.2.0",
     "@elysiajs/jwt": "^1.2.0",
     "elysia": "^1.2.0",
+    "lodash": "^4.17.23",
+    "moment": "^2.30.1",
+    "xlsx-js-style": "^1.2.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "@types/bun": "^1.1.13"
+    "@types/bun": "^1.1.13",
+    "@types/lodash": "^4.17.23"
   }
 }

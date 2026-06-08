@@ -158,6 +158,37 @@
 
 ### DELETE /quotations/:id
 
+### GET /quotations/:id/export-xlsx
+- **Auth:** `quotation:read` (same as `GET /:id`)
+- **Query:**
+  - `lang` — `"zh"` (default) | `"en"` — controls which `product_name*` /
+    `notice*` / `sow*` / `assumption*` field to display.
+  - `version` — `"v2"` (default) | `"v1"` — selects the price column set.
+    `v2` uses `unit_price` / `subtotal` / `sales_cost`; `v1` uses the
+    `*_v1` suffixed snapshot columns (legacy, kept for backward compat with
+    `bc-quotation`'s old price-card layout).
+- **200:** `Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
+  with `Content-Disposition: attachment; filename="<quotation.number>.xlsx"`.
+  Body is the binary `.xlsx` buffer (typically 30-50 KB).
+- **404:** `{ error: "Quotation not found" }`
+- **Audit log:** writes a `QUOTATION_EXPORTED_XLSX` row with metadata
+  `{ number, lang, version, fileSize }`. Best-effort — failure to log does
+  NOT block the download.
+- **Worksheets produced (in order):**
+  1. `Quotation` — header (date, revision, ref, customer, sales, region,
+     currency) + line items table + grand total.
+  2. `SOW Details` — one row per non-MA line item with its SOW description.
+  3. `Assumption` — deduped list of assumptions (one per line) from all
+     line items that have non-empty `assumption`.
+  4. `MA Details` — only included if any line item has `product.sku === "Barco-MA"`.
+  5. `Server Requirements` — only included if any line item has
+     `product.sku === "Barco-LIC-TM"` or `Barco-LIC-OCDP`. Combines both
+     templates with a blank separator row.
+- **Implementation:** see `apps/api/src/lib/excel/{quotation.ts, crm-adapter.ts,
+  helpers/*_worksheet.ts}`. The Excel generation is a 1:1 port of
+  `~/www/bc-quotation/src/{quotation.ts, helpers/*_worksheet.ts}` —
+  the only new code is the Prisma-to-bc-shape adapter.
+
 ## Products
 
 ### GET /products

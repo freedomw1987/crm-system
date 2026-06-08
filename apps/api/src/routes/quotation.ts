@@ -4,6 +4,9 @@ import { prisma } from '@crm/db';
 import { authContext } from '../lib/context';
 import { logEvent } from '../middleware/audit';
 import { toIdArray } from '../lib/query-helpers';
+// 2026-06-07 (US-A5): port 落 CRM 嘅 Excel 5-sheet generator + Prisma adapter
+import { adaptCrmQuotationForExcel } from '../lib/excel/crm-adapter';
+import { generateQuotationExcel } from '../lib/excel/quotation';
 
 // Quotation number generator (Q-YYYY-NNNN)
 async function nextQuotationNumber(): Promise<string> {
@@ -214,6 +217,61 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
     });
     if (!q) { set.status = 404; return { error: 'Not found' }; }
     return q;
+  })
+  // 2026-06-07 (US-A5): Download Quotation as .xlsx (5 worksheets, bc-quotation
+  // format). GET /api/quotations/:id/export-xlsx?lang=zh&version=v2
+  // Returns binary xlsx with filename = quotation.number (e.g., Q-2026-0001.xlsx).
+  // Any authenticated user with read access to the quotation can download —
+  // no extra permission gate, since GET /:id is also open to authenticated
+  // users. (RBAC 係 sales rep 同 admin 已經有 read, sales rep 下屬之間 read
+  // 嘅 scope 跟現有 GET /:id 嘅 include 邏輯。)
+  .get('/:id/export-xlsx', async ({ params, query, set, userId, request }) => {
+    const lang = (query.lang ?? 'zh') as 'zh' | 'en';
+    const version = (query.version ?? 'v2') as 'v1' | 'v2';
+    const q = await prisma.quotation.findUnique({
+      where: { id: params.id },
+      include: {
+        company: { include: { region: true } },
+        createdBy: { select: { id: true, name: true, email: true } },
+        deal: { select: { id: true, title: true } },
+        items: {
+          orderBy: { position: 'asc' },
+          include: {
+            product: true,
+            service: { include: { manDayLines: true } },
+          },
+        },
+      },
+    });
+    if (!q) { set.status = 404; return { error: 'Quotation not found' }; }
+    const flat = adaptCrmQuotationForExcel(q);
+    const buffer = generateQuotationExcel(flat, lang, version);
+    const filename = `${q.number.replace(/[\/\\:]/g, '-')}.xlsx`;
+    // Audit (best-effort — 唔 blocking 個 download)
+    if (userId) {
+      logEvent({
+        actorId: userId,
+        action: 'QUOTATION_EXPORTED_XLSX',
+        resourceType: 'quotation',
+        resourceId: q.id,
+        description: `Exported quotation ${q.number} as xlsx (${lang}/${version})`,
+        metadata: { number: q.number, lang, version, fileSize: buffer.length },
+        request,
+      }).catch((err) => console.error('audit log failed:', err));
+    }
+    return new Response(buffer, {
+      headers: {
+        'Content-Type':
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Content-Length': String(buffer.length),
+      },
+    });
+  }, {
+    query: t.Object({
+      lang: t.Optional(t.UnionEnum(['zh', 'en'])),
+      version: t.Optional(t.UnionEnum(['v1', 'v2'])),
+    }),
   })
   .post('/', async ({ body, userId, set, request }) => {
     if (!userId) { set.status = 401; return { error: 'Unauthorized' }; }

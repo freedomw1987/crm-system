@@ -38,6 +38,66 @@
   - [ ] Status flow: DRAFT → SENT → VIEWED → ACCEPTED / REJECTED → INVOICED
   - [ ] Print-ready PDF
 
+### US-A5: Sales rep can download a Quotation as a 5-worksheet Excel file
+- **Status:** 🟨 PARTIAL (shipped with known content gaps — see Gaps)
+- **Priority:** P1
+- **Date added:** 2026-06-07
+- **As a** sales rep, **I want to** download a Quotation as a 5-worksheet
+  .xlsx (Quotation / SOW Details / Assumption / MA Details / Server Requirements)
+  in the same format Barco's legacy `bc-quotation` system produced, **so that**
+  I can re-send a polished Excel to the customer without leaving the CRM.
+- **Acceptance:**
+  - [x] `GET /api/quotations/:id/export-xlsx?lang=zh&version=v2` returns a
+        valid `.xlsx` file (Content-Type
+        `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`,
+        Content-Disposition `attachment; filename="<quotation.number>.xlsx"`).
+  - [x] Workbook contains all 5 worksheets (Quotation / SOW Details /
+        Assumption / MA Details / Server Requirements) in the same layout as
+        `bc-quotation` (1:1 port of `src/helpers/*_worksheet.ts`).
+  - [x] Quotation-detail page has a "⬇️ 下載 Excel" button next to "列印",
+        available for **all** statuses (DRAFT / SENT / ACCEPTED / REJECTED /
+        EXPIRED / INVOICED).
+  - [x] Audit-log entry `QUOTATION_EXPORTED_XLSX` written for each download
+        (best-effort, does not block the response).
+  - [x] Authentication required: any user who can `GET /:id` can download
+        (read-scope matches existing GET /:id).
+  - [ ] **GAPS (carried over to US-A6, see Notes):**
+        CRM `QuotationItem` is missing the `notice / sow / assumption / sector /
+        isOptional / isIncluded / salesCost / barcoSaleCost` fields that the
+        bc-quotation format expects. Adapter hard-codes these to `""` / `0`
+        for now. US-A6 will add the missing schema fields and re-derive them
+        from `Product` / `QuotationItem` so the Excel content is fully
+        populated.
+- **Implementation notes:**
+  - Ported source from `~/www/bc-quotation/src/{quotation.ts, helpers/*_worksheet.ts,
+    constants/worksheet_field.ts}` into `apps/api/src/lib/excel/`.
+  - 3 xlsx templates (`ma_sow.xlsx`, `terraMind_server.xlsx`, `OCDP_server.xlsx`)
+    copied into `apps/api/src/lib/excel/assets/`.
+  - `ma_worksheet.ts` / `server_worksheet.ts` use `import.meta.url` to resolve
+    the assets directory at runtime (bc-quotation used `path.resolve("assets/...")`
+    which assumed cwd was project root — broken in Docker / Elysia).
+  - New `crm-adapter.ts` flattens Prisma's `Quotation + items[].product/service +
+    company.region + createdBy` into the shape that bc-quotation's 5 worksheet
+    helpers consume. Region label maps CRM `Region.code` to the bc-quotation
+    strings (`"HK 香港"` / `"MO 澳門"` / `"CN 中國"` / `"OTHER 其他"`).
+  - Sales-cost derivation: PRODUCT → `product.costPrice`; SERVICE →
+    `costSnapshot / qty` (per-man-day) + `costSnapshot` (line subtotal),
+    matching the bc-quotation `sales_cost` vs `sales_cost_subtotal` semantics.
+  - `Region` is queried via `prisma.company.findUnique({ include: { region: true } })`
+    to handle multi-currency correctly. Falls back to `"OTHER 其他"` for
+    companies without a region FK.
+  - Frontend `quotationsApi.downloadExcel()` uses raw `fetch` (the standard
+    `request<T>` helper hard-codes `application/json` Content-Type which is
+    wrong for binary downloads). Triggers a browser download dialog via
+    `URL.createObjectURL(blob)` + temporary `<a download>` click.
+- **Risk / known limitations:**
+  - 1 unit test written for the adapter; integration test for the endpoint
+    pending — must run with a real DB to exercise the audit log + RBAC path.
+  - The MA Details / Server Requirements worksheets are still loaded from
+    the 3 template xlsx files; the templates are not under version control
+    diff (binary), so any layout change to those sheets requires a manual
+    re-export from the original `bc-quotation` repo.
+
 ## Epic B — Admin operations
 
 ### US-B1: Admin can manage users and roles

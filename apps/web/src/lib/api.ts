@@ -352,6 +352,39 @@ export const quotationsApi = {
     request<{ success: boolean }>(`/quotations/${quotationId}/items/${itemId}`, { method: 'DELETE' }),
   setStatus: (id: string, status: Quotation['status']) =>
     request<Quotation>(`/quotations/${id}/status`, { method: 'POST', body: JSON.stringify({ status }) }),
+  // 2026-06-07 (US-A5): Download quotation as .xlsx (5 worksheets, bc-quotation
+  // format). Uses raw fetch because the response is binary, not JSON.
+  // Calls window.URL.createObjectURL to trigger a browser download dialog.
+  downloadExcel: async (id: string, opts: { lang?: 'zh' | 'en'; version?: 'v1' | 'v2' } = {}) => {
+    const qs = new URLSearchParams();
+    qs.set('lang', opts.lang ?? 'zh');
+    qs.set('version', opts.version ?? 'v2');
+    const token = getToken();
+    const r = await fetch(`${API_BASE}/quotations/${id}/export-xlsx?${qs}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!r.ok) {
+      const errBody = await r.text().catch(() => '');
+      throw new Error(`Excel download failed (${r.status}): ${errBody}`);
+    }
+    const blob = await r.blob();
+    // 2026-06-07: prefer backend-set filename (Content-Disposition), fall
+    // back to a sensible default.
+    const cd = r.headers.get('content-disposition') ?? '';
+    const m = cd.match(/filename="?([^"]+)"?/);
+    const filename = m?.[1] ?? `quotation-${id}.xlsx`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    // 2026-06-07: defer revoke to next tick so the browser has time to
+    // dispatch the download event.
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+    return filename;
+  },
 };
 
 // ---------- Deals ----------

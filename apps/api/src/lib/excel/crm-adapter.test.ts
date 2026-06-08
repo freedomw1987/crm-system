@@ -1,0 +1,193 @@
+/**
+ * Unit tests for crm-adapter → bc-quotation shape conversion.
+ * 2026-06-07 (US-A5, RG-2026-06-07-EXPORT-XLSX):
+ *   Snapshots the shape of `adaptCrmQuotationForExcel` for 3 fixture scenarios
+ *   to lock in the field names / units that the 5 worksheet helpers consume.
+ *   If a future refactor renames a field, the snapshot will fail and force
+ *   the author to update it explicitly.
+ */
+import { describe, expect, test } from "bun:test";
+import { adaptCrmQuotationForExcel } from "./crm-adapter";
+
+// ---------------------------------------------------------------------------
+// Fixture builders
+// ---------------------------------------------------------------------------
+
+function makeBaseQuotation(overrides: any = {}): any {
+  return {
+    id: "cuid_q1",
+    number: "Q-2026-0001",
+    title: "Acme AI Upgrade",
+    total: 150000,
+    currency: "HKD",
+    createdAt: new Date("2026-06-07T10:00:00Z"),
+    company: {
+      name: "Acme Corp",
+      region: { code: "HK", name: "Hong Kong" },
+    },
+    createdBy: { id: "u1", name: "David Chu", email: "david@example.com" },
+    deal: { title: "Acme AI Q3 Deal" },
+    items: [],
+    ...overrides,
+  };
+}
+
+function productItem(overrides: any = {}): any {
+  return {
+    id: "item_p1",
+    itemType: "PRODUCT",
+    name: "ClickShare CX-50",
+    product: { sku: "Barco-CX-50", name: "ClickShare CX-50", category: "Hardware", costPrice: 8000 },
+    service: null,
+    quantity: 2,
+    unitPrice: 12000,
+    discount: 0,
+    lineTotal: 24000,
+    costSnapshot: 0,
+    position: 0,
+    ...overrides,
+  };
+}
+
+function serviceItem(overrides: any = {}): any {
+  return {
+    id: "item_s1",
+    itemType: "SERVICE",
+    name: "Senior Engineer Implementation",
+    product: null,
+    service: { name: "Senior Engineer Implementation", description: "10 days" },
+    quantity: 10,
+    unitPrice: 5000,
+    discount: 0,
+    lineTotal: 50000,
+    // CRM stores costSnapshot = costPerManDay * qty. For 10 days at
+    // 300 costRate/man-day → costSnapshot = 3000.
+    costSnapshot: 3000,
+    position: 1,
+    ...overrides,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+describe("adaptCrmQuotationForExcel", () => {
+  test("header: maps Prisma fields → bc-quotation top-level fields", () => {
+    const q = makeBaseQuotation();
+    const flat = adaptCrmQuotationForExcel(q);
+    expect(flat.auto_increment).toBe("Q-2026-0001"); // uses quotation.number as file-name-equivalent
+    expect(flat.client_name).toBe("Acme Corp");
+    expect(flat.sales_name).toBe("David Chu");
+    expect(flat.sales_email).toBe("david@example.com");
+    expect(flat.region).toEqual([{ value: "HK 香港" }]); // bc-quotation region label
+    expect(flat.project_name).toBe("Acme AI Upgrade");
+    expect(flat.total_price).toBe(150000);
+    expect(flat._createdAt).toBeInstanceOf(Date);
+    expect(flat.revision).toBe("0"); // CRM 冇 revision, 預設 0
+  });
+
+  test("region label: maps all 4 Region.code values to bc-quotation labels", () => {
+    for (const [code, expected] of [
+      ["HK", "HK 香港"],
+      ["MO", "MO 澳門"],
+      ["CN", "CN 中國"],
+      ["OTHER", "OTHER 其他"],
+    ] as const) {
+      const q = makeBaseQuotation({ company: { name: "X", region: { code, name: code } } });
+      const flat = adaptCrmQuotationForExcel(q);
+      expect(flat.region[0].value).toBe(expected);
+    }
+  });
+
+  test("region label: falls back to 'OTHER 其他' when region FK is null", () => {
+    const q = makeBaseQuotation({ company: { name: "X", region: null, customRegion: null } });
+    const flat = adaptCrmQuotationForExcel(q);
+    expect(flat.region[0].value).toBe("OTHER 其他");
+  });
+
+  test("PRODUCT line: salesCost = product.costPrice, subtotal = costPrice * qty", () => {
+    const q = makeBaseQuotation({ items: [productItem()] });
+    const flat = adaptCrmQuotationForExcel(q);
+    expect(flat.QuotationItem).toHaveLength(1);
+    const item = flat.QuotationItem[0];
+    expect(item.sku).toBe("Barco-CX-50");
+    expect(item.product_name).toBe("ClickShare CX-50");
+    expect(Number(item.sales_cost)).toBe(8000);
+    expect(Number(item.sales_cost_subtotal)).toBe(16000); // 8000 * 2
+    expect(Number(item.subtotal)).toBe(24000);
+    expect(item.is_included).toBe("0");
+  });
+
+  test("SERVICE line: salesCost = costSnapshot / qty, subtotal = costSnapshot", () => {
+    const q = makeBaseQuotation({ items: [serviceItem()] });
+    const flat = adaptCrmQuotationForExcel(q);
+    const item = flat.QuotationItem[0];
+    // 2026-06-07: services have no SKU in CRM, so we leave it blank
+    // (avoids emitting fake "SVC-xxx" data into the Excel).
+    expect(item.sku).toBe("");
+    // costSnapshot=3000, qty=10 → salesCost (per-man-day) = 300
+    expect(Number(item.sales_cost)).toBe(300);
+    // sales_cost_subtotal (whole-line cost) = costSnapshot = 3000
+    expect(Number(item.sales_cost_subtotal)).toBe(3000);
+    expect(item.sow).toBe("10 days"); // pulled from service.description
+  });
+
+  test("SERVICE line: prevents qty=0 division-by-zero", () => {
+    const q = makeBaseQuotation({ items: [serviceItem({ quantity: 0, lineTotal: 0, costSnapshot: 0 })] });
+    const flat = adaptCrmQuotationForExcel(q);
+    expect(Number(flat.QuotationItem[0].sales_cost)).toBe(0);
+    expect(Number(flat.QuotationItem[0].sales_cost_subtotal)).toBe(0);
+  });
+
+  test("mixed: aggregates sales_cost_total across product + service", () => {
+    const q = makeBaseQuotation({ items: [productItem(), serviceItem()] });
+    const flat = adaptCrmQuotationForExcel(q);
+    expect(flat.QuotationItem).toHaveLength(2);
+    // 16000 (product) + 3000 (service line subtotal) = 19000
+    expect(flat.sales_cost_total).toBe(19000);
+  });
+
+  test("is_optional heuristic: discount > 0 → '1'", () => {
+    const q = makeBaseQuotation({
+      items: [productItem({ discount: 10, lineTotal: 21600, unitPrice: 12000 })],
+    });
+    const flat = adaptCrmQuotationForExcel(q);
+    expect(flat.QuotationItem[0].is_optional).toBe("1");
+  });
+
+  test("is_optional: discount = 0 → '0'", () => {
+    const q = makeBaseQuotation({ items: [productItem()] });
+    const flat = adaptCrmQuotationForExcel(q);
+    expect(flat.QuotationItem[0].is_optional).toBe("0");
+  });
+
+  test("index: 1-based by position, sorted", () => {
+    const a = productItem({ id: "a", position: 2 });
+    const b = serviceItem({ id: "b", position: 0 });
+    const c = productItem({ id: "c", position: 1 });
+    const q = makeBaseQuotation({ items: [a, b, c] });
+    const flat = adaptCrmQuotationForExcel(q);
+    expect(flat.QuotationItem.map((i) => i.index)).toEqual(["1", "2", "3"]);
+    // After sorting by position: b (svc, pos=0) → c (prod, pos=1) → a (prod, pos=2)
+    expect(flat.QuotationItem[0].sku).toBe(""); // b: service → blank
+    expect(flat.QuotationItem[1].sku).toBe("Barco-CX-50"); // c
+    expect(flat.QuotationItem[2].sku).toBe("Barco-CX-50"); // a
+  });
+
+  test("gap fields: notice/assumption/barco_sale_cost hard-coded (US-A6 will fix)", () => {
+    // 2026-06-07: these are BoardPro-only fields, CRM has no equivalent yet.
+    //   We document the hard-coded values so a future US-A6 PR can find them.
+    const q = makeBaseQuotation({ items: [productItem(), serviceItem()] });
+    const flat = adaptCrmQuotationForExcel(q);
+    for (const item of flat.QuotationItem) {
+      expect(item.notice).toBe("");
+      expect(item.notice_en).toBe("");
+      expect(item.assumption).toBe("");
+      expect(item.assumption_en).toBe("");
+      expect(item.barco_sale_cost).toBe(0);
+      expect(item.barco_sale_cost_subtotal).toBe(0);
+      expect(item.is_included).toBe("0");
+    }
+  });
+});
