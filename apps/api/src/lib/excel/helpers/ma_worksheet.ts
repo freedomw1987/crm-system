@@ -1,5 +1,5 @@
 import * as XLSXStyle from "xlsx-js-style";
-import { WorkSheet } from "xlsx-js-style";
+import type { WorkSheet } from "xlsx-js-style";
 import path from "path";
 import { fileURLToPath } from "url";
 

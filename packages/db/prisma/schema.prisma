@@ -775,6 +775,21 @@ enum AuditAction {
   DEAL_CREATED
   DEAL_UPDATED
   DEAL_DELETED
+  // P1-1 (2026-06-08): deal stage transitions need their own action
+  // for the stage-history diff in the audit log UI.
+  DEAL_STAGE_CHANGED
+  // P1-1 (2026-06-08): region CRUD was using strings not in the
+  // enum, so TS errored at the call sites. Add proper enum values.
+  REGION_CREATED
+  REGION_UPDATED
+  REGION_DELETED
+  // P1-1 (2026-06-08): settings CRUD was using 'CREATE' / 'UPDATE'
+  // / 'DELETE' as raw strings (overloaded across multiple resource
+  // types). Add proper enum values; future code should prefer
+  // resource-specific actions.
+  CREATE
+  UPDATE
+  DELETE
   // Service catalogue (Day 7)
   SERVICE_CREATED
   SERVICE_UPDATED

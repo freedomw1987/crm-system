@@ -351,7 +351,11 @@ const logActivity: Tool = {
     required: ['type', 'subject'],
   },
   execute: async (args, ctx) => {
-    return prisma.activityLog.create({
+    // P1-1 (2026-06-08): schema model is `Activity`, so the Prisma
+    // client delegate is `prisma.activity`, not `prisma.activityLog`.
+    // The previous identifier was a latent typecheck error that would
+    // have produced a 500 the first time the AI tool was invoked.
+    return prisma.activity.create({
       data: {
         type: args.type,
         subject: args.subject,

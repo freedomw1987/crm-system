@@ -38,7 +38,15 @@ export const contactRoutes = new Elysia({ prefix: '/contacts', tags: ['contacts'
   .get('/:id', async ({ params, set }) => {
     const c = await prisma.contact.findUnique({
       where: { id: params.id },
-      include: { company: true, addresses: true, activities: { take: 20 } },
+      // P1-1 (2026-06-08): drop `activities` from the include. The
+      // Prisma model has no direct Activity relation (see the comment
+      // block in schema.prisma: "activities are attached at the
+      // Company or Deal level only"). The previous code was a latent
+      // typecheck error masked by `@ts-nocheck`; in production it
+      // would have crashed the first time a Contact detail page
+      // was opened. Activity lookups should go through the parent
+      // Company (via `?companyId=` filter) or Deal instead.
+      include: { company: true, addresses: true },
     });
     if (!c) { set.status = 404; return { error: 'Not found' }; }
     return c;

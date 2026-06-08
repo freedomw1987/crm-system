@@ -1,4 +1,4 @@
-import { WorkSheet } from "xlsx-js-style";
+import type { WorkSheet } from "xlsx-js-style";
 
 /**
  * 輔助函數：設置單元格值

@@ -27,10 +27,14 @@ ALTER TYPE "AuditAction" ADD VALUE IF NOT EXISTS 'AI_TOOL_DENIED';
 
 -- ---------------------------------------------------------------------------
 -- Block 2: ConversationMessage.aiToolConfirmationHash
--- ---------------------------------------------------------------------------
--- Nullable so the column is non-breaking for existing rows. Populated by
--- the backend (`packages/ai/src/index.ts`) at the moment a tool is
--- executed (after confirmation) or denied. Format: 16-char hex of the
--- SHA-256 of the JSON-serialised args (first 8 bytes).
-ALTER TABLE "ConversationMessage"
+--
+-- NOTE (2026-06-08): the init migration created this table with the
+-- snake_case name `"conversation_messages"`, but the Prisma model is
+-- `ConversationMessage`. Prisma's client code emits the PascalCase
+-- identifier in queries and PG's case-folding handles it because
+-- Prisma-generated queries go through the lowercased identifier
+-- (and the model's generated SQL is consistent). HOWEVER, raw SQL
+-- in this migration must reference the actual on-disk name. We
+-- use `"conversation_messages"` here to match what init created.
+ALTER TABLE "conversation_messages"
   ADD COLUMN IF NOT EXISTS "aiToolConfirmationHash" TEXT;

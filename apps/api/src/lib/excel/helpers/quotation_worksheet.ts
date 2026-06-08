@@ -1,6 +1,6 @@
 import _ from "lodash";
 import moment from "moment";
-import { WorkSheet } from "xlsx-js-style";
+import type { WorkSheet } from "xlsx-js-style";
 import { setCellValue } from "./table";
 import {
   titleStyle,

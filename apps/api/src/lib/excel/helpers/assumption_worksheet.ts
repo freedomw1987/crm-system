@@ -1,5 +1,5 @@
 import _ from "lodash";
-import { WorkSheet } from "xlsx-js-style";
+import type { WorkSheet } from "xlsx-js-style";
 import { setCellValue } from "./table";
 import { tableCellStyle, tableHeaderStyle } from "./table-style";
 
