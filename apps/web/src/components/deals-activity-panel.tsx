@@ -21,11 +21,12 @@
 
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { StickyNote, Phone, Mail, Calendar, Paperclip, Filter, X } from 'lucide-react';
+import { StickyNote, Phone, Mail, Calendar, Paperclip, Filter, X, Download, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, Label } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { activitiesApi, usersApi, type Activity, type ActivityType } from '@/lib/api';
+import { activitiesApi, usersApi, type Activity, type ActivityType, type Attachment } from '@/lib/api';
+import { downloadAttachment } from '@/lib/attachment-download';
 
 const TYPE_META: Record<ActivityType, { icon: typeof StickyNote; label: string; color: string }> = {
   NOTE:    { icon: StickyNote, label: '備註',   color: 'text-slate-500' },
@@ -88,6 +89,26 @@ export function DealsActivityPanel() {
   });
   const items: Activity[] = data?.items ?? [];
   const hasFilter = !!authorId || window !== 'week';
+
+  // Per-attachment download state. Kept at panel level (not per-row)
+  // so the set of busy ids is shared across the whole pipeline view
+  // and survives re-renders triggered by the filter changes above.
+  const [busyAtt, setBusyAtt] = useState<Record<string, boolean>>({});
+
+  async function handleDownload(att: Attachment) {
+    setBusyAtt((b) => ({ ...b, [att.id]: true }));
+    try {
+      await downloadAttachment(att);
+    } catch (e) {
+      // Download util already throws with a descriptive message; show
+      // it briefly via alert so the user knows why nothing happened.
+      // Use globalThis because the local `window` state shadows the
+      // browser window in this file's scope.
+      globalThis.alert(e instanceof Error ? e.message : '下載失敗');
+    } finally {
+      setBusyAtt((b) => ({ ...b, [att.id]: false }));
+    }
+  }
 
   return (
     <Card>
@@ -179,12 +200,22 @@ export function DealsActivityPanel() {
                     {a.attachments && a.attachments.length > 0 && (
                       <div className="flex flex-wrap gap-1.5 pt-0.5">
                         {a.attachments.map((att) => (
-                          <span
+                          <button
                             key={att.id}
-                            className="inline-flex items-center gap-1 text-[10px] bg-muted px-1.5 py-0.5 rounded text-muted-foreground"
+                            type="button"
+                            onClick={() => handleDownload(att)}
+                            disabled={!!busyAtt[att.id]}
+                            title={`下載 ${att.fileName}`}
+                            className="inline-flex items-center gap-1 text-[10px] bg-muted px-1.5 py-0.5 rounded text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
                           >
-                            <Paperclip className="h-2.5 w-2.5" /> {att.fileName}
-                          </span>
+                            {busyAtt[att.id] ? (
+                              <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                            ) : (
+                              <Paperclip className="h-2.5 w-2.5" />
+                            )}
+                            {att.fileName}
+                            <Download className="h-2.5 w-2.5" />
+                          </button>
                         ))}
                       </div>
                     )}

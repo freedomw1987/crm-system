@@ -20,7 +20,8 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Paperclip, Download, FileText, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { attachmentsApi, getToken, type Attachment } from '@/lib/api';
+import { attachmentsApi, type Attachment } from '@/lib/api';
+import { downloadAttachment } from '@/lib/attachment-download';
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -45,31 +46,11 @@ export function AttachmentList({ companyId }: AttachmentListProps) {
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function downloadOne(att: Attachment) {
+  async function handleDownload(att: Attachment) {
     setError(null);
     setDownloadingId(att.id);
     try {
-      const token = getToken();
-      const res = await fetch(`/api/attachments/${att.id}/download`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      });
-      if (!res.ok) {
-        throw new Error(`Download failed (${res.status})`);
-      }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      // Trust the backend's Content-Disposition filename, but fall back
-      // to the metadata fileName if the header is missing.
-      const dispo = res.headers.get('content-disposition') ?? '';
-      const m = dispo.match(/filename="?([^";]+)"?/i);
-      a.download = m?.[1] ?? att.fileName;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      // Defer revoke so Safari has time to start the download.
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      await downloadAttachment(att);
     } catch (e) {
       setError(e instanceof Error ? e.message : '下載失敗');
     } finally {
@@ -108,7 +89,7 @@ export function AttachmentList({ companyId }: AttachmentListProps) {
                 </div>
                 <button
                   type="button"
-                  onClick={() => downloadOne(att)}
+                  onClick={() => handleDownload(att)}
                   disabled={downloadingId === att.id}
                   className="inline-flex items-center gap-1 text-sm text-primary hover:underline shrink-0 disabled:opacity-50"
                   title="下載"

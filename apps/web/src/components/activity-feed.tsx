@@ -24,12 +24,13 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { StickyNote, Phone, Mail, Calendar, Paperclip, Trash2, Send, X, FileText } from 'lucide-react';
+import { StickyNote, Phone, Mail, Calendar, Paperclip, Trash2, Send, X, FileText, Download, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/input';
-import { activitiesApi, attachmentsApi, type Activity, type ActivityType } from '@/lib/api';
+import { activitiesApi, attachmentsApi, type Activity, type ActivityType, type Attachment } from '@/lib/api';
+import { downloadAttachment } from '@/lib/attachment-download';
 
 const TYPE_META: Record<ActivityType, { icon: typeof StickyNote; label: string; color: string }> = {
   NOTE:    { icon: StickyNote, label: '備註',     color: 'text-slate-500' },
@@ -130,6 +131,28 @@ function ActivityList({ items, isLoading }: { items: Activity[]; isLoading: bool
 function ActivityItem({ activity }: { activity: Activity }) {
   const meta = TYPE_META[activity.type] ?? TYPE_META.NOTE;
   const Icon = meta.icon;
+  // Track per-attachment busy state so multiple attachments in the same
+  // activity can be downloaded independently. Errors are kept as
+  // {id, message} so the chip itself can show the failure inline.
+  const [busy, setBusy] = useState<Record<string, boolean>>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  async function handleDownload(att: Attachment) {
+    setBusy((b) => ({ ...b, [att.id]: true }));
+    setErrors((e) => {
+      if (!(att.id in e)) return e;
+      const { [att.id]: _omit, ...rest } = e;
+      return rest;
+    });
+    try {
+      await downloadAttachment(att);
+    } catch (e) {
+      setErrors((prev) => ({ ...prev, [att.id]: e instanceof Error ? e.message : '下載失敗' }));
+    } finally {
+      setBusy((b) => ({ ...b, [att.id]: false }));
+    }
+  }
+
   return (
     <li className="flex gap-3 p-3 rounded-lg border bg-card">
       <div className={`shrink-0 mt-0.5 ${meta.color}`}>
@@ -155,13 +178,28 @@ function ActivityItem({ activity }: { activity: Activity }) {
         {activity.attachments && activity.attachments.length > 0 && (
           <ul className="flex flex-wrap gap-1.5 pt-1">
             {activity.attachments.map((att) => (
-              <li
-                key={att.id}
-                className="inline-flex items-center gap-1 text-xs bg-muted px-2 py-1 rounded"
-              >
-                <FileText className="h-3 w-3 text-muted-foreground" />
-                <span className="truncate max-w-[200px]">{att.fileName}</span>
-                <span className="text-muted-foreground">{formatBytes(att.sizeBytes)}</span>
+              <li key={att.id} className="flex flex-col">
+                <button
+                  type="button"
+                  onClick={() => handleDownload(att)}
+                  disabled={!!busy[att.id]}
+                  title={`下載 ${att.fileName}`}
+                  className="inline-flex items-center gap-1 text-xs bg-muted px-2 py-1 rounded hover:bg-muted/70 transition-colors disabled:opacity-50"
+                >
+                  {busy[att.id] ? (
+                    <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+                  ) : (
+                    <FileText className="h-3 w-3 text-muted-foreground" />
+                  )}
+                  <span className="truncate max-w-[200px]">{att.fileName}</span>
+                  <span className="text-muted-foreground">{formatBytes(att.sizeBytes)}</span>
+                  <Download className="h-3 w-3 text-muted-foreground" />
+                </button>
+                {errors[att.id] && (
+                  <span className="text-[10px] text-destructive mt-0.5 px-1">
+                    {errors[att.id]}
+                  </span>
+                )}
               </li>
             ))}
           </ul>
