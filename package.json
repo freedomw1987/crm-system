@@ -18,7 +18,9 @@
     "db:generate": "bun --filter '@crm/db' generate",
     "db:migrate": "bun --filter '@crm/db' migrate",
     "db:seed": "bun --filter '@crm/db' seed",
-    "db:studio": "bun --filter '@crm/db' studio"
+    "db:studio": "bun --filter '@crm/db' studio",
+    "verify": "bun install --frozen-lockfile && bun run --filter '@crm/web' test && bun run --filter '@crm/web' build && bun run --filter '@crm/api' build"
+
   },
   "devDependencies": {
     "typescript": "^5.6.3",

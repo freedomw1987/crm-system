@@ -19,9 +19,10 @@
 - ✅ P1-7 — `/ai/config/status` perm gate
 - ✅ P1-5 — strong password policy
 - ✅ P1-1 / P1-2 — typecheck critical errors (PARTIAL: 11 of 36 fixed; 25 P2-10-bound)
-- ✅ P1-6 — audit log retention script + endpoint (PARTIAL: cron scheduling deferred to US-OPS-2)
+- ✅ P1-6 — audit log retention script + endpoint (PARTIAL: cron scheduling deferred to US-OPS-2; orphan-`.get` syntax fix in commit ee63bbd)
 - ✅ P1-3 (was already done in commit 42ef13b/7d79357)
 - ✅ P1-4 (was already done in commit 726b23c)
+- ✅ P1-9 — frontend CRUD gaps on Companies/Deals/Quotations list pages (commit fca07ee) + api.ts surface regression guard (commit c578759)
 - 📌 Critical follow-up: RG-007 — Day 17 AI tool confirmation migration was
    never applied to prod (also fixed in this sprint)
 
