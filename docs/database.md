@@ -386,6 +386,21 @@ A single line on a quotation. **Polymorphic** — exactly one of
 
 **Indexes:** `quotationId`, `productId`, `serviceId`, `itemType`
 
+> **Snapshot integrity (P1-10, 2026-06-23)** — The DB snapshot
+> (`sku`, `name`, `description`, `unitPrice`, `manDaySnapshot`) is the
+> **source of truth** for what the line displays, not the live
+> `Product` / `Service` record. If the underlying Product/Service is
+> later **deleted** (`onDelete: SetNull` on `productId` / `serviceId`
+> leaves the FK dangling), the line keeps showing the old name/sku/price
+> with a "(已刪除)" badge in the edit dialog's autocomplete
+> (`apps/web/src/components/quotation-builder.tsx` — `ProductAutocomplete`
+> / `ServiceAutocomplete`). If the underlying record is **renamed**,
+> the line keeps showing the snapshot name — the quotation stays a
+> faithful historical record of what the customer was quoted.
+> Precedence helper: `autocompleteLabel(snapshotName, snapshotSku, live)`
+> (snapshot wins, live is fallback). Tested in
+> `apps/web/src/components/__tests__/quotation-builder-snapshot.test.ts`.
+
 > **Why is `itemType` not a Postgres enum?**
 > See the comment block in the schema (line ~424-433). Short version:
 > new item types (e.g. `SUBSCRIPTION`, `USAGE`) should not require a

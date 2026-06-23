@@ -275,6 +275,14 @@ of `productId` or `serviceId` set. The service item also carries a
 without breaking the historical quote. See `database.md` for the
 field-level details.
 
+Display in the edit dialog (`apps/web/src/components/quotation-builder.tsx`'s
+`ProductAutocomplete` / `ServiceAutocomplete`) reads the **snapshot**
+fields (`line.name`, `line.sku`), not the live `Product` / `Service`
+record. If the underlying record was deleted, the line keeps showing
+the snapshot with a "(已刪除)" badge; if it was renamed, the line
+keeps showing the snapshot name. The quotation is a faithful record
+of what was quoted, not a live view of the catalogue.
+
 ### 7.4 Currency and money
 
 - All money fields are stored as `Decimal(12, 2)` in Prisma, returned
