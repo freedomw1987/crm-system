@@ -646,6 +646,11 @@ function LineItemRow({
             onChange={onApplyProduct}
             onCreate={onCreateProduct}
             label="產品"
+            // P1-10: snapshot wins over the live catalogue so a deleted
+            // or renamed product doesn't blank the line or change what
+            // the customer was quoted.
+            snapshotName={line.name}
+            snapshotSku={line.sku}
           />
         ) : (
           <ServiceAutocomplete
@@ -655,6 +660,8 @@ function LineItemRow({
             onChange={onApplyService}
             onCreate={onCreateService}
             label="服務"
+            // P1-10: see ProductAutocomplete above.
+            snapshotName={line.name}
           />
         )}
         <div className="col-span-12 md:col-span-3 space-y-1">
@@ -748,8 +755,53 @@ function LineItemRow({
 // ProductAutocomplete — typeahead combobox over the products catalogue
 // ============================================================================
 
+/**
+ * Pure helper: compute the display label for a Quotation line's product/service
+ * autocomplete input. Snapshot wins over the live record so a deleted or
+ * renamed Product/Service doesn't blank the input or silently change what
+ * the customer was quoted (P1-10).
+ *
+ * Precedence:
+ *   1. snapshot (always wins)
+ *   2. live (only when there's no snapshot)
+ *   3. empty (nothing to show)
+ *
+ * @param snapshotName  the name captured into QuotationItem at line creation
+ * @param snapshotSku   the SKU captured into QuotationItem at line creation
+ *                      (products only; pass undefined for services)
+ * @param live          the matching live record, or null if deleted
+ * @returns the string the autocomplete input should display
+ */
+export function autocompleteLabel(
+  snapshotName: string | undefined,
+  snapshotSku: string | undefined,
+  live: { name?: string | null; sku?: string | null } | null | undefined,
+): string {
+  const sku = snapshotSku ?? live?.sku ?? '';
+  const name = snapshotName ?? live?.name ?? '';
+  if (!sku && !name) return '';
+  return sku ? `${sku} — ${name}` : name;
+}
+
+/**
+ * Pure helper: is the underlying catalogue record gone?
+ * Used to decide whether to render the "(已刪除)" badge.
+ */
+export function isAutocompleteDeleted(
+  value: string | undefined,
+  live: unknown,
+): boolean {
+  return !!value && !live;
+}
+
 function ProductAutocomplete({
   products, value, onChange, onCreate, label, className,
+  /** Snapshot of the product's SKU captured into QuotationItem at
+   *  line-creation time. We display this whenever it's set, even if
+   *  the live product has been deleted or renamed — the line must
+   *  keep showing the historical value the customer was quoted. */
+  snapshotName,
+  snapshotSku,
 }: {
   products: Product[];
   value?: string;
@@ -758,6 +810,10 @@ function ProductAutocomplete({
    *  itself does the API call; this callback is just the state update. */
   onCreate: (p: Product) => void;
   label: string;
+  /** Snapshot of the product's name at line creation. */
+  snapshotName?: string;
+  /** Snapshot of the product's SKU at line creation. */
+  snapshotSku?: string;
   className?: string;
 }) {
   const [query, setQuery] = useState('');
@@ -766,9 +822,18 @@ function ProductAutocomplete({
   const wrapRef = useRef<HTMLDivElement>(null);
 
   const selected = products.find((p) => p.id === value);
+  // The DB snapshot on QuotationItem is the source of truth for what we
+  // display in the input. The live `selected` is only a fallback for the
+  // create-a-new-line case (no snapshot yet, but the user just picked a
+  // product). If the underlying product was DELETED, `selected` is
+  // undefined and we show the snapshot + a "(已刪除)" badge. If it was
+  // RENAMED, the snapshot still wins so the line stays historically
+  // accurate. See `autocompleteLabel` for the full precedence.
+  const isDeleted = isAutocompleteDeleted(value, selected);
   useEffect(() => {
-    if (selected) setQuery(`${selected.sku} — ${selected.name}`);
-  }, [selected?.id]);
+    const label = autocompleteLabel(snapshotName, snapshotSku, selected);
+    if (label) setQuery(label);
+  }, [value, selected?.id, snapshotName, snapshotSku]);
 
   const filtered = useMemo(() => {
     if (!query) return products.slice(0, 10);
@@ -796,7 +861,21 @@ function ProductAutocomplete({
           onChange={(e) => { setQuery(e.target.value); setOpen(true); if (value) onChange(''); }}
           onFocus={() => setOpen(true)}
           placeholder="搜尋 SKU 或名稱..."
+          data-testid="product-autocomplete-input"
         />
+        {/* Day N+1 (P1-10): show a "(已刪除)" badge when the product FK
+            is set but the live record is gone. The DB snapshot still
+            holds name/sku/price so the line stays editable, but the
+            user should know the catalogue link is broken. */}
+        {isDeleted && (
+          <Badge
+            variant="destructive"
+            data-testid="product-deleted-badge"
+            className="absolute -top-1 right-1 text-[10px] px-1.5 py-0"
+          >
+            已刪除
+          </Badge>
+        )}
         {open && (
           <div className="absolute z-50 top-full mt-1 left-0 right-0 max-h-60 overflow-y-auto bg-white border border-border rounded shadow-lg">
             {filtered.length === 0 ? (
@@ -852,6 +931,10 @@ function ProductAutocomplete({
 
 function ServiceAutocomplete({
   services, value, onChange, onCreate, label, className,
+  /** Snapshot of the service's name at line creation. Displayed
+   *  whenever set, so a renamed service doesn't silently change what
+   *  the customer was quoted. */
+  snapshotName,
 }: {
   services: Service[];
   value?: string;
@@ -861,6 +944,8 @@ function ServiceAutocomplete({
   onCreate: (s: Service) => void;
   label: string;
   className?: string;
+  /** Snapshot of the service's name at line creation. */
+  snapshotName?: string;
 }) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
@@ -868,9 +953,15 @@ function ServiceAutocomplete({
   const wrapRef = useRef<HTMLDivElement>(null);
 
   const selected = services.find((s) => s.id === value);
+  // Same precedence as ProductAutocomplete: snapshot wins, live is
+  // fallback. The DB QuotationItem stores the name (and manDaySnapshot)
+  // captured at line creation, so we surface that even when the live
+  // service has been deleted or renamed.
+  const isDeleted = isAutocompleteDeleted(value, selected);
   useEffect(() => {
-    if (selected) setQuery(selected.name);
-  }, [selected?.id]);
+    const label = autocompleteLabel(snapshotName, undefined, selected);
+    if (label) setQuery(label);
+  }, [value, selected?.id, snapshotName]);
 
   const filtered = useMemo(() => {
     if (!query) return services.slice(0, 10);
@@ -897,7 +988,19 @@ function ServiceAutocomplete({
           onChange={(e) => { setQuery(e.target.value); setOpen(true); if (value) onChange(''); }}
           onFocus={() => setOpen(true)}
           placeholder="搜尋服務名..."
+          data-testid="service-autocomplete-input"
         />
+        {/* See ProductAutocomplete for context. Snapshot wins; the
+            "(已刪除)" badge flags the broken catalogue link. */}
+        {isDeleted && (
+          <Badge
+            variant="destructive"
+            data-testid="service-deleted-badge"
+            className="absolute -top-1 right-1 text-[10px] px-1.5 py-0"
+          >
+            已刪除
+          </Badge>
+        )}
         {open && (
           <div className="absolute z-50 top-full mt-1 left-0 right-0 max-h-60 overflow-y-auto bg-white border border-border rounded shadow-lg">
             {filtered.length === 0 ? (
