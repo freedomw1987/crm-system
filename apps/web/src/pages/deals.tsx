@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient, type QueryKey } from '@tanstack/react-query';
-import { KanbanSquare, Plus, GripVertical, X, Edit2, FileText, StickyNote } from 'lucide-react';
+import { KanbanSquare, Plus, GripVertical, X, Edit2, FileText, StickyNote, Trash2 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -126,6 +126,19 @@ export function DealsPage() {
     },
   });
 
+  // Day N+1 (P1-X): delete a deal from the Kanban card. The Trash icon
+  // sits next to the Edit2 icon (group-hover) on the top-right of each
+  // card. We invalidate every kanban variant (regardless of active
+  // filter) so any cached view stays in sync.
+  const deleteDeal = useMutation({
+    mutationFn: (dealId: string) => dealsApi.remove(dealId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['deals-kanban'] });
+      qc.invalidateQueries({ queryKey: ['companies'] });
+      qc.invalidateQueries({ queryKey: ['companies-all'] });
+    },
+  });
+
   // Compute pipeline stats
   const stats = useMemo(() => {
     if (!kanban) return { totalValue: 0, weightedValue: 0, openCount: 0 };
@@ -233,6 +246,11 @@ export function DealsPage() {
                   onDrop={(dealId) => moveStage.mutate({ dealId, stageId: bucket.stage.id })}
                   isMoving={moveStage.isPending}
                   onEdit={(deal) => setEditing(deal)}
+                  onDelete={(deal) => {
+                    if (confirm(`確定刪除 deal「${deal.title}」?此操作無法復原,相關 activities / quotations 會一齊 cascade。`)) {
+                      deleteDeal.mutate(deal.id);
+                    }
+                  }}
                   onNewQuotation={(deal) => setQuotationFor(deal)}
                   onNewActivity={(deal) => setActivityFor(deal)}
                 />
@@ -319,6 +337,7 @@ function KanbanColumn({
   onDrop,
   isMoving,
   onEdit,
+  onDelete,
   onNewQuotation,
   onNewActivity,
 }: {
@@ -327,6 +346,9 @@ function KanbanColumn({
   onDrop: (dealId: string) => void;
   isMoving: boolean;
   onEdit: (deal: Deal) => void;
+  /** Day N+1 (P1-X): confirm-then-delete this deal from the card.
+   *  Cascades to activities / quotations via Prisma onDelete: Cascade. */
+  onDelete?: (deal: Deal) => void;
   /** Day N: open QuotationBuilder inline-modal pre-filled with this deal.
    *  Replaces the previous navigate('/quotations?dealId=...') flow so the
    *  user never leaves the Kanban board to draft a quote. */
@@ -384,6 +406,7 @@ function KanbanColumn({
               deal={d}
               disabled={isMoving}
               onEdit={onEdit}
+              onDelete={onDelete}
               onNewQuotation={onNewQuotation}
               onNewActivity={onNewActivity}
             />
@@ -401,12 +424,18 @@ function DealCard({
   deal,
   disabled,
   onEdit,
+  onDelete,
   onNewQuotation,
   onNewActivity,
 }: {
   deal: Deal;
   disabled: boolean;
   onEdit: (d: Deal) => void;
+  /** Day N+1 (P1-X): confirm-then-delete this deal. The card's outer
+   *  onClick → onEdit handler means the Trash button MUST
+   *  e.stopPropagation() or every click on the icon opens the edit
+   *  dialog. */
+  onDelete?: (d: Deal) => void;
   /** Day N: open QuotationBuilder inline-modal pre-filled with this deal. */
   onNewQuotation?: (d: Deal) => void;
   /** Day N+1: open DealActivityDialog pre-filled with this deal. */
@@ -490,14 +519,27 @@ function DealCard({
             </button>
           )}
         </div>
-        <button
-          type="button"
-          aria-label="編輯 deal"
-          onClick={(e) => { e.stopPropagation(); onEdit(deal); }}
-          className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground transition-opacity p-0.5 -m-0.5"
-        >
-          <Edit2 className="h-3.5 w-3.5" />
-        </button>
+        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          {onDelete && (
+            <button
+              type="button"
+              aria-label="刪除 deal"
+              title="刪除 deal"
+              onClick={(e) => { e.stopPropagation(); onDelete(deal); }}
+              className="text-muted-foreground hover:text-destructive transition-colors p-0.5 -m-0.5"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          )}
+          <button
+            type="button"
+            aria-label="編輯 deal"
+            onClick={(e) => { e.stopPropagation(); onEdit(deal); }}
+            className="text-muted-foreground hover:text-foreground transition-colors p-0.5 -m-0.5"
+          >
+            <Edit2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
     </div>
   );

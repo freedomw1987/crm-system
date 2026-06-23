@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Search, Building2, Plus, X, Pencil, Briefcase, FileText } from 'lucide-react';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
+import { Search, Building2, Plus, X, Pencil, Briefcase, FileText, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { companiesApi, regionsApi, dealsApi, type Company, type Region } from '@/lib/api';
 import { Card, CardContent } from '@/components/ui/card';
@@ -59,6 +59,19 @@ export function CompaniesPage() {
     queryFn: () => companiesApi.list({ limit: 200 }),
   });
 
+  // Day N+1 (P1-X): delete a company from the list. The card has a Trash
+  // button (top-right, next to Pencil) that fires this. We invalidate
+  // every query that depends on companies so the deals-kanban and any
+  // company-autocomplete dropdowns refresh too.
+  const deleteCompany = useMutation({
+    mutationFn: (companyId: string) => companiesApi.remove(companyId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['companies'] });
+      qc.invalidateQueries({ queryKey: ['companies-all'] });
+      qc.invalidateQueries({ queryKey: ['deals-kanban'] });
+    },
+  });
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -113,6 +126,11 @@ export function CompaniesPage() {
               key={c.id}
               company={c}
               onEdit={() => setEditing(c)}
+              onDelete={() => {
+                if (confirm(`確定刪除「${c.name}」?此操作無法復原,相關 contacts / deals / quotations 會一齊 cascade。`)) {
+                  deleteCompany.mutate(c.id);
+                }
+              }}
               onNewDeal={() => setDealDialog({ companyId: c.id })}
               onNewQuotation={() => setQuotationDialog({ companyId: c.id })}
             />
@@ -204,11 +222,15 @@ function FilterPill({ active, onClick, label, flag }: { active: boolean; onClick
 function CompanyCard({
   company,
   onEdit,
+  onDelete,
   onNewDeal,
   onNewQuotation,
 }: {
   company: Company;
   onEdit: () => void;
+  /** Confirm-then-delete this company. Cascades to contacts, deals,
+   *  quotations, etc. via Prisma's onDelete: Cascade. */
+  onDelete?: () => void;
   /** Open the inline "+ Deal" dialog pre-filled with this company. */
   onNewDeal?: () => void;
   /** Open the inline "+ Quotation" dialog pre-filled with this company. */
@@ -258,9 +280,11 @@ function CompanyCard({
       {/* Day N: "+ Deal" and "+ Quotation" affordances. They sit on the
           right edge of the card so the parent <Link> still works for the
           body of the card. `e.stopPropagation` prevents the card's
-          onClick → navigate from firing. */}
+          onClick → navigate from firing.
+          Pushed to right-[68px] so they clear the Trash+Pencil group
+          (60px wide + 8px gap) on the far right corner. */}
       {(onNewDeal || onNewQuotation) && (
-        <div className="absolute top-2 right-10 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+        <div className="absolute top-2 right-[68px] flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
           {onNewDeal && (
             <button
               type="button"
@@ -285,17 +309,32 @@ function CompanyCard({
           )}
         </div>
       )}
-      {/* Edit button — absolute-positioned over the card so it doesn't
-          trigger the parent <Link>. stopPropagation ensures the card
-          click doesn't navigate when the user means to edit. */}
-      <button
-        type="button"
-        aria-label="編輯公司"
-        onClick={(e) => { e.preventDefault(); e.stopPropagation(); onEdit(); }}
-        className="absolute top-2 right-2 h-7 w-7 rounded-md bg-background/80 backdrop-blur border border-input flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-background opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
-      >
-        <Pencil className="h-3.5 w-3.5" />
-      </button>
+      {/* Edit + Delete buttons — absolute-positioned over the card so
+          they don't trigger the parent <Link>. stopPropagation ensures
+          the card click doesn't navigate when the user means to act on
+          the row. The flex container puts Trash to the LEFT of Pencil
+          so Pencil stays in its original top-right corner slot. */}
+      <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+        {onDelete && (
+          <button
+            type="button"
+            aria-label="刪除公司"
+            title="刪除公司"
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(); }}
+            className="h-7 w-7 rounded-md bg-background/80 backdrop-blur border border-input flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-background"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        )}
+        <button
+          type="button"
+          aria-label="編輯公司"
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onEdit(); }}
+          className="h-7 w-7 rounded-md bg-background/80 backdrop-blur border border-input flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-background"
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </button>
+      </div>
     </div>
   );
 }

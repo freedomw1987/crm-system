@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { FileText, Plus, Sparkles, Loader2, X } from 'lucide-react';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
+import { FileText, Plus, Sparkles, Loader2, X, Trash2 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -23,6 +23,11 @@ export function QuotationsPage() {
   const presetCompanyId = searchParams.get('companyId') ?? undefined;
 
   const [builderOpen, setBuilderOpen] = useState(false);
+  // Day N+1 (P1-X): the row's "編輯" button stores the target quotation
+  // here so the same QuotationBuilder used for create can re-open in
+  // edit mode (passing `existing={quotation}`). This reuses the detail
+  // page's edit pattern without duplicating the form.
+  const [editing, setEditing] = useState<Quotation | null>(null);
   const [aiOpen, setAiOpen] = useState(false);
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
@@ -78,6 +83,30 @@ export function QuotationsPage() {
       next.delete('companyId');
       setSearchParams(next, { replace: true });
     }
+  }
+
+  // Day N+1 (P1-X): confirm-then-delete from the list row. We invalidate
+  // every query that lists quotations (the list, and any kanban that
+  // shows a quote count badge) so the row disappears everywhere.
+  const deleteQuotation = useMutation({
+    mutationFn: (quotationId: string) => quotationsApi.remove(quotationId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['quotations'] });
+      queryClient.invalidateQueries({ queryKey: ['deals-kanban'] });
+    },
+  });
+
+  // Edit dialog uses the same QuotationBuilder that powers create. The
+  // builder detects `existing` and switches to PATCH on save. We just
+  // need a separate `open` flag so the create and edit dialogs don't
+  // collide (only one QuotationBuilder is mounted at a time).
+  const editOpen = editing !== null;
+  function closeEdit() {
+    setEditing(null);
+  }
+  function handleEditSaved() {
+    closeEdit();
+    queryClient.invalidateQueries({ queryKey: ['quotations'] });
   }
 
   function handleBuilderSaved(q: Quotation) {
@@ -237,6 +266,28 @@ export function QuotationsPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Day N+1 (P1-X): edit dialog — reuses the same QuotationBuilder
+          that powers the create flow. Passing `existing={quotation}`
+          switches the builder into PATCH mode; the onSaved callback
+          closes the dialog and invalidates the list query. The same
+          component is used by the detail page (see
+          apps/web/src/pages/quotation-detail.tsx) so we don't duplicate
+          the form. */}
+      <Dialog open={editOpen} onOpenChange={(o) => (o ? null : closeEdit())}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>編輯報價單 {editing?.number ?? ''}</DialogTitle>
+          </DialogHeader>
+          {editing && (
+            <QuotationBuilder
+              existing={editing}
+              onSaved={handleEditSaved}
+              onCancel={closeEdit}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
       {isLoading ? (
         <p className="text-sm text-muted-foreground">載入中...</p>
       ) : quotations.length === 0 ? (
@@ -285,9 +336,30 @@ export function QuotationsPage() {
                         {formatDate(q.createdAt)}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <Button asChild variant="ghost" size="sm">
-                          <Link to={`/quotations/${q.id}`}>查看</Link>
-                        </Button>
+                        <div className="inline-flex items-center gap-1">
+                          <Button asChild variant="ghost" size="sm">
+                            <Link to={`/quotations/${q.id}`}>查看</Link>
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setEditing(q)}
+                          >
+                            編輯
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-muted-foreground hover:text-destructive"
+                            onClick={() => {
+                              if (confirm(`確定刪除 quotation「${q.number}」?此操作無法復原,line items 會一齊 cascade。`)) {
+                                deleteQuotation.mutate(q.id);
+                              }
+                            }}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))}
