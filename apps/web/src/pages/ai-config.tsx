@@ -34,6 +34,7 @@ import { Input, Textarea } from '@/components/ui/input';
 import { Label } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/lib/auth';
+import { apiUrl } from '@/lib/runtime-paths';
 
 interface TestResult {
   ok: boolean;
@@ -85,7 +86,7 @@ export function AiConfigPage() {
   const testMutation = useMutation({
     mutationFn: async () => {
       const start = Date.now();
-      const r = await fetch('/api/ai/config/test', {
+      const r = await fetch(apiUrl('/ai/config/test'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('crm:token')}` },
         body: JSON.stringify({ endpointUrl, modelName, apiKey: apiKey || '__use_saved__' }),

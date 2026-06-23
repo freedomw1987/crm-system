@@ -53,7 +53,7 @@ export const auditRoutes = new Elysia({ prefix: '/audit', tags: ['audit'] })
   .get('/actions', () => {
     // Return all valid audit actions for filter UI dropdown
     return Object.values(AuditAction);
-  });
+  })
 
 // ----------------------------------------------------------------
 // P1-6 (2026-06-08): Audit log retention policy
@@ -70,7 +70,7 @@ export const auditRoutes = new Elysia({ prefix: '/audit', tags: ['audit'] })
 // from its own constants. When we wire AiConfig-based config,
 // the script will need to read the same store as this endpoint.
 // ----------------------------------------------------------------
-.get('/retention-policy', async () => {
+  .get('/retention-policy', async () => {
   // Lazy import so the route file's cold start doesn't pull in
   // the prune script's transitive dependencies unless needed.
   const {

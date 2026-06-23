@@ -28,6 +28,7 @@ import { QuickCreateServiceDialog } from './quick-create-service-dialog';
 import { ProductDialog } from './product-dialog';
 import { CompanyAutocomplete } from './company-autocomplete';
 import { DealAutocomplete } from './deal-autocomplete';
+import { createClientId } from '@/lib/client-id';
 
 interface DraftLine {
   key: string;
@@ -83,7 +84,7 @@ interface QuotationBuilderProps {
 
 function emptyLine(): DraftLine {
   return {
-    key: crypto.randomUUID(),
+    key: createClientId('line'),
     itemType: 'PRODUCT',
     quantity: 1,
     unitPrice: 0,
@@ -95,7 +96,7 @@ function emptyLine(): DraftLine {
 function linesFromQuotation(q?: Quotation): DraftLine[] {
   if (!q?.items?.length) return [emptyLine()];
   return q.items.map((it: QuotationItem) => ({
-    key: it.id ?? crypto.randomUUID(),
+    key: it.id ?? createClientId('line'),
     itemId: it.id,
     itemType: it.itemType,
     productId: it.productId ?? undefined,

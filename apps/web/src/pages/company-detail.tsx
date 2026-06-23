@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { companiesApi, quotationsApi, contactsApi, type Contact, type Region } from '@/lib/api';
+import { apiUrl } from '@/lib/runtime-paths';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { ActivityFeed } from '@/components/activity-feed';
 import { AttachmentList } from '@/components/attachment-list';
@@ -49,7 +50,7 @@ export function CompanyDetailPage() {
     queryKey: ['deals', { companyId: id }],
     queryFn: () =>
       // Reuse deals list filtered by company
-      fetch(`/api/deals?companyId=${id}&limit=20`, {
+      fetch(apiUrl(`/deals?companyId=${id}&limit=20`), {
         headers: { Authorization: `Bearer ${localStorage.getItem('crm:token') ?? ''}` },
       }).then((r) => r.json()).then((r) => (Array.isArray(r) ? r : r.items ?? [])),
     enabled: !!id,

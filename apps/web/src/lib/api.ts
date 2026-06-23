@@ -3,8 +3,9 @@
  * Auth token is read from localStorage and attached as Bearer.
  */
 
+import { apiUrl, appUrl } from './runtime-paths';
+
 const TOKEN_KEY = 'crm:token';
-const API_BASE = '/api'; // Vite proxy strips /api prefix
 
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
@@ -34,7 +35,7 @@ async function request<T>(
   const token = getToken();
   if (token) headers.set('Authorization', `Bearer ${token}`);
 
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(apiUrl(path), {
     ...options,
     headers,
   });
@@ -53,7 +54,7 @@ async function request<T>(
       setToken(null);
       // Avoid redirect loop
       if (!window.location.pathname.startsWith('/login')) {
-        window.location.assign('/login');
+        window.location.assign(appUrl('/login'));
       }
     }
     throw new ApiError(res.status, body, message);
@@ -360,7 +361,7 @@ export const quotationsApi = {
     qs.set('lang', opts.lang ?? 'zh');
     qs.set('version', opts.version ?? 'v2');
     const token = getToken();
-    const r = await fetch(`${API_BASE}/quotations/${id}/export-xlsx?${qs}`, {
+    const r = await fetch(apiUrl(`/quotations/${id}/export-xlsx?${qs}`), {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
     if (!r.ok) {
@@ -599,7 +600,7 @@ export const chatApi = {
     onEvent: (ev: StreamEvent) => void,
   ): Promise<{ conversationId: string }> => {
     const token = getToken();
-    const r = await fetch(`${API_BASE}/chat/send`, {
+    const r = await fetch(apiUrl('/chat/send'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -878,7 +879,7 @@ export const attachmentsApi = {
     const fd = new FormData();
     fd.append('file', file);
     const token = getToken();
-    const r = await fetch(`${API_BASE}/activities/${activityId}/attachments`, {
+    const r = await fetch(apiUrl(`/activities/${activityId}/attachments`), {
       method: 'POST',
       body: fd,
       headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -894,7 +895,7 @@ export const attachmentsApi = {
     const body = await r.json() as { items: Attachment[]; total: number };
     return body.items[0];
   },
-  downloadUrl: (id: string) => `${API_BASE}/attachments/${id}/download`,
+  downloadUrl: (id: string) => apiUrl(`/attachments/${id}/download`),
   remove: (id: string) => request<{ success: boolean }>(`/attachments/${id}`, { method: 'DELETE' }),
 };
 
