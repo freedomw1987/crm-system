@@ -152,6 +152,11 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
       include: {
         company: { select: { id: true, name: true } },
         createdBy: { select: { id: true, name: true, email: true } },
+        // 2026-06-26: include salesRep so the list page can render
+        // the salesperson column without an extra roundtrip.
+        // Nullable in the schema; fall back to createdBy on the
+        // frontend when null.
+        salesRep: { select: { id: true, name: true, email: true } },
         deal: { select: { id: true, title: true, stage: { select: { name: true, color: true } } } },
         _count: { select: { items: true } },
       },
@@ -163,6 +168,8 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
       include: {
         company: true,
         createdBy: { select: { id: true, name: true, email: true } },
+        // 2026-06-26: detail response also carries salesRep.
+        salesRep: { select: { id: true, name: true, email: true } },
         deal: { select: { id: true, title: true, stage: { select: { name: true, color: true } } } },
         items: { include: { product: true, service: { include: { manDayLines: true } } }, orderBy: { position: 'asc' } },
       },
@@ -230,6 +237,13 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
     const data = body as {
       companyId: string;
       dealId?: string;
+      // 2026-06-26: optional follow-up salesperson. When omitted,
+      // we default to the authenticated user (the most common
+      // case — sales reps create their own quotes). The frontend
+      // builder exposes a 銷售員 picker; this lets a sales manager
+      // create a quote on behalf of someone else (e.g. an account
+      // exec who doesn't have the time to log it themselves).
+      salesRepId?: string;
       title?: string;
       notes?: string;
       validUntil?: string;
@@ -276,25 +290,40 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
       };
     });
     const taxRate = Number(data.taxRate ?? 0);
+    // 2026-06-26: salesRepId fallback. Empty string / undefined both
+    // coerce to the authenticated user; explicit null in the body
+    // would be unusual (means "no salesperson") and we honour it.
+    const salesRepId = data.salesRepId === null
+      ? null
+      : (data.salesRepId || userId);
     const created = await prisma.quotation.create({
       data: {
         number,
         companyId: data.companyId,
         dealId: data.dealId ?? null,
         createdById: userId,
+        salesRepId,
         title: data.title,
         notes: data.notes,
         validUntil: data.validUntil ? new Date(data.validUntil) : null,
         taxRate,
         items: { create: items },
       },
-      include: { items: true, company: true },
+      include: { items: true, company: true, salesRep: { select: { id: true, name: true, email: true } } },
     });
     // DRAFT: refresh GP from live man-day role costs.
     await recalcQuotationAndItems(created.id, { liveCostRefresh: true });
     const refreshed = await prisma.quotation.findUnique({
       where: { id: created.id },
-      include: { items: true, company: true },
+      include: {
+        items: true,
+        company: true,
+        // 2026-06-26: include salesRep so the POST response (which
+        // is what the builder's onSaved receives) carries the
+        // sales rep for the UI to render immediately without a
+        // refetch.
+        salesRep: { select: { id: true, name: true, email: true } },
+      },
     });
     set.status = 201;
     await logEvent({
@@ -303,7 +332,7 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
       resourceType: 'quotation',
       resourceId: created.id,
       description: `Created quotation ${created.number} for ${created.company?.name ?? data.companyId} (total ${refreshed?.total})`,
-      metadata: { number: created.number, total: Number(refreshed?.total ?? 0), itemCount: items.length, dealId: data.dealId ?? null },
+      metadata: { number: created.number, total: Number(refreshed?.total ?? 0), itemCount: items.length, dealId: data.dealId ?? null, salesRepId },
       request,
     });
     return refreshed;
@@ -311,6 +340,10 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
     body: t.Object({
       companyId: t.String(),
       dealId: t.Optional(t.String()),
+      // 2026-06-26: salesRepId is optional in the POST body. When
+      // omitted, the route defaults to the authenticated userId
+      // (see the route handler above).
+      salesRepId: t.Optional(t.Union([t.String(), t.Null()])),
       title: t.Optional(t.String()),
       notes: t.Optional(t.String()),
       validUntil: t.Optional(t.String()),
@@ -327,7 +360,7 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
       })),
     }),
   })
-  // Update header (title, notes, validUntil, taxRate, status)
+  // Update header (title, notes, validUntil, taxRate, status, dealId, salesRepId)
   .patch('/:id', async ({ params, body, set, userId, request }) => {
     const data = body as {
       title?: string;
@@ -342,6 +375,13 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
       // so a quotation can be moved between Deals (or off a Deal
       // entirely) while still in DRAFT.
       dealId?: string | null;
+      // 2026-06-26: PATCH also accepts salesRepId to reassign the
+      // follow-up salesperson. Unlike title/notes/taxRate this is
+      // NOT covered by the SENT lock — the sales rep is internal
+      // metadata, and you need to be able to reassign it (e.g.
+      // when a colleague leaves the company) regardless of where
+      // the quotation is in its lifecycle.
+      salesRepId?: string | null;
     };
     const before = await prisma.quotation.findUnique({ where: { id: params.id } });
     if (!before) { set.status = 404; return { error: 'Not found' }; }
@@ -378,6 +418,11 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
     // omits the field to leave it unchanged. Coerce empty string to
     // null so a cleared autocomplete cleanly removes the FK.
     if (data.dealId !== undefined) update.dealId = data.dealId || null;
+    // 2026-06-26: accept salesRepId in PATCH body. Same semantics as
+    // dealId — explicit string sets, null / "" clears, undefined
+    // leaves unchanged. NOT covered by the SENT lock (see the
+    // contract comment on the typecast above).
+    if (data.salesRepId !== undefined) update.salesRepId = data.salesRepId || null;
     if (data.status !== undefined) {
       const valid = ['DRAFT', 'SENT', 'VIEWED', 'ACCEPTED', 'REJECTED', 'EXPIRED', 'INVOICED'];
       if (!valid.includes(data.status)) { set.status = 400; return { error: 'Invalid status' }; }
@@ -392,7 +437,13 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
     }
     const refreshed = await prisma.quotation.findUnique({
       where: { id: params.id },
-      include: { items: { include: { product: true, service: { include: { manDayLines: true } } } }, company: true },
+      include: {
+        items: { include: { product: true, service: { include: { manDayLines: true } } } },
+        company: true,
+        // 2026-06-26: PATCH response carries salesRep so the
+        // builder's onSaved receives the new rep without a refetch.
+        salesRep: { select: { id: true, name: true, email: true } },
+      },
     });
     if (data.status && data.status !== before.status) {
       await logEvent({

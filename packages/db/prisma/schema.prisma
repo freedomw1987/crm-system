@@ -45,6 +45,11 @@ model User {
   // Relations
   roleRef             Role?          @relation(fields: [roleId], references: [id], onDelete: SetNull)
   createdQuotations   Quotation[]    @relation("QuotationCreatedBy")
+  // 2026-06-26: a User can be the follow-up salesperson on multiple
+  // quotations (separate from whoever created the row). Nullable so
+  // deleting a User doesn't cascade to break the quotation link;
+  // the UI falls back to `createdById` when `salesRepId` is null.
+  salesRepQuotations  Quotation[]    @relation("QuotationSalesRep")
   ownedDeals          Deal[]         @relation("DealOwner")
   // New Activity system (replaces ActivityLog):
   //   authoredActivities = activities I created (sales rep logs note/call/meeting)
@@ -450,6 +455,17 @@ model Quotation {
   // Relations
   company   Company         @relation(fields: [companyId], references: [id])
   createdBy User            @relation("QuotationCreatedBy", fields: [createdById], references: [id])
+  // 2026-06-26: optional follow-up salesperson. Separate from
+  // `createdById` because the creator (e.g. a sales engineer
+  // building the quote) is often not the same person who follows
+  // up with the customer (e.g. an account exec). Nullable so
+  // (a) the migration backfill can copy `created_by_id` per row,
+  // and (b) deleting a User doesn't cascade-block the quotation.
+  // The API defaults salesRepId to the authenticated user on
+  // create when omitted, so newly-created rows always have a
+  // sales rep unless explicitly cleared.
+  salesRepId String?
+  salesRep   User?           @relation("QuotationSalesRep", fields: [salesRepId], references: [id], onDelete: SetNull)
   deal      Deal?           @relation(fields: [dealId], references: [id], onDelete: SetNull)
   items     QuotationItem[]
 
@@ -457,6 +473,7 @@ model Quotation {
   @@index([status])
   @@index([issueDate])
   @@index([createdById])
+  @@index([salesRepId])
   @@index([dealId])
   @@map("quotations")
 }

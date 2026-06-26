@@ -320,6 +320,15 @@ export const dealRoutes = new Elysia({ prefix: '/deals', tags: ['deals'] })
       expectedCloseDate: t.Optional(t.Date()),
       description: t.Optional(t.String({ maxLength: 5000 })),
       probability: t.Optional(t.Numeric()),
+      // 2026-06-26: ownerId is now editable via PATCH. The frontend
+      // DealDialog exposes a 銷售員 picker; on save it sends the
+      // picked user id. Coerce empty string to null so a cleared
+      // autocomplete removes the FK (matching the dealId /
+      // salesRepId semantics in quotation.ts). We don't apply the
+      // SENT-style lock here because deals don't have a
+      // contractual-state concept — owner reassignment is always
+      // permitted (e.g. when a sales rep leaves the company).
+      ownerId: t.Optional(t.Union([t.String(), t.Null()])),
       // Stage is intentionally NOT in PATCH body: stage changes go
       // through the dedicated /:id/stage endpoint so the backend can
       // set status + closedAt correctly.

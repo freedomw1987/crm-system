@@ -276,6 +276,14 @@ export interface Quotation {
   // Deals; we type it as nullable so the frontend can also clear the
   // link (dealId: null) to detach a quotation from its deal.
   dealId?: string | null;
+  // 2026-06-26: optional follow-up salesperson (separate from
+  // createdById — the creator is often not the same person who
+  // follows up with the customer). Nullable because the DB column
+  // is nullable; the backend defaults salesRepId to the
+  // authenticated user on create when omitted, so newly-created
+  // rows always carry a sales rep unless explicitly cleared.
+  // Migration backfills existing rows from createdById.
+  salesRepId?: string | null;
   // Detail response: full company object. List response: { id, name }.
   company?: {
     id: string;
@@ -285,6 +293,11 @@ export interface Quotation {
     address?: string | null;
   };
   createdBy?: { id: string; name: string; email: string };
+  // 2026-06-26: nullable relation — null means the row's salesRepId
+  // is null (cleared) OR the relation wasn't included in the
+  // include clause. Callers that care about the distinction should
+  // read `salesRepId` explicitly.
+  salesRep?: { id: string; name: string; email: string } | null;
   subtotal: number;
   taxRate: number;
   taxAmount: number;
@@ -352,13 +365,18 @@ export const quotationsApi = {
   create: (data: {
     companyId: string;
     dealId?: string;
+    // 2026-06-26: optional follow-up salesperson. When omitted,
+    // the backend defaults to the authenticated user. Pass an
+    // explicit user id to create a quote on behalf of another
+    // sales rep (e.g. manager-built quote handed to a rep).
+    salesRepId?: string;
     title?: string;
     notes?: string;
     taxRate?: number;
     validUntil?: string;
     items: QuotationItemInput[];
   }) => request<Quotation>('/quotations', { method: 'POST', body: JSON.stringify(data) }),
-  update: (id: string, data: Partial<Pick<Quotation, 'title' | 'notes' | 'taxRate' | 'status' | 'validUntil' | 'dealId'>>) =>
+  update: (id: string, data: Partial<Pick<Quotation, 'title' | 'notes' | 'taxRate' | 'status' | 'validUntil' | 'dealId' | 'salesRepId'>>) =>
     request<Quotation>(`/quotations/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   remove: (id: string) => request<{ success: boolean }>(`/quotations/${id}`, { method: 'DELETE' }),
   addItem: (quotationId: string, item: QuotationItemInput) =>
@@ -470,7 +488,7 @@ export const dealsApi = {
     request<Deal>(`/deals/${id}/stage`, { method: 'PATCH', body: JSON.stringify({ stageId }) }),
   create: (data: { title: string; companyId: string; value: number; stageId: string; ownerId?: string; probability?: number; expectedCloseDate?: string; description?: string }) =>
     request<Deal>('/deals', { method: 'POST', body: JSON.stringify(data) }),
-  update: (id: string, data: Partial<{ title: string; value: number; probability: number; expectedCloseDate: string; description: string }>) =>
+  update: (id: string, data: Partial<{ title: string; value: number; probability: number; expectedCloseDate: string; description: string; ownerId?: string | null }>) =>
     request<Deal>(`/deals/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   remove: (id: string) => request<{ success: boolean }>(`/deals/${id}`, { method: 'DELETE' }),
 };
