@@ -432,17 +432,19 @@ function DealCard({
   disabled: boolean;
   onEdit: (d: Deal) => void;
   /** Day N+1 (P1-X): confirm-then-delete this deal. The card's outer
-   *  onClick → onEdit handler means the Trash button MUST
-   *  e.stopPropagation() or every click on the icon opens the edit
-   *  dialog. */
+   *  onClick → navigate handler means the Trash button MUST
+   *  e.stopPropagation() or every click on the icon navigates away. */
   onDelete?: (d: Deal) => void;
-  /** Day N: open QuotationBuilder inline-modal pre-filled with this deal. */
+  /** Day N: open QuotationBuilder inline-modal pre-filled with this deal.
+   *  Still used when the deal has NO quotations yet (the empty-state CTA).
+   *  When the deal HAS quotations, the count chip navigates to the deal
+   *  detail page so the user can see the existing ones — see onClick. */
   onNewQuotation?: (d: Deal) => void;
   /** Day N+1: open DealActivityDialog pre-filled with this deal. */
   onNewActivity?: (d: Deal) => void;
 }) {
-  // Track drag state so a click on the card body doesn't open the edit
-  // dialog while the user is mid-drag.
+  // Track drag state so a click on the card body doesn't navigate while
+  // the user is mid-drag.
   const [dragging, setDragging] = useState(false);
   const navigate = useNavigate();
   const quoteCount = deal._count?.quotations ?? 0;
@@ -463,7 +465,12 @@ function DealCard({
         setDragging(true);
       }}
       onDragEnd={() => setDragging(false)}
-      onClick={() => { if (!dragging) onEdit(deal); }}
+      // 2026-06-26: clicking the card body now navigates to the deal
+      // detail page (was: open edit dialog). Users asked for a way to
+      // see all quotations attached to a deal — the detail page lists
+      // them. The Edit2 icon is still a separate click target below for
+      // quick-edit (with stopPropagation).
+      onClick={() => { if (!dragging) navigate(`/deals/${deal.id}`); }}
       className={`p-2.5 rounded border bg-card hover:border-primary hover:shadow-sm transition-all cursor-grab active:cursor-grabbing group ${
         disabled ? 'opacity-60' : ''
       }`}
@@ -480,27 +487,43 @@ function DealCard({
               {formatCurrency(deal.value, deal.currency)}
             </span>
           </div>
-          {/* Quotation entry point: open QuotationBuilder inline-modal
-              pre-filled with this deal + its company. Show "+ 報價" when
-              no quotes exist yet (CTA), or the count when there are some.
-              We intentionally don't navigate anymore — staying on the
-              Kanban board is the whole point of the inline modal. */}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onNewQuotation?.(deal);
-            }}
-            className={`mt-1.5 inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded hover:bg-primary/10 transition-colors ${
-              quoteCount > 0
-                ? 'text-muted-foreground hover:text-foreground'
-                : 'text-primary font-medium'
-            }`}
-            title={quoteCount > 0 ? `已有 ${quoteCount} 份報價,撳再加一份` : '為此 deal 建立報價'}
-          >
-            <FileText className="h-3 w-3" />
-            {quoteCount > 0 ? `${quoteCount} 份報價 · ＋` : '＋ 報價'}
-          </button>
+          {/* Quotation entry point:
+              - quoteCount > 0 → navigate to the deal detail page where
+                the user can see ALL existing quotations and click
+                "＋ 新增報價" to add another. This is the answer to the
+                2026-06-26 user request: "I can't see all the quotations
+                in a deal".
+              - quoteCount === 0 → keep the inline QuotationBuilder
+                modal so the empty-state CTA is still one click deep
+                (frictionless first-quote flow). */}
+          {quoteCount > 0 ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                navigate(`/deals/${deal.id}`);
+              }}
+              className="mt-1.5 inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded hover:bg-primary/10 transition-colors text-muted-foreground hover:text-foreground"
+              title={`查看呢個 deal 嘅 ${quoteCount} 份報價`}
+              data-testid="deal-card-view-quotations"
+            >
+              <FileText className="h-3 w-3" />
+              {quoteCount} 份報價
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onNewQuotation?.(deal);
+              }}
+              className="mt-1.5 inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded hover:bg-primary/10 transition-colors text-primary font-medium"
+              title="為此 deal 建立第一份報價"
+            >
+              <FileText className="h-3 w-3" />
+              ＋ 報價
+            </button>
+          )}
           {/* Day N+1: "新增 Activity" — log a follow-up note for this
               deal without leaving the Kanban board. Uses the same
               deal-level activity the dashboard's recent-activity widget

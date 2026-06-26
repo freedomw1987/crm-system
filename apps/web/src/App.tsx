@@ -11,6 +11,7 @@ import { CompanyDetailPage } from '@/pages/company-detail';
 import { QuotationsPage } from '@/pages/quotations';
 import { QuotationDetailPage } from '@/pages/quotation-detail';
 import { DealsPage } from '@/pages/deals';
+import { DealDetailPage } from '@/pages/deal-detail';
 import { AiChatPage } from '@/pages/ai-chat';
 import { UsersPage } from '@/pages/users';
 import { UserDetailPage } from '@/pages/user-detail';
@@ -68,6 +69,7 @@ export function App() {
             <Route path="/quotations" element={<QuotationsPage />} />
             <Route path="/quotations/:id" element={<QuotationDetailPage />} />
             <Route path="/deals" element={<DealsPage />} />
+            <Route path="/deals/:id" element={<DealDetailPage />} />
             <Route path="/ai" element={<AiChatPage />} />
             <Route path="/users/:id" element={<UserDetailPage />} />
             <Route path="/services" element={<ServicesPage />} />
