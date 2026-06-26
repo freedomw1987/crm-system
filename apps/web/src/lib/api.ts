@@ -268,6 +268,14 @@ export interface Quotation {
   title?: string | null;
   status: QuotationStatus;
   companyId: string;
+  // Day 8: link to a Deal (sales pipeline opportunity). Optional — a
+  // quote can exist standalone. The detail response includes the full
+  // deal object (id, title, stage); the list response is { id, title,
+  // stage: { name, color } }. 2026-06-26: PATCH /quotations/:id now
+  // accepts dealId so the QuotationBuilder can move a DRAFT between
+  // Deals; we type it as nullable so the frontend can also clear the
+  // link (dealId: null) to detach a quotation from its deal.
+  dealId?: string | null;
   // Detail response: full company object. List response: { id, name }.
   company?: {
     id: string;
@@ -350,7 +358,7 @@ export const quotationsApi = {
     validUntil?: string;
     items: QuotationItemInput[];
   }) => request<Quotation>('/quotations', { method: 'POST', body: JSON.stringify(data) }),
-  update: (id: string, data: Partial<Pick<Quotation, 'title' | 'notes' | 'taxRate' | 'status' | 'validUntil'>>) =>
+  update: (id: string, data: Partial<Pick<Quotation, 'title' | 'notes' | 'taxRate' | 'status' | 'validUntil' | 'dealId'>>) =>
     request<Quotation>(`/quotations/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   remove: (id: string) => request<{ success: boolean }>(`/quotations/${id}`, { method: 'DELETE' }),
   addItem: (quotationId: string, item: QuotationItemInput) =>

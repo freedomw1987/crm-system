@@ -131,7 +131,15 @@ export function QuotationBuilder({
   // pattern for dealId below. The values seed the state below; the user
   // can still change either before saving.
   const seedCompanyId = defaultCompanyId ?? initialCompanyId ?? existing?.companyId ?? '';
-  const seedDealId = defaultDealId ?? initialDealId ?? '';
+  // 2026-06-26: edit-mode pre-fill for the Deal field. Without this
+  // fallback, opening the builder on an existing quotation that was
+  // already linked to a Deal would show the autocomplete as empty,
+  // and the user's first save would have to re-pick the same deal
+  // (or risk detaching it if they hit save without touching the
+  // field). Existing.dealId is the source of truth for the link; the
+  // explicit defaultDealId / initialDealId props still win so the
+  // create-from-deal-card shortcut can override the default.
+  const seedDealId = defaultDealId ?? initialDealId ?? existing?.dealId ?? '';
   const [companyId, setCompanyId] = useState<string>(seedCompanyId);
   const [title, setTitle] = useState(existing?.title ?? '');
   const [notes, setNotes] = useState(existing?.notes ?? '');
@@ -327,12 +335,18 @@ export function QuotationBuilder({
     try {
       const validLines = lines.filter((l) => l.name.trim() && Number(l.quantity) > 0);
       if (isEdit && existing) {
-        // 1. update header
+        // 1. update header. 2026-06-26: include dealId so the
+        //    Quotation-Deal link persists across edits. Use `?? null`
+        //    so an explicitly-cleared autocomplete (setDealId(''))
+        //    detaches the quotation from its deal rather than being
+        //    dropped by `|| undefined` (which would leave the FK
+        //    unchanged on the server).
         let q = await quotationsApi.update(existing.id, {
           title: title || undefined,
           notes: notes || undefined,
           taxRate,
           validUntil: validUntil || undefined,
+          dealId: dealId || null,
         });
         // 2. sync items: delete removed, add new, update existing
         const originalIds = new Set((existing.items ?? []).map((it) => it.id).filter(Boolean) as string[]);

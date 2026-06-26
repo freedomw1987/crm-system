@@ -335,6 +335,13 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
       validUntil?: string | null;
       taxRate?: number;
       status?: string;
+      // 2026-06-26: PATCH now accepts dealId. Setting it links the
+      // quotation to a Deal (sales pipeline opportunity); passing
+      // null / empty string clears the link. The frontend's
+      // QuotationBuilder's edit-mode PATCH call includes this field
+      // so a quotation can be moved between Deals (or off a Deal
+      // entirely) while still in DRAFT.
+      dealId?: string | null;
     };
     const before = await prisma.quotation.findUnique({ where: { id: params.id } });
     if (!before) { set.status = 404; return { error: 'Not found' }; }
@@ -343,8 +350,17 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
     // been sent. The status field itself is still mutable (so the user
     // can mark it ACCEPTED, REJECTED, etc.) but the title/notes/etc.
     // are frozen because they form part of the contractual record.
+    // 2026-06-26: also include dealId in the SENT lock — moving a
+    // sent quotation to a different deal would silently change the
+    // sales-attribution trail.
     if (before.status !== 'DRAFT' && before.status !== undefined) {
-      if (data.title !== undefined || data.notes !== undefined || data.validUntil !== undefined || data.taxRate !== undefined) {
+      if (
+        data.title !== undefined ||
+        data.notes !== undefined ||
+        data.validUntil !== undefined ||
+        data.taxRate !== undefined ||
+        data.dealId !== undefined
+      ) {
         set.status = 409;
         return { error: `Quotation is ${before.status} and cannot be edited. Create a revision instead.` };
       }
@@ -357,6 +373,11 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
       update.validUntil = data.validUntil ? new Date(data.validUntil) : null;
     }
     if (data.taxRate !== undefined) update.taxRate = Number(data.taxRate);
+    // 2026-06-26: accept dealId in PATCH body. The frontend sends
+    // `dealId: <id>` to link, `dealId: null` (or "") to unlink, and
+    // omits the field to leave it unchanged. Coerce empty string to
+    // null so a cleared autocomplete cleanly removes the FK.
+    if (data.dealId !== undefined) update.dealId = data.dealId || null;
     if (data.status !== undefined) {
       const valid = ['DRAFT', 'SENT', 'VIEWED', 'ACCEPTED', 'REJECTED', 'EXPIRED', 'INVOICED'];
       if (!valid.includes(data.status)) { set.status = 400; return { error: 'Invalid status' }; }
