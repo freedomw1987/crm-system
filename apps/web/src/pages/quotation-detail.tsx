@@ -369,6 +369,18 @@ export function QuotationDetailPage() {
                 <User className="h-3 w-3" />
                 <span>建立人: {quotation.createdBy?.name ?? '—'}</span>
               </div>
+              {/* 2026-06-26: sales-rep row. The follow-up salesperson
+                  is separate from the creator (e.g. a sales engineer
+                  builds the quote, an account exec follows up with
+                  the customer). Falls back to createdBy.name when
+                  salesRepId is null, which is the historical
+                  behaviour (the creator was implicitly the rep). */}
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <span className="inline-block h-3 w-3 rounded-full bg-primary/20 text-primary text-[8px] font-semibold leading-3 text-center">
+                  {(quotation.salesRep?.name ?? quotation.createdBy?.name ?? '—').slice(0, 1).toUpperCase()}
+                </span>
+                <span>銷售員: {quotation.salesRep?.name ?? quotation.createdBy?.name ?? '—'}</span>
+              </div>
               {quotation.validUntil && (
                 <p className="text-xs text-muted-foreground">
                   有效至: {formatDate(quotation.validUntil)}

@@ -13,6 +13,7 @@ import { formatCurrency } from '@/lib/utils';
 import { CompanyAutocomplete } from '@/components/company-autocomplete';
 import { MultiCompanyAutocomplete } from '@/components/multi-company-autocomplete';
 import { MultiUserAutocomplete } from '@/components/multi-user-autocomplete';
+import { UserAutocomplete } from '@/components/user-autocomplete';
 import { QuotationBuilder } from '@/components/quotation-builder';
 import { DealActivityDialog } from '@/components/deal-activity-dialog';
 import { DealsActivityPanel } from '@/components/deals-activity-panel';
@@ -478,7 +479,23 @@ function DealCard({
       <div className="flex items-start gap-1.5">
         <GripVertical className="h-3.5 w-3.5 text-muted-foreground/50 mt-0.5 shrink-0" />
         <div className="flex-1 min-w-0">
-          <div className="font-medium text-sm leading-snug">{deal.title}</div>
+          <div className="flex items-start justify-between gap-1.5">
+            <div className="font-medium text-sm leading-snug flex-1 min-w-0">{deal.title}</div>
+            {/* 2026-06-26: owner initials avatar (top-right corner).
+                Shows the first character of the owner's name so the
+                kanban is scannable for "whose deal is this?" without
+                taking horizontal space. Tooltip carries the full
+                name + email for disambiguation. */}
+            {deal.owner && (
+              <span
+                className="shrink-0 inline-flex items-center justify-center h-5 w-5 rounded-full bg-primary/15 text-primary text-[10px] font-semibold"
+                title={`銷售員: ${deal.owner.name}${deal.owner.email ? ` <${deal.owner.email}>` : ''}`}
+                data-testid="deal-card-owner-initial"
+              >
+                {deal.owner.name.slice(0, 1).toUpperCase()}
+              </span>
+            )}
+          </div>
           <div className="flex items-center justify-between mt-1.5">
             <div className="text-xs text-muted-foreground truncate">
               {deal.company?.name ?? '—'}
@@ -644,6 +661,12 @@ export function DealDialog({
   const [expectedCloseDate, setExpectedCloseDate] = useState(
     deal?.expectedCloseDate ? deal.expectedCloseDate.slice(0, 10) : defaultCloseDate
   );
+  // 2026-06-26: 銷售員 picker. In edit mode, pre-fill from the
+  // existing deal's owner. In create mode, start empty — the
+  // backend defaults ownerId to the authenticated userId when
+  // omitted, so the most common case (sales rep creates their own
+  // deal) needs no client-side setting.
+  const [ownerId, setOwnerId] = useState<string | null>(deal?.owner?.id ?? null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -663,6 +686,7 @@ export function DealDialog({
       setExpectedCloseDate(
         deal?.expectedCloseDate ? deal.expectedCloseDate.slice(0, 10) : defaultCloseDate
       );
+      setOwnerId(deal?.owner?.id ?? null);
       setError(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -685,10 +709,15 @@ export function DealDialog({
         const stageChanged = stageId !== deal.stage?.id;
         // 1) Update the rest of the editable fields (skip stageId to
         //    avoid bypassing the auto-status logic on the backend).
+        //    2026-06-26: also send ownerId when it changed so the
+        //    sales rep can be reassigned from the dialog. Use
+        //    `undefined` (not null) when unchanged so the backend
+        //    doesn't touch the FK on no-op saves.
         await dealsApi.update(deal.id, {
           title: title.trim(),
           value: Number(value) || 0,
           expectedCloseDate: expectedCloseDate || undefined,
+          ownerId: ownerId === deal.owner?.id ? undefined : (ownerId || null),
         });
         // 2) If the stage changed, route through the dedicated endpoint
         //    so the backend can set status + closedAt correctly.
@@ -700,12 +729,16 @@ export function DealDialog({
         // caller (DealAutocomplete) can auto-select it in the
         // QuotationBuilder without an extra roundtrip. The `as Deal`
         // cast is safe — `dealsApi.create` returns `request<Deal>(...)`.
+        // 2026-06-26: optionally forward the picked ownerId when
+        // the user explicitly chose someone other than themselves.
+        // Omitting it lets the backend default to userId.
         const newDeal: Deal = await dealsApi.create({
           title: title.trim(),
           companyId,
           value: Number(value) || 0,
           stageId,
           expectedCloseDate: expectedCloseDate || undefined,
+          ownerId: ownerId || undefined,
         });
         if (!isEdit) {
           setTitle(''); setValue(''); setExpectedCloseDate('');
@@ -770,6 +803,17 @@ export function DealDialog({
               <Label htmlFor="close">預計成交日</Label>
               <Input id="close" type="date" value={expectedCloseDate} onChange={(e) => setExpectedCloseDate(e.target.value)} />
             </div>
+          </div>
+          {/* 2026-06-26: 銷售員 picker. In edit mode pre-fills from
+              deal.owner; in create mode starts empty (backend
+              defaults to the authenticated user). User can override
+              either way — useful for managers creating deals on
+              behalf of reps, or when reassigning a deal. */}
+          <div>
+            <UserAutocomplete
+              value={ownerId}
+              onChange={setOwnerId}
+            />
           </div>
           {error && (
             <div className="flex items-center justify-between bg-destructive/10 text-destructive text-sm p-2 rounded">

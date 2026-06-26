@@ -342,6 +342,14 @@ function QuotationsTab({ dealId, dealCompanyId }: { dealId: string; dealCompanyI
                 <th className="px-4 py-3 font-medium">Title</th>
                 <th className="px-4 py-3 font-medium">Status</th>
                 <th className="px-4 py-3 font-medium text-right">Total</th>
+                {/* 2026-06-26: 銷售員 column on the deal-detail
+                    Quotations tab. Mirrors the list page so users
+                    scanning "all the quotations on this deal" can
+                    see at a glance which salesperson owns each one
+                    (important when reassigning deals mid-flight).
+                    Falls back to the creator when salesRepId is
+                    null. */}
+                <th className="px-4 py-3 font-medium">銷售員</th>
                 <th className="px-4 py-3 font-medium">Created</th>
                 <th className="px-4 py-3 font-medium">Sent</th>
                 <th className="px-4 py-3 font-medium">Accepted</th>
@@ -360,6 +368,9 @@ function QuotationsTab({ dealId, dealCompanyId }: { dealId: string; dealCompanyI
                   </td>
                   <td className="px-4 py-3 text-right font-semibold tabular-nums">
                     {formatCurrency(q.total)}
+                  </td>
+                  <td className="px-4 py-3 text-xs">
+                    {q.salesRep?.name ?? q.createdBy?.name ?? <span className="text-muted-foreground">—</span>}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">
                     {formatDate(q.createdAt)}

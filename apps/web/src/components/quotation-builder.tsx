@@ -28,6 +28,7 @@ import { QuickCreateServiceDialog } from './quick-create-service-dialog';
 import { ProductDialog } from './product-dialog';
 import { CompanyAutocomplete } from './company-autocomplete';
 import { DealAutocomplete } from './deal-autocomplete';
+import { UserAutocomplete } from './user-autocomplete';
 import { createClientId } from '@/lib/client-id';
 
 interface DraftLine {
@@ -152,6 +153,11 @@ export function QuotationBuilder({
     existing?.validUntil ? existing.validUntil.slice(0, 10) : ''
   );
   const [dealId, setDealId] = useState<string>(seedDealId);
+  // 2026-06-26: sales-rep state. In edit mode, pre-fill from
+  // existing.salesRepId; in create mode, leave null (the backend
+  // defaults salesRepId to the authenticated userId on POST when
+  // the field is omitted). The user can override either way.
+  const [salesRepId, setSalesRepId] = useState<string | null>(existing?.salesRepId ?? null);
   const [lines, setLines] = useState<DraftLine[]>(linesFromQuotation(existing));
 
   const [products, setProducts] = useState<Product[]>([]);
@@ -347,6 +353,13 @@ export function QuotationBuilder({
           taxRate,
           validUntil: validUntil || undefined,
           dealId: dealId || null,
+          // 2026-06-26: only send salesRepId when it changed so the
+          // backend doesn't touch the FK on no-op saves (undefined
+          // means "leave unchanged"). If the user explicitly cleared
+          // it (salesRepId is now null and was set before), pass null
+          // to detach.
+          salesRepId:
+            salesRepId === existing.salesRepId ? undefined : (salesRepId || null),
         });
         // 2. sync items: delete removed, add new, update existing
         const originalIds = new Set((existing.items ?? []).map((it) => it.id).filter(Boolean) as string[]);
@@ -386,6 +399,10 @@ export function QuotationBuilder({
         const created = await quotationsApi.create({
           companyId,
           dealId: dealId || undefined,
+          // 2026-06-26: forward the picked sales rep. Omitting the
+          // field on create lets the backend default to userId (the
+          // most common case — sales rep creates their own quote).
+          salesRepId: salesRepId || undefined,
           title: title || undefined,
           notes: notes || undefined,
           taxRate,
@@ -470,6 +487,17 @@ export function QuotationBuilder({
               setUserTouchedTax(true);
               setTaxRate(Number(e.target.value) || 0);
             }}
+          />
+        </div>
+        {/* 2026-06-26: 銷售員 picker. Pre-fills from existing.salesRepId
+            in edit mode; null in create mode (the backend defaults to
+            the authenticated user). The user can override either way.
+            Sits in a 2-col cell on the same row as the tax rate to
+            keep the form compact. */}
+        <div className="space-y-1.5 md:col-span-2">
+          <UserAutocomplete
+            value={salesRepId}
+            onChange={setSalesRepId}
           />
         </div>
       </div>
