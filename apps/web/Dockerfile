@@ -2,10 +2,12 @@
 # CRM Web — Multi-stage Dockerfile
 # Stage 1: Build SPA with Vite
 # Stage 2: Serve static files + reverse proxy /api to api:3001
+# Base: oven/bun:1.2.23 — PINNED (P1-11, 2026-06-26)
+# Match apps/api/Dockerfile. Don't bump without regenerating bun.lock.
 # ====================================================================
 
 # ---- Stage 1: build ----
-FROM oven/bun:1.2 AS builder
+FROM oven/bun:1.2.23 AS builder
 
 USER root
 RUN apt-get update && apt-get install -y --no-install-recommends curl \

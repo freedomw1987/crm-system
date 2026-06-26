@@ -8,4 +8,13 @@
 exact = true
 
 [install.cache]
-disable = false
+# 2026-06-26 hardening: was `disable = false` (default). Inside
+# Docker BuildKit layer caches, Bun's install cache can hold a
+# partial registry snapshot from a prior resolver run; with
+# `--frozen-lockfile`, a mismatch between that stale snapshot
+# and the live registry manifests can produce spurious
+# "No version matching X.Y.Z found (but package exists)" errors
+# (P1-11). Disabling the cache forces every install to hit the
+# registry, which adds ~30s to a cold Docker build but makes
+# the install fully deterministic.
+disable = true

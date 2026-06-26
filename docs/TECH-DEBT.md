@@ -12,7 +12,7 @@
 | Severity | Count | Ship-blocking? |
 |----------|-------|----------------|
 | 🔴 **P0** (critical, blocks ship) | 6 | Yes (all 6 ✅ Fixed in Day 17 P0 sprint) |
-| 🟠 **P1** (high, must fix this sprint) | 7 | No (but should) |
+| 🟠 **P1** (high, must fix this sprint) | 8 | No (but should) |
 | 🟡 **P2** (medium, backlog) | 13 | No |
 
 **Day 17 P1 sprint (2026-06-08) shipped:**
@@ -23,6 +23,8 @@
 - ✅ P1-3 (was already done in commit 42ef13b/7d79357)
 - ✅ P1-4 (was already done in commit 726b23c)
 - ✅ P1-9 — frontend CRUD gaps on Companies/Deals/Quotations list pages (commit fca07ee) + api.ts surface regression guard (commit c578759)
+- ✅ P1-10 — Quotation line items preserve snapshot when Product/Service is deleted/renamed (commits 3b36451 + 835d972)
+- ✅ P1-11 — Docker base-image floating tag + Bun install cache (bunfig.toml + Dockerfile pin to `oven/bun:1.2.23`)
 - 📌 Critical follow-up: RG-007 — Day 17 AI tool confirmation migration was
    never applied to prod (also fixed in this sprint)
 
@@ -227,6 +229,35 @@ maintained as a known backlog.
 - **Fix:** Add `requirePermission('ai-config:read')` to the status
   route specifically.
 - **Est:** 15 minutes
+
+### P1-11 — Docker base image is a floating tag; Bun install cache poisoned by BuildKit
+- **Where:** `apps/api/Dockerfile` (lines 8 + 43), `apps/web/Dockerfile` (line 8),
+  `bunfig.toml` (`[install.cache]`)
+- **Why (symptom, 2026-06-26):** `docker compose build api` failed at step
+  10/17 with `bun install --frozen-lockfile` →
+  `error: No version matching "5.22.0" found for specifier "prisma" (but
+  package exists)`. The lockfile pins `prisma@5.22.0` correctly; the
+  registry has 5.22.0; locally `bun install --frozen-lockfile` passed.
+  Two compounding root causes:
+  1. **`oven/bun:1.2` is a floating tag.** At different pulls it resolves
+     to different patches (the crm-api container recently jumped
+     1.2.14 → 1.2.23). 1.2.23's resolver is stricter and disagreed with
+     the cached metadata that 1.2.14 had written.
+  2. **`[install.cache] disable = false`** (Bun's default) means Bun
+     keeps a per-`bun install` cache of resolved registry metadata.
+     Inside Docker BuildKit's layer cache, that cache outlives a
+     `docker build` invocation, so the next build can hit the network,
+     fetch a slightly newer manifest for an unrelated package, and end
+     up with a stale-but-not-stale-enough snapshot of `prisma` whose
+     version range no longer matches the lockfile.
+- **Fix (2026-06-26):**
+  1. Pin both Dockerfiles to `oven/bun:1.2.23` (matches the running
+     crm-api container). Documented a "must regenerate bun.lock" rule
+     alongside.
+  2. Set `[install.cache] disable = true` in `bunfig.toml`. Adds ~30s
+     to a cold build; eliminates the class of failure entirely.
+- **Est:** 10 minutes (already shipped)
+- **Linked:** Day 17 hardening list (red-line 7 — env hygiene).
 
 ---
 

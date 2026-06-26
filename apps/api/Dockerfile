@@ -1,11 +1,12 @@
 # ====================================================================
 # CRM API — Multi-stage Dockerfile
 # Target: local deployment (Mac/Linux server, NAS, NUC)
-# Base: oven/bun:1.2 (matches dev toolchain)
+# Base: oven/bun:1.2.23 — PINNED (P1-11, 2026-06-26)
+# Don't bump without regenerating bun.lock on the matching host version.
 # ====================================================================
 
 # ---- Stage 1: install + build ----
-FROM oven/bun:1.2 AS builder
+FROM oven/bun:1.2.23 AS builder
 
 # Bun 1.2 base image is debian-slim. Install system deps for Prisma engine
 # (libssl, ca-certificates) and curl for healthcheck.
@@ -40,7 +41,7 @@ RUN bunx prisma generate
 WORKDIR /app
 
 # ---- Stage 2: runtime ----
-FROM oven/bun:1.2 AS runtime
+FROM oven/bun:1.2.23 AS runtime
 
 USER root
 RUN apt-get update && apt-get install -y --no-install-recommends \
