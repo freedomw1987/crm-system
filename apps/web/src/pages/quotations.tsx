@@ -96,6 +96,42 @@ export function QuotationsPage() {
     },
   });
 
+  // 2026-06-26: editing a quotation from the LIST page needs the full
+  // line items, not the list-shape response. The list endpoint
+  // (GET /api/quotations) deliberately excludes `items[]` (only returns
+  // `_count.items`) for performance — but the QuotationBuilder's edit
+  // mode reads `existing.items` to pre-fill the form, so without
+  // fetching the full quotation the form opens empty. This was the
+  // root cause of the "list-page edit loses historical Product/Service
+  // data" bug: the list response has no items at all, so the snapshot
+  // data (name / sku / manDaySnapshot) was never reaching the
+  // autocomplete. P1-10's snapshot precedence contract assumed the
+  // form was opened with the full data — this hook makes that true
+  // for the list-page path too.
+  //
+  // We track `loadingEditId` so the row's 編輯 button can show a
+  // spinner + disable itself while the fetch is in flight, and the
+  // modal only opens after the full quotation is in hand. We also
+  // populate the React Query cache under `['quotation', id]` so a
+  // subsequent navigation to /quotations/:id (e.g. clicking 查看)
+  // doesn't refetch the same row.
+  const [loadingEditId, setLoadingEditId] = useState<string | null>(null);
+  async function openEdit(q: Quotation) {
+    setLoadingEditId(q.id);
+    try {
+      const full = await quotationsApi.get(q.id);
+      // Pre-seed the detail-page cache. QuotationDetailPage reads the
+      // same key, so the user can click 查看 right after editing and
+      // see the form's saved version instantly.
+      queryClient.setQueryData(['quotation', q.id], full);
+      setEditing(full);
+    } catch (err) {
+      window.alert(`載入報價失敗: ${(err as Error).message}`);
+    } finally {
+      setLoadingEditId(null);
+    }
+  }
+
   // Edit dialog uses the same QuotationBuilder that powers create. The
   // builder detects `existing` and switches to PATCH on save. We just
   // need a separate `open` flag so the create and edit dialogs don't
@@ -343,9 +379,15 @@ export function QuotationsPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => setEditing(q)}
+                            onClick={() => openEdit(q)}
+                            disabled={loadingEditId === q.id}
+                            data-testid="quotation-row-edit"
                           >
-                            編輯
+                            {loadingEditId === q.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              '編輯'
+                            )}
                           </Button>
                           <Button
                             variant="ghost"
