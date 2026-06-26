@@ -175,6 +175,102 @@ describe("adaptCrmQuotationForExcel", () => {
     expect(flat.QuotationItem[2].sku).toBe("Barco-CX-50"); // a
   });
 
+  test("PRODUCT line: SOW falls back to live product.description when snapshot is empty", () => {
+    const q = makeBaseQuotation({
+      items: [
+        productItem({
+          description: null,
+          product: {
+            sku: "Barco-CX-50",
+            name: "ClickShare CX-50",
+            category: "Hardware",
+            costPrice: 8000,
+            description: "Includes 1-year hardware warranty",
+          },
+        }),
+      ],
+    });
+    const flat = adaptCrmQuotationForExcel(q);
+    expect(flat.QuotationItem[0].sow).toBe("Includes 1-year hardware warranty");
+  });
+
+  test("PRODUCT line: snapshot description wins over live product.description (renamed catalogue)", () => {
+    // The customer was quoted against "ClickShare CX-50 (legacy SKU)";
+    // the product was later renamed to "ClickShare CX-50 Gen2" with a
+    // new description. The Excel must still emit the snapshot — that's
+    // what the customer signed.
+    const q = makeBaseQuotation({
+      items: [
+        productItem({
+          description: "ClickShare CX-50 (legacy SKU)",
+          product: {
+            sku: "Barco-CX-50",
+            name: "ClickShare CX-50 Gen2",
+            category: "Hardware",
+            costPrice: 8000,
+            description: "Includes 3-year warranty",
+          },
+        }),
+      ],
+    });
+    const flat = adaptCrmQuotationForExcel(q);
+    expect(flat.QuotationItem[0].sow).toBe("ClickShare CX-50 (legacy SKU)");
+  });
+
+  test("PRODUCT line: snapshot survives product deletion (live relation is null)", () => {
+    // The product was deleted; QuotationItem.productId was SetNull'd,
+    // but `item.description` (snapshot) is preserved.
+    const q = makeBaseQuotation({
+      items: [
+        productItem({
+          description: "Archived product — sold as-is",
+          product: null,
+        }),
+      ],
+    });
+    const flat = adaptCrmQuotationForExcel(q);
+    expect(flat.QuotationItem[0].sow).toBe("Archived product — sold as-is");
+  });
+
+  test("SERVICE line: snapshot description wins over live service.description", () => {
+    const q = makeBaseQuotation({
+      items: [
+        serviceItem({
+          description: "Senior Engineer · 10 days · deliverable: SOW doc v2",
+          service: { name: "Senior Engineer Implementation", description: "Live description" },
+        }),
+      ],
+    });
+    const flat = adaptCrmQuotationForExcel(q);
+    expect(flat.QuotationItem[0].sow).toBe(
+      "Senior Engineer · 10 days · deliverable: SOW doc v2",
+    );
+  });
+
+  test("SERVICE line: snapshot survives service deletion (live relation is null)", () => {
+    const q = makeBaseQuotation({
+      items: [
+        serviceItem({
+          description: "Implements the customer's SOW as agreed",
+          service: null,
+        }),
+      ],
+    });
+    const flat = adaptCrmQuotationForExcel(q);
+    expect(flat.QuotationItem[0].sow).toBe(
+      "Implements the customer's SOW as agreed",
+    );
+  });
+
+  test("SERVICE line: SOW is empty when no description is available at any layer", () => {
+    const q = makeBaseQuotation({
+      items: [serviceItem({ description: null, service: null })],
+    });
+    const flat = adaptCrmQuotationForExcel(q);
+    expect(flat.QuotationItem[0].sow).toBe("");
+    expect(flat.QuotationItem[0].sow_en).toBe("");
+  });
+
   test("gap fields: notice/assumption/barco_sale_cost hard-coded (US-A6 will fix)", () => {
     // 2026-06-07: these are BoardPro-only fields, CRM has no equivalent yet.
     //   We document the hard-coded values so a future US-A6 PR can find them.

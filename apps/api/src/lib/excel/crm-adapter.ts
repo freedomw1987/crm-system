@@ -132,8 +132,14 @@ export function adaptCrmQuotationForExcel(
       // 2026-06-07: notice / sow / assumption — empty until US-A6 schema extension
       notice: "",
       notice_en: "",
-      sow: service?.description ?? product?.description ?? "",
-      sow_en: service?.description ?? product?.description ?? "",
+      // P2-Snapshot-Display (2026-06-26): prefer the snapshot
+      // `item.description` (captured at line creation) over the live
+      // catalogue's `service.description` / `product.description`. This
+      // matches the detail-page precedence and means an old quotation
+      // whose service/product was renamed or deleted still emits the
+      // SOW the customer was originally quoted against. Same for sow_en.
+      sow: item.description ?? service?.description ?? product?.description ?? "",
+      sow_en: item.description ?? service?.description ?? product?.description ?? "",
       assumption: "",
       assumption_en: "",
     };

@@ -252,6 +252,14 @@ export interface QuotationItem {
    *  time the quotation was created. Used to display the SOW breakdown in the
    *  quotation detail view even if the service template is later changed. */
   manDaySnapshot?: Array<{ role: string; dayRate: number; days: number; subtotal: number; costRate?: number; manDayRoleId?: string }> | null;
+  // P2-Snapshot-Display: live relations, ONLY populated by GET /quotations/:id
+  // (the list endpoint doesn't include them). When these are null while
+  // productId/serviceId is set, the catalogue record was deleted (FK was
+  // SetNull'd). The snapshot fields (name, description, manDaySnapshot) hold
+  // the historical value — see `isLineItemDeleted` in
+  // `quotation-line-item-snapshot.tsx`.
+  product?: { id: string; name: string; sku: string; description?: string | null } | null;
+  service?: { id: string; name: string; description?: string | null } | null;
 }
 export type QuotationStatus = 'DRAFT' | 'SENT' | 'VIEWED' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED' | 'INVOICED';
 export interface Quotation {

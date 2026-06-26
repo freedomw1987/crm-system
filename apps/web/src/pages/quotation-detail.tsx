@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { QuotationBuilder } from '@/components/quotation-builder';
+import { LineItemSnapshotMeta } from '@/components/quotation-line-item-snapshot';
 import { quotationsApi, type Quotation, type QuotationStatus } from '@/lib/api';
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils';
 
@@ -126,10 +127,11 @@ export function QuotationDetailPage() {
           </thead>
           <tbody>
             {quotation.items.map((item) => (
-              <tr key={item.id ?? item.name} className="border-b last:border-0">
+              <tr key={item.id ?? item.name} className="border-b last:border-0 align-top">
                 <td className="py-2">
                   <div className="font-medium">{item.name}</div>
                   {item.sku && <div className="text-xs text-gray-500">SKU: {item.sku}</div>}
+                  <LineItemSnapshotMeta item={item} print />
                 </td>
                 <td className="py-2 text-right tabular-nums">{item.quantity}</td>
                 <td className="py-2 text-right tabular-nums">{formatCurrency(item.unitPrice)}</td>
@@ -288,12 +290,13 @@ export function QuotationDetailPage() {
                 </thead>
                 <tbody>
                   {quotation.items.map((item) => (
-                    <tr key={item.id ?? item.name} className="border-b last:border-0">
+                    <tr key={item.id ?? item.name} className="border-b last:border-0 align-top">
                       <td className="px-4 py-3">
                         <div className="font-medium">{item.name}</div>
                         {item.sku && (
                           <div className="text-xs text-muted-foreground">SKU: {item.sku}</div>
                         )}
+                        <LineItemSnapshotMeta item={item} />
                       </td>
                       <td className="px-4 py-3 text-right tabular-nums">{item.quantity}</td>
                       <td className="px-4 py-3 text-right tabular-nums">
