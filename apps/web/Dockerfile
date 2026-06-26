@@ -30,7 +30,9 @@ COPY apps/web ./apps/web
 WORKDIR /app/apps/web
 
 # Build args can be used to inject API base URL at build time
+ARG VITE_BASE_PATH=/
 ARG VITE_API_BASE=/api
+ENV VITE_BASE_PATH=$VITE_BASE_PATH
 ENV VITE_API_BASE=$VITE_API_BASE
 
 RUN bun run build

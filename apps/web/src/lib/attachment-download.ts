@@ -18,10 +18,11 @@
  * with a descriptive Error.
  */
 import { getToken, type Attachment } from './api';
+import { apiUrl } from './runtime-paths';
 
 export async function downloadAttachment(att: Attachment): Promise<void> {
   const token = getToken();
-  const res = await fetch(`/api/attachments/${att.id}/download`, {
+  const res = await fetch(apiUrl(`/attachments/${att.id}/download`), {
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
   });
   if (!res.ok) {

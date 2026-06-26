@@ -24,6 +24,7 @@ import { AiConfigPage } from '@/pages/ai-config';
 import SettingsPage from '@/pages/settings';
 import { SettingsLayout } from '@/components/settings-layout';
 import { SettingsTaxPage } from '@/pages/settings-tax';
+import { APP_BASENAME } from '@/lib/runtime-paths';
 // Day 14.7 Step 8 — the 5 admin pages that were at top-level routes are
 // now mounted as children of <SettingsLayout /> (below). Top-level direct
 // routes for them are replaced by <Navigate /> backward-compat redirects.
@@ -50,7 +51,7 @@ function Bootstrap() {
 export function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
+      <BrowserRouter basename={APP_BASENAME || undefined}>
         <Bootstrap />
         <Routes>
           <Route path="/login" element={<LoginPage />} />

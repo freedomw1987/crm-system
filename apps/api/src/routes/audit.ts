@@ -5,17 +5,26 @@
  *   filters: actorId, action, resourceType, resourceId, from, to, limit, offset
  */
 
-import { Elysia } from 'elysia';
-import { Prisma, AuditAction } from '@prisma/client';
-import { prisma } from '@crm/db';
-import { authContext } from '../lib/context';
-import { requirePermission } from '../middleware/rbac';
+import { Elysia } from "elysia";
+import { Prisma, AuditAction } from "@prisma/client";
+import { prisma } from "@crm/db";
+import { authContext } from "../lib/context";
+import { requirePermission } from "../middleware/rbac";
 
-export const auditRoutes = new Elysia({ prefix: '/audit', tags: ['audit'] })
+export const auditRoutes = new Elysia({ prefix: "/audit", tags: ["audit"] })
   .use(authContext)
-  .use(requirePermission('audit:read'))
-  .get('/', async ({ query }) => {
-    const { actorId, action, resourceType, resourceId, from, to, limit = '50', offset = '0' } = query as {
+  .use(requirePermission("audit:read"))
+  .get("/", async ({ query }) => {
+    const {
+      actorId,
+      action,
+      resourceType,
+      resourceId,
+      from,
+      to,
+      limit = "50",
+      offset = "0",
+    } = query as {
       actorId?: string;
       action?: string;
       resourceType?: string;
@@ -41,7 +50,7 @@ export const auditRoutes = new Elysia({ prefix: '/audit', tags: ['audit'] })
         where,
         take: Number(limit),
         skip: Number(offset),
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: "desc" },
         include: {
           actor: { select: { id: true, name: true, email: true, role: true } },
         },
@@ -50,7 +59,7 @@ export const auditRoutes = new Elysia({ prefix: '/audit', tags: ['audit'] })
     ]);
     return { items, total, limit: Number(limit), offset: Number(offset) };
   })
-  .get('/actions', () => {
+  .get("/actions", () => {
     // Return all valid audit actions for filter UI dropdown
     return Object.values(AuditAction);
   })
@@ -70,24 +79,24 @@ export const auditRoutes = new Elysia({ prefix: '/audit', tags: ['audit'] })
   // from its own constants. When we wire AiConfig-based config,
   // the script will need to read the same store as this endpoint.
   // ----------------------------------------------------------------
-  .get('/retention-policy', async () => {
-  // Lazy import so the route file's cold start doesn't pull in
-  // the prune script's transitive dependencies unless needed.
-  const {
-    DEFAULT_RETENTION_DAYS,
-    SENSITIVE_RETENTION_DAYS,
-    SENSITIVE_ACTIONS,
-    PRUNE_BATCH_SIZE,
-  } = await import('../scripts/audit-log-prune');
-  return {
-    defaultRetentionDays: DEFAULT_RETENTION_DAYS,
-    sensitiveRetentionDays: SENSITIVE_RETENTION_DAYS,
-    sensitiveActions: SENSITIVE_ACTIONS,
-    batchSize: PRUNE_BATCH_SIZE,
-    lastPrunedAt: null, // Phase B: track last run via a SystemConfig row
-    notes:
-      'Retention policy is currently hard-coded in the prune script. ' +
-      'Edit apps/api/src/scripts/audit-log-prune.ts to change values, ' +
-      'then re-run the prune script (or wait for the next cron tick).',
-  };
-});
+  .get("/retention-policy", async () => {
+    // Lazy import so the route file's cold start doesn't pull in
+    // the prune script's transitive dependencies unless needed.
+    const {
+      DEFAULT_RETENTION_DAYS,
+      SENSITIVE_RETENTION_DAYS,
+      SENSITIVE_ACTIONS,
+      PRUNE_BATCH_SIZE,
+    } = await import("../scripts/audit-log-prune");
+    return {
+      defaultRetentionDays: DEFAULT_RETENTION_DAYS,
+      sensitiveRetentionDays: SENSITIVE_RETENTION_DAYS,
+      sensitiveActions: SENSITIVE_ACTIONS,
+      batchSize: PRUNE_BATCH_SIZE,
+      lastPrunedAt: null, // Phase B: track last run via a SystemConfig row
+      notes:
+        "Retention policy is currently hard-coded in the prune script. " +
+        "Edit apps/api/src/scripts/audit-log-prune.ts to change values, " +
+        "then re-run the prune script (or wait for the next cron tick).",
+    };
+  });
