@@ -25,6 +25,7 @@
 - ✅ P1-9 — frontend CRUD gaps on Companies/Deals/Quotations list pages (commit fca07ee) + api.ts surface regression guard (commit c578759)
 - ✅ P1-10 — Quotation line items preserve snapshot when Product/Service is deleted/renamed (commits 3b36451 + 835d972)
 - ✅ P1-11 — Docker base-image floating tag + Bun install cache (bunfig.toml + Dockerfile pin to `oven/bun:1.2.23`)
+- ✅ P2-snapshot-display — extend P1-10's snapshot precedence to the read-only surfaces: QuotationDetailPage (normal + print) now renders description + SOW breakdown + "(已刪除)" badge via the shared `<LineItemSnapshotMeta>` component, and `crm-adapter.ts` now prefers `item.description` for the Excel `sow` / `sow_en` fields (commits 1464b4e + this docs commit)
 - 📌 Critical follow-up: RG-007 — Day 17 AI tool confirmation migration was
    never applied to prod (also fixed in this sprint)
 

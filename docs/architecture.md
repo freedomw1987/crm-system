@@ -283,6 +283,27 @@ the snapshot with a "(已刪除)" badge; if it was renamed, the line
 keeps showing the snapshot name. The quotation is a faithful record
 of what was quoted, not a live view of the catalogue.
 
+The same snapshot precedence applies to the **read-only** surfaces,
+so an old quotation behaves the same in every view:
+
+- `QuotationDetailPage` (normal + print mode line-items tables) uses
+  the shared `<LineItemSnapshotMeta>` component
+  (`apps/web/src/components/quotation-line-item-snapshot.tsx`), which
+  renders description, the SERVICE SOW / man-day breakdown from
+  `manDaySnapshot`, and the "(已刪除)" badge when the live `product` /
+  `service` relation is null. Helpers: `isLineItemDeleted(item)` and
+  `resolveLineItemDescription(item)`. P2-snapshot-display (commit
+  1464b4e, 2026-06-26).
+- The Excel export (`apps/api/src/lib/excel/crm-adapter.ts`) emits
+  `sow` / `sow_en` from `item.description` (snapshot) before falling
+  back to the live catalogue, so a deleted service doesn't blank the
+  SOW sheet.
+
+Pinned by vitest tests in
+`apps/web/src/components/__tests__/quotation-line-item-snapshot.test.ts`
+(8 cases) and bun:test cases in
+`apps/api/src/lib/excel/crm-adapter.test.ts` (6 cases).
+
 ### 7.4 Currency and money
 
 - All money fields are stored as `Decimal(12, 2)` in Prisma, returned

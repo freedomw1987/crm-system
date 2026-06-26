@@ -386,20 +386,41 @@ A single line on a quotation. **Polymorphic** — exactly one of
 
 **Indexes:** `quotationId`, `productId`, `serviceId`, `itemType`
 
-> **Snapshot integrity (P1-10, 2026-06-23)** — The DB snapshot
-> (`sku`, `name`, `description`, `unitPrice`, `manDaySnapshot`) is the
-> **source of truth** for what the line displays, not the live
-> `Product` / `Service` record. If the underlying Product/Service is
-> later **deleted** (`onDelete: SetNull` on `productId` / `serviceId`
-> leaves the FK dangling), the line keeps showing the old name/sku/price
-> with a "(已刪除)" badge in the edit dialog's autocomplete
-> (`apps/web/src/components/quotation-builder.tsx` — `ProductAutocomplete`
-> / `ServiceAutocomplete`). If the underlying record is **renamed**,
-> the line keeps showing the snapshot name — the quotation stays a
-> faithful historical record of what the customer was quoted.
-> Precedence helper: `autocompleteLabel(snapshotName, snapshotSku, live)`
-> (snapshot wins, live is fallback). Tested in
-> `apps/web/src/components/__tests__/quotation-builder-snapshot.test.ts`.
+> **Snapshot integrity (P1-10, 2026-06-23 → P2-snapshot-display, 2026-06-26)** —
+> The DB snapshot (`sku`, `name`, `description`, `unitPrice`,
+> `manDaySnapshot`) is the **source of truth** for what the line
+> displays, not the live `Product` / `Service` record. If the
+> underlying Product/Service is later **deleted** (`onDelete: SetNull`
+> on `productId` / `serviceId` leaves the FK dangling), the line keeps
+> showing the old name/sku/price with a "(已刪除)" badge. If the
+> underlying record is **renamed**, the line keeps showing the snapshot
+> name — the quotation stays a faithful historical record of what the
+> customer was quoted.
+>
+> Surfaces that honour this contract:
+>
+> 1. **Edit dialog** (`apps/web/src/components/quotation-builder.tsx` —
+>    `ProductAutocomplete` / `ServiceAutocomplete`). P1-10, commit
+>    3b36451. Precedence helper: `autocompleteLabel(snapshotName,
+>    snapshotSku, live)` (snapshot wins, live is fallback). Tested in
+>    `apps/web/src/components/__tests__/quotation-builder-snapshot.test.ts`.
+>
+> 2. **Quotation detail page — read-only line-items table** (normal +
+>    print modes). P2-snapshot-display, commit 1464b4e. Uses the
+>    shared `<LineItemSnapshotMeta>` component to render description,
+>    a collapsible SOW / man-day breakdown for SERVICE items, and the
+>    "(已刪除)" badge + "原紀錄已刪除,以下為 snapshot 資料" hint when
+>    the catalogue record is gone. Helpers: `isLineItemDeleted(item)`
+>    + `resolveLineItemDescription(item)` (snapshot wins, live is
+>    fallback, null when nothing is available). Tested in
+>    `apps/web/src/components/__tests__/quotation-line-item-snapshot.test.ts`.
+>
+> 3. **Excel export** (`apps/api/src/lib/excel/crm-adapter.ts`). The
+>    `sow` / `sow_en` fields prefer `item.description` (snapshot) over
+>    the live `service.description` / `product.description`, so an old
+>    quotation whose service has been deleted still exports the SOW
+>    the customer was originally quoted against. Pinned by 6 bun:test
+>    cases in `crm-adapter.test.ts`.
 
 > **Why is `itemType` not a Postgres enum?**
 > See the comment block in the schema (line ~424-433). Short version:
