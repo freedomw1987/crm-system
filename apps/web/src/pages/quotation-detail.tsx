@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { useParams, Link, useSearchParams } from 'react-router-dom';
+import { useParams, Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Sparkles, User, Printer, Edit, Send, Check, X, Trash2, FileDown, Loader2 } from 'lucide-react';
+import { ArrowLeft, Sparkles, User, Printer, Edit, Send, Check, X, Trash2, FileDown, FileText, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -16,6 +16,7 @@ export function QuotationDetailPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const isPrintMode = searchParams.get('print') === '1';
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const { data: quotation, isLoading } = useQuery({
     queryKey: ['quotation', id],
     queryFn: () => quotationsApi.get(id!),
@@ -28,6 +29,12 @@ export function QuotationDetailPage() {
   // is the actual file delivered (so toast/tooltip can echo it).
   const [excelDownloading, setExcelDownloading] = useState(false);
   const [excelError, setExcelError] = useState<string | null>(null);
+  // 2026-06-26: revise-flow state. setReviseConfirmOpen toggles
+  // the confirm dialog; `revising` disables the action button
+  // while the backend call is in flight and is reused for the
+  // button's spinner.
+  const [reviseConfirmOpen, setReviseConfirmOpen] = useState(false);
+  const [revising, setRevising] = useState(false);
 
   // 2026-06-07 (US-A5): Trigger xlsx download via quotationsApi.downloadExcel.
   // Resets error on each attempt so a previous failure doesn't bleed across.
@@ -78,6 +85,29 @@ export function QuotationDetailPage() {
     setEditOpen(false);
     queryClient.invalidateQueries({ queryKey: ['quotation', id] });
     queryClient.invalidateQueries({ queryKey: ['quotations'] });
+  }
+
+  // 2026-06-26: revise flow. The backend's POST /:id/revise
+  // clones the source as a new DRAFT and returns it; we
+  // navigate to the new id so the user lands on the editable
+  // draft immediately. Both `['quotation', newId]` and
+  // `['quotation', id]` are pre-seeded in the cache so
+  // navigation back to the source (e.g. via the back button)
+  // doesn't refetch.
+  async function handleRevise() {
+    if (!id) return;
+    setRevising(true);
+    try {
+      const newQuotation = await quotationsApi.revise(id);
+      setReviseConfirmOpen(false);
+      queryClient.invalidateQueries({ queryKey: ['quotations'] });
+      queryClient.setQueryData(['quotation', newQuotation.id], newQuotation);
+      navigate(`/quotations/${newQuotation.id}`);
+    } catch (err) {
+      window.alert(`建立修訂失敗: ${(err as Error).message}`);
+    } finally {
+      setRevising(false);
+    }
   }
 
   function handlePrint() {
@@ -200,6 +230,29 @@ export function QuotationDetailPage() {
                 </Badge>
               )}
               <QuotationStatusBadge status={quotation.status} />
+              {/* 2026-06-26: revision chip. When this quotation has a
+                  parent (i.e. it's a revision), show a small chip
+                  linking to the parent so the user can navigate
+                  back to the original. The chip text follows the
+                  standard "修訂自 X" pattern. Hidden for the root
+                  quotation (no parent). */}
+              {quotation.parentQuotation && (
+                <Button asChild variant="outline" size="sm" className="h-6 px-2 text-xs" data-testid="quotation-revision-of">
+                  <Link to={`/quotations/${quotation.parentQuotation.id}`}>
+                    修訂自 {quotation.parentQuotation.number}
+                  </Link>
+                </Button>
+              )}
+              {/* 2026-06-26: revision-number badge so the chain
+                  position is visible at a glance. "R1" / "R2" /
+                  etc. only renders for revisionNumber >= 1. The
+                  root quotation (R0) skips the badge since the
+                  number itself (Q-2026-0001) is the indicator. */}
+              {quotation.revisionNumber != null && quotation.revisionNumber > 0 && (
+                <Badge variant="secondary" className="text-[10px]">
+                  R{quotation.revisionNumber}
+                </Badge>
+              )}
             </div>
             <p className="text-muted-foreground text-sm">
               {quotation.company?.name} · 建立於 {formatDate(quotation.createdAt)}
@@ -266,6 +319,27 @@ export function QuotationDetailPage() {
           {isAccepted && (
             <Button size="sm" onClick={() => transition('INVOICED')} disabled={actionLoading === 'INVOICED'}>
               轉成發票
+            </Button>
+          )}
+          {/* 2026-06-26: 建立修訂 button. Visible on every non-DRAFT
+              status (SENT/VIEWED/ACCEPTED/REJECTED/EXPIRED/INVOICED)
+              because the SENT lock freezes the contractual fields
+              on all of them. Click opens a confirm dialog (set below)
+              then navigates to the new DRAFT for editing. */}
+          {!isDraft && (
+            <Button
+              variant="default"
+              size="sm"
+              onClick={() => setReviseConfirmOpen(true)}
+              disabled={revising}
+              data-testid="quotation-revise"
+            >
+              {revising ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <FileText className="h-4 w-4 mr-2" />
+              )}
+              建立修訂
             </Button>
           )}
         </div>
@@ -415,6 +489,46 @@ export function QuotationDetailPage() {
             onSaved={handleBuilderSaved}
             onCancel={() => setEditOpen(false)}
           />
+        </DialogContent>
+      </Dialog>
+
+      {/* 2026-06-26: revise confirm dialog. Warns the user that
+          the original quotation stays untouched (it's SENT/etc
+          so they can't edit it anyway) and a new DRAFT will be
+          created with the same customer / deal / line items.
+          The clone carries a fresh sequential number; the
+          original keeps its Q-2026-0001 identity. */}
+      <Dialog open={reviseConfirmOpen} onOpenChange={setReviseConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>建立 {quotation.number} 嘅修訂?</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <p>呢個動作會：</p>
+            <ul className="list-disc pl-5 space-y-1 text-muted-foreground">
+              <li>保留原本嘅 <span className="font-mono">{quotation.number}</span>（唔會郁佢）</li>
+              <li>複製客戶、Deal、銷售同事、所有 line items（同 snapshot）</li>
+              <li>開一個新嘅 DRAFT 報價單俾你改</li>
+            </ul>
+            <p className="text-xs text-muted-foreground">
+              改好之後可以正常「發送」。原本嘅報價單同審計 log 會保留以供追溯。
+            </p>
+          </div>
+          <div className="flex justify-end gap-2 mt-2">
+            <Button variant="outline" onClick={() => setReviseConfirmOpen(false)} disabled={revising}>
+              取消
+            </Button>
+            <Button onClick={handleRevise} disabled={revising}>
+              {revising ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  建立緊...
+                </>
+              ) : (
+                '建立修訂'
+              )}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
