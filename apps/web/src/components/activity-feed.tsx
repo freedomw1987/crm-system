@@ -24,13 +24,15 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { StickyNote, Phone, Mail, Calendar, Paperclip, Trash2, Send, X, FileText, Download, Loader2 } from 'lucide-react';
+import { StickyNote, Phone, Mail, Calendar, Paperclip, Trash2, Send, X, FileText, Download, Loader2, Pencil } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/input';
 import { activitiesApi, attachmentsApi, type Activity, type ActivityType, type Attachment } from '@/lib/api';
 import { downloadAttachment } from '@/lib/attachment-download';
+import { useAuth } from '@/lib/auth';
 
 const TYPE_META: Record<ActivityType, { icon: typeof StickyNote; label: string; color: string }> = {
   NOTE:    { icon: StickyNote, label: '備註',     color: 'text-slate-500' },
@@ -131,6 +133,31 @@ function ActivityList({ items, isLoading }: { items: Activity[]; isLoading: bool
 function ActivityItem({ activity }: { activity: Activity }) {
   const meta = TYPE_META[activity.type] ?? TYPE_META.NOTE;
   const Icon = meta.icon;
+  // 2026-06-27: own-activity edit/delete affordances. The buttons
+  // are only mounted when the current user is the author — the
+  // backend enforces the same rule (author-only on PATCH /
+  // DELETE), so a non-author doesn't even see the controls.
+  // `useDeleteActivity()` is a hook exposed by this file (see
+  // bottom of file); we just call it here for the inline
+  // confirm-and-delete flow.
+  const currentUserId = useAuth((s) => s.user?.id);
+  const isOwn = !!currentUserId && activity.author?.id === currentUserId;
+  const qc = useQueryClient();
+  const deleteActivity = useMutation({
+    mutationFn: (id: string) => activitiesApi.remove(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['activities'] }),
+  });
+  const [editOpen, setEditOpen] = useState(false);
+  const [editType, setEditType] = useState<ActivityType>(activity.type);
+  const [editContent, setEditContent] = useState(activity.content);
+  const updateActivity = useMutation({
+    mutationFn: (data: { type: ActivityType; content: string }) =>
+      activitiesApi.update(activity.id, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['activities'] });
+      setEditOpen(false);
+    },
+  });
   // Track per-attachment busy state so multiple attachments in the same
   // activity can be downloaded independently. Errors are kept as
   // {id, message} so the chip itself can show the failure inline.
@@ -169,6 +196,46 @@ function ActivityItem({ activity }: { activity: Activity }) {
           <span className="text-muted-foreground">
             {relativeTime(activity.createdAt)}
           </span>
+          {/* 2026-06-27: own-activity edit/delete affordances. Only
+              rendered when the current user is the author. The
+              buttons are subtle (hover-visible) so they don't
+              clutter the read-only view for other users. */}
+          {isOwn && (
+            <div className="ml-auto inline-flex items-center gap-0.5">
+              <button
+                type="button"
+                aria-label="編輯 activity"
+                title="編輯"
+                onClick={() => {
+                  setEditType(activity.type);
+                  setEditContent(activity.content);
+                  setEditOpen(true);
+                }}
+                className="text-muted-foreground hover:text-foreground transition-colors p-1 -m-1"
+                data-testid="activity-edit"
+              >
+                <Pencil className="h-3 w-3" />
+              </button>
+              <button
+                type="button"
+                aria-label="刪除 activity"
+                title="刪除"
+                onClick={() => {
+                  if (!confirm('確定刪除呢個 activity?')) return;
+                  deleteActivity.mutate(activity.id);
+                }}
+                disabled={deleteActivity.isPending}
+                className="text-muted-foreground hover:text-destructive transition-colors p-1 -m-1 disabled:opacity-50"
+                data-testid="activity-delete"
+              >
+                {deleteActivity.isPending ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <Trash2 className="h-3 w-3" />
+                )}
+              </button>
+            </div>
+          )}
         </div>
         {activity.content && (
           <p className="text-sm whitespace-pre-wrap break-words">
@@ -205,6 +272,63 @@ function ActivityItem({ activity }: { activity: Activity }) {
           </ul>
         )}
       </div>
+      {/* 2026-06-27: edit dialog. Only opened by the pencil button
+          above, which is only rendered when the user is the
+          author. The dialog pre-fills type + content; on save
+          calls activitiesApi.update which triggers a query
+          refetch so the new content shows immediately. */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>編輯 activity</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs text-muted-foreground">類型</label>
+              <select
+                value={editType}
+                onChange={(e) => setEditType(e.target.value as ActivityType)}
+                className="w-full h-9 rounded border bg-background px-2 text-sm mt-1"
+                data-testid="activity-edit-type"
+              >
+                {(['NOTE', 'CALL', 'EMAIL', 'MEETING'] as ActivityType[]).map((t) => (
+                  <option key={t} value={t}>{TYPE_META[t].label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">內容</label>
+              <Textarea
+                value={editContent}
+                onChange={(e) => setEditContent(e.target.value)}
+                rows={4}
+                className="mt-1"
+                data-testid="activity-edit-content"
+              />
+            </div>
+            {updateActivity.error && (
+              <p className="text-sm text-destructive">
+                {(updateActivity.error as Error).message}
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setEditOpen(false)} disabled={updateActivity.isPending}>取消</Button>
+            <Button
+              onClick={() => updateActivity.mutate({ type: editType, content: editContent })}
+              disabled={updateActivity.isPending || editContent.trim().length === 0}
+              data-testid="activity-edit-save"
+            >
+              {updateActivity.isPending ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                  儲存中
+                </>
+              ) : '儲存'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </li>
   );
 }

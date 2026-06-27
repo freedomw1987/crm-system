@@ -20,10 +20,13 @@
  *
  * Authorization:
  *   Reads are open to any logged-in user (similar to /companies).
- *   Writes are also open — sales reps are expected to log their own
- *   follow-ups. Editing/deleting someone else's activity is allowed (we
- *   don't enforce "only the author" in v1; a future perms cleanup can
- *   tighten this).
+ *   Writes (create) are open — sales reps are expected to log their
+ *   own follow-ups. Edits and deletes (PATCH/DELETE on /:id) are
+ *   author-only: only the activity's `authorId` may modify it. A
+ *   future perms cleanup can grant admin override via the
+ *   `activity:update` / `activity:delete` permissions; for now the
+ *   ownership rule matches what the user requested (2026-06-27)
+ *   and aligns with how Quotation edits work.
  *
  * Day N hard rule: 50MB max per file. We enforce this in the multipart
  * stream AND in the nginx client_max_body_size (see infra config).
@@ -249,6 +252,43 @@ export const activityRoutes = new Elysia({ prefix: '', tags: ['activities', 'att
       content: t.String({ minLength: 1 }),
     }),
   })
+  // 2026-06-27: PATCH /activities/:id — edit my own activity.
+  // Author-only: only the user who created the activity can edit it
+  // (matches the user's request "自己Activity 應該可以編輯及刪除").
+  // Accepts either type or content (or both). The schema's
+  // @updatedAt column refreshes automatically on Prisma.update.
+  .patch('/activities/:id', async ({ params, body, set, request }) => {
+    const userId = await getUserIdFromRequest(request);
+    if (!userId) { set.status = 401; return { error: 'Unauthorized' }; }
+    const data = body as { type?: 'NOTE' | 'CALL' | 'EMAIL' | 'MEETING'; content?: string };
+    const before = await prisma.activity.findUnique({ where: { id: params.id } });
+    if (!before) { set.status = 404; return { error: 'Activity not found' }; }
+    if (before.authorId !== userId) {
+      set.status = 403;
+      return { error: 'Only the author can edit this activity.' };
+    }
+    const update: Record<string, unknown> = {};
+    if (data.type !== undefined) update.type = data.type;
+    if (data.content !== undefined) {
+      if (data.content.length < 1) { set.status = 400; return { error: 'content cannot be empty' }; }
+      update.content = data.content;
+    }
+    const updated = await prisma.activity.update({ where: { id: params.id }, data: update as never });
+    await logEvent({
+      actorId: userId,
+      action: 'ACTIVITY_UPDATED',
+      resourceType: 'activity',
+      resourceId: params.id,
+      description: `Updated activity ${params.id} (${Object.keys(update).join(', ') || 'no-op'})`,
+      request,
+    });
+    return updated;
+  }, {
+    body: t.Object({
+      type: t.Optional(t.Union([t.Literal('NOTE'), t.Literal('CALL'), t.Literal('EMAIL'), t.Literal('MEETING')])),
+      content: t.Optional(t.String({ minLength: 1 })),
+    }),
+  })
 
   .delete('/activities/:id', async ({ params, set, request }) => {
     const userId = await getUserIdFromRequest(request);
@@ -258,6 +298,15 @@ export const activityRoutes = new Elysia({ prefix: '', tags: ['activities', 'att
       include: { attachments: true },
     });
     if (!before) { set.status = 404; return { error: 'Activity not found' }; }
+    // 2026-06-27: author-only delete. Previously open to any user
+    // (per the v1 comment "Editing/deleting someone else's
+    // activity is allowed"). Tightened to match the user's
+    // explicit request: only the author may delete their own
+    // activity. A future perms cleanup can grant admin override.
+    if (before.authorId !== userId) {
+      set.status = 403;
+      return { error: 'Only the author can delete this activity.' };
+    }
     await prisma.activity.delete({ where: { id: params.id } });
     for (const att of before.attachments) {
       const path = join(DATA_DIR, att.storageKey);

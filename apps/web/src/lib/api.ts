@@ -911,6 +911,11 @@ export const activitiesApi = {
   },
   create: (data: { companyId?: string; dealId?: string; type?: ActivityType; content: string }) =>
     request<Activity>('/activities', { method: 'POST', body: JSON.stringify(data) }),
+  // 2026-06-27: edit your own activity. Backend author-checks
+  // (returns 403 if you're not the author). Accepts either
+  // `type` or `content` (or both); omitted fields are untouched.
+  update: (id: string, data: { type?: ActivityType; content?: string }) =>
+    request<Activity>(`/activities/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   remove: (id: string) => request<{ success: boolean }>(`/activities/${id}`, { method: 'DELETE' }),
 };
 export const attachmentsApi = {
