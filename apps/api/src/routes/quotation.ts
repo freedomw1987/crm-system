@@ -434,50 +434,6 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
       })),
     }),
   })
-  // 2026-06-26: POST /quotations/:id/revise — quick-hack "Create a
-  // revision" flow. The SENT lock (above) makes the title/notes/
-  // taxRate/validUntil/line-items of a sent quotation uneditable
-  // because those fields form the contractual record. When the
-  // customer comes back with revisions, the sales rep needs a way
-  // to send an updated quote without losing the original. This
-  // endpoint clones the source quotation as a NEW DRAFT — same
-  // customer, same deal, same sales rep, same line items (with
-  // snapshots preserved so a deleted/renamed product still
-  // shows in the new draft). The new quotation gets its own
-  // sequential number; the original stays unchanged.
-  //
-  // What's NOT done here (left for a future "real" versioning):
-  //   - No schema change (no parentQuotationId FK / revision
-  //     number). The two quotations are linked only via the audit
-  //     log's sourceId metadata and the user's notes.
-  //   - The Excel export's `revision` field stays hardcoded "0"
-  //     (see crm-adapter.ts comment).
-  //   - No revision-history display on the detail page.
-  // This is intentional: the user explicitly asked for the
-  // quick hack. A future US can lift the limits when the
-  // audit-trail gap actually hurts.
-  //
-  // Allowed source statuses: anything except DRAFT (because a
-  // DRAFT can just be edited directly). The SENT/VIEWED/ACCEPTED/
-  // REJECTED/EXPIRED/INVOICED set all map to legitimate "we need
-  // a new draft because the locked one can't change" scenarios.
-  .post('/:id/revise', async ({ params, userId, set, request }) => {
-    if (!userId) { set.status = 401; return { error: 'Unauthorized' }; }
-    const source = await prisma.quotation.findUnique({
-      where: { id: params.id },
-      include: { items: { orderBy: { position: 'asc' } } },
-    });
-    if (!source) { set.status = 404; return { error: 'Source quotation not found' }; }
-    if (source.status === 'DRAFT') {
-      // A DRAFT can be edited directly; revising it would just
-      // create a duplicate that confuses the audit trail. Tell
-      // the user to edit the existing draft instead.
-      set.status = 409;
-      return {
-        error: 'Source quotation is DRAFT — edit it directly instead of creating a revision.',
-      };
-    }
-
     // 2026-06-26: POST /quotations/:id/revise — standard versioning
     // flow. The SENT lock (above) freezes the contractual fields
     // on any non-DRAFT quotation (title/notes/taxRate/validUntil
