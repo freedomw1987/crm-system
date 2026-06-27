@@ -150,8 +150,15 @@ export function adaptCrmQuotationForExcel(
 
   return {
     _createdAt: prismaQuotation.createdAt,
-    auto_increment: prismaQuotation.number, // e.g., "Q-2026-0001"
-    revision: "0", // CRM 冇 revision, 預設 0
+    auto_increment: prismaQuotation.number, // e.g., "Q-2026-0001" or "Q-2026-0001-R1"
+    // 2026-06-26: standard versioning. The bc-quotation Excel
+    // expects a string revision number (0 for original, "1",
+    // "2", etc. for revisions). Pass the integer revisionNumber
+    // straight through — its string coercion is what the
+    // worksheet helper wants, and the value matches what's
+    // embedded in `auto_increment` (the parent quotation vs.
+    // the -R1 / -R2 suffix).
+    revision: String(prismaQuotation.revisionNumber ?? 0),
     client_name: prismaQuotation.company.name,
     sales_name: prismaQuotation.createdBy.name,
     sales_email: prismaQuotation.createdBy.email,

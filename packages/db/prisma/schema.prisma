@@ -468,6 +468,18 @@ model Quotation {
   salesRep   User?           @relation("QuotationSalesRep", fields: [salesRepId], references: [id], onDelete: SetNull)
   deal      Deal?           @relation(fields: [dealId], references: [id], onDelete: SetNull)
   items     QuotationItem[]
+  // 2026-06-26: revision chain. parentQuotationId points to the
+  // immediate predecessor (null for the original). revisionNumber
+  // is 0 for an original, 1 for R1, 2 for R2, etc. The full chain
+  // is recoverable via parentQuotationId links; the revisionNumber
+  // is just a position counter so the UI can render "R2 of 4"
+  // without walking the chain every time. ON DELETE SET NULL on
+  // parent so deleting a row in the middle of a chain doesn't
+  // orphan the descendants (they become new roots themselves).
+  parentQuotationId String?
+  parentQuotation   Quotation?  @relation("QuotationRevisions", fields: [parentQuotationId], references: [id], onDelete: SetNull)
+  revisions         Quotation[] @relation("QuotationRevisions")
+  revisionNumber    Int         @default(0)
 
   @@index([companyId])
   @@index([status])
@@ -475,6 +487,7 @@ model Quotation {
   @@index([createdById])
   @@index([salesRepId])
   @@index([dealId])
+  @@index([parentQuotationId])
   @@map("quotations")
 }
 

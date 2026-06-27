@@ -21,6 +21,80 @@ async function nextQuotationNumber(): Promise<string> {
   return `${prefix}${next}`;
 }
 
+/**
+ * Compute the next revision's number and revisionNumber.
+ *
+ * 2026-06-26: POST /quotations/:id/revise creates a new DRAFT
+ * quotation cloned from a non-DRAFT source. This helper picks the
+ * next position in the chain so the revision tree is reproducible:
+ *
+ *   Q-2026-0001          (root, revisionNumber=0)
+ *     └─ Q-2026-0001-R1   (parent=root, revisionNumber=1)
+ *          └─ Q-2026-0001-R2 (parent=R1, revisionNumber=2)
+ *
+ * Algorithm:
+ *   1. Walk the parentQuotationId chain from `parentId` upward
+ *      until we hit a quotation with no parent (the root).
+ *   2. BFS down from the root via parentQuotationId to count every
+ *      descendant (handles branching: even if someone revised from
+ *      an old version mid-chain, we still get a unique next
+ *      revisionNumber).
+ *   3. The new revision's position = count (root is position 0,
+ *      R1 is position 1, etc.).
+ *   4. The new number preserves the root number and appends the
+ *      suffix: `${root.number}-R${count}`. If the new revision
+ *      turns out to clash with an existing number (shouldn't
+ *      happen given the BFS uniqueness invariant, but defensive),
+ *      the @unique constraint on Quotation.number will surface a
+ *      500 — acceptable for v1 since the invariant holds in
+ *      practice.
+ */
+async function nextRevisionInfo(parentId: string): Promise<{ number: string; revisionNumber: number }> {
+  // 1. Walk to root
+  let cursorId: string = parentId;
+  let rootId: string | null = null;
+  while (true) {
+    const q = await prisma.quotation.findUnique({
+      where: { id: cursorId },
+      select: { parentQuotationId: true },
+    });
+    if (!q) break;
+    rootId = cursorId;
+    if (q.parentQuotationId === null) break;
+    cursorId = q.parentQuotationId;
+  }
+  if (!rootId) throw new Error('Could not find root quotation in chain');
+
+  const root = await prisma.quotation.findUnique({
+    where: { id: rootId },
+    select: { number: true },
+  });
+  if (!root) throw new Error('Root quotation not found');
+
+  // 2. BFS down from root to count every descendant.
+  let count = 0;
+  const queue: string[] = [rootId];
+  while (queue.length > 0) {
+    const id = queue.shift()!;
+    count++;
+    const children = await prisma.quotation.findMany({
+      where: { parentQuotationId: id },
+      select: { id: true },
+    });
+    for (const c of children) queue.push(c.id);
+  }
+
+  // 3 + 4. Compose the new revision metadata.
+  // count = number of quotations currently in the chain (1 for root
+  // only, 2 for root+R1, 3 for root+R1+R2, etc.). The new
+  // revision will sit at position count in 0-indexed terms
+  // because the root occupies position 0, R1 occupies position 1,
+  // etc. So newRevisionNumber = count.
+  const revisionNumber = count;
+  const number = `${root.number}-R${revisionNumber}`;
+  return { number, revisionNumber };
+}
+
 // Compute line total for an item
 function lineTotalOf(qty: number, price: number, disc: number) {
   return qty * price * (1 - disc / 100);
@@ -359,6 +433,194 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
         discount: t.Optional(t.Number()),
       })),
     }),
+  })
+  // 2026-06-26: POST /quotations/:id/revise — quick-hack "Create a
+  // revision" flow. The SENT lock (above) makes the title/notes/
+  // taxRate/validUntil/line-items of a sent quotation uneditable
+  // because those fields form the contractual record. When the
+  // customer comes back with revisions, the sales rep needs a way
+  // to send an updated quote without losing the original. This
+  // endpoint clones the source quotation as a NEW DRAFT — same
+  // customer, same deal, same sales rep, same line items (with
+  // snapshots preserved so a deleted/renamed product still
+  // shows in the new draft). The new quotation gets its own
+  // sequential number; the original stays unchanged.
+  //
+  // What's NOT done here (left for a future "real" versioning):
+  //   - No schema change (no parentQuotationId FK / revision
+  //     number). The two quotations are linked only via the audit
+  //     log's sourceId metadata and the user's notes.
+  //   - The Excel export's `revision` field stays hardcoded "0"
+  //     (see crm-adapter.ts comment).
+  //   - No revision-history display on the detail page.
+  // This is intentional: the user explicitly asked for the
+  // quick hack. A future US can lift the limits when the
+  // audit-trail gap actually hurts.
+  //
+  // Allowed source statuses: anything except DRAFT (because a
+  // DRAFT can just be edited directly). The SENT/VIEWED/ACCEPTED/
+  // REJECTED/EXPIRED/INVOICED set all map to legitimate "we need
+  // a new draft because the locked one can't change" scenarios.
+  .post('/:id/revise', async ({ params, userId, set, request }) => {
+    if (!userId) { set.status = 401; return { error: 'Unauthorized' }; }
+    const source = await prisma.quotation.findUnique({
+      where: { id: params.id },
+      include: { items: { orderBy: { position: 'asc' } } },
+    });
+    if (!source) { set.status = 404; return { error: 'Source quotation not found' }; }
+    if (source.status === 'DRAFT') {
+      // A DRAFT can be edited directly; revising it would just
+      // create a duplicate that confuses the audit trail. Tell
+      // the user to edit the existing draft instead.
+      set.status = 409;
+      return {
+        error: 'Source quotation is DRAFT — edit it directly instead of creating a revision.',
+      };
+    }
+
+    // 2026-06-26: POST /quotations/:id/revise — standard versioning
+    // flow. The SENT lock (above) freezes the contractual fields
+    // on any non-DRAFT quotation (title/notes/taxRate/validUntil
+    // + line items). When the customer comes back with changes,
+    // the sales rep needs a way to send an updated quote without
+    // losing the original — this endpoint clones the source as a
+    // NEW DRAFT linked via parentQuotationId, with a chain-aware
+    // revisionNumber and a suffixed number (`Q-2026-0001-R1`,
+    // `Q-2026-0001-R2`, etc.).
+    //
+    // Schema additions this relies on:
+    //   - Quotation.parentQuotationId (FK to self, ON DELETE
+    //     SET NULL so deleting a row in the middle of a chain
+    //     doesn't orphan descendants — they just become roots).
+    //   - Quotation.revisionNumber Int @default(0) — 0 for the
+    //     original, 1 for R1, 2 for R2, etc. Position counter
+    //     so the UI can render "R2 of 4" without walking the
+    //     chain every time.
+    //
+    // Allowed source statuses: anything except DRAFT (because a
+    // DRAFT can just be edited directly via the builder). The
+    // SENT/VIEWED/ACCEPTED/REJECTED/EXPIRED/INVOICED set all map
+    // to legitimate "we need a new draft because the locked one
+    // can't change" scenarios.
+    .post('/:id/revise', async ({ params, userId, set, request }) => {
+    if (!userId) { set.status = 401; return { error: 'Unauthorized' }; }
+    const source = await prisma.quotation.findUnique({
+      where: { id: params.id },
+      include: { items: { orderBy: { position: 'asc' } } },
+    });
+    if (!source) { set.status = 404; return { error: 'Source quotation not found' }; }
+    if (source.status === 'DRAFT') {
+      // A DRAFT can be edited directly; revising it would just
+      // create a duplicate that confuses the audit trail. Tell
+      // the user to edit the existing draft instead.
+      set.status = 409;
+      return {
+        error: 'Source quotation is DRAFT — edit it directly instead of creating a revision.',
+      };
+    }
+
+    // Compute the chain-aware number + revisionNumber.
+    // nextRevisionInfo walks the parent chain to the root, then
+    // BFS-counts every descendant to pick the next position. See
+    // the function's JSDoc above for the algorithm.
+    const { number, revisionNumber } = await nextRevisionInfo(source.id);
+
+    const created = await prisma.quotation.create({
+      data: {
+        number,
+        companyId: source.companyId,
+        dealId: source.dealId,
+        createdById: userId,
+        // Inherit the source's sales rep when set, otherwise
+        // default to the current user (the most common case —
+        // the same person clicking "revise" should remain the
+        // follow-up rep).
+        salesRepId: source.salesRepId ?? userId,
+        title: source.title,
+        notes: source.notes,
+        validUntil: source.validUntil,
+        taxRate: source.taxRate,
+        status: 'DRAFT',
+        // 2026-06-26: standard-versioning links. Persisted on
+        // the row so the detail page can render the chain
+        // ("修訂自 Q-2026-0001") and the audit log isn't the
+        // only place the relationship lives.
+        parentQuotationId: source.id,
+        revisionNumber,
+        // Cloned items preserve the snapshot fields so a deleted
+        // /renamed Product/Service still shows in the new draft
+        // (matches the P1-10 / P2-snapshot-display contract).
+        items: {
+          create: source.items.map((it) => ({
+            itemType: it.itemType,
+            productId: it.productId,
+            serviceId: it.serviceId,
+            sku: it.sku,
+            name: it.name,
+            description: it.description,
+            quantity: it.quantity,
+            unitPrice: it.unitPrice,
+            discount: it.discount,
+            manDaySnapshot: it.manDaySnapshot ?? undefined,
+            position: it.position,
+            // costSnapshot / lineGp / lineGpPercent will be
+            // recomputed in the second pass via
+            // recalcQuotationAndItems below.
+          })),
+        },
+      },
+      include: {
+        items: true,
+        company: true,
+        salesRep: { select: { id: true, name: true, email: true } },
+        // Include parent so the response carries the link the
+        // detail page needs to render the "修訂自 X" chip.
+        parentQuotation: { select: { id: true, number: true } },
+      },
+    });
+
+    // Same post-create recalc as POST /quotations so the new
+    // DRAFT has correct subtotal/taxAmount/total/GP% from the
+    // start (no manual "save then refresh" round-trip for the
+    // user).
+    await recalcQuotationAndItems(created.id, { liveCostRefresh: true });
+    const refreshed = await prisma.quotation.findUnique({
+      where: { id: created.id },
+      include: {
+        items: true,
+        company: true,
+        salesRep: { select: { id: true, name: true, email: true } },
+        parentQuotation: { select: { id: true, number: true } },
+      },
+    });
+
+    set.status = 201;
+    await logEvent({
+      actorId: userId,
+      action: 'QUOTATION_CREATED',
+      resourceType: 'quotation',
+      resourceId: created.id,
+      // Description explicitly names the source so an admin
+      // scanning the audit log can see "this is a revision of
+      // Q-2026-0001" without needing to join to the metadata
+      // table.
+      description: `Created revision of quotation ${source.number} (source id: ${source.id}); new number ${created.number}`,
+      metadata: {
+        number: created.number,
+        total: Number(refreshed?.total ?? 0),
+        itemCount: source.items.length,
+        dealId: source.dealId,
+        salesRepId: created.salesRepId,
+        // Revision chain metadata. The parentQuotationId FK is
+        // the source of truth; we keep these in the audit log
+        // too for queries that scan logs by source.
+        parentQuotationId: source.id,
+        parentQuotationNumber: source.number,
+        revisionNumber: created.revisionNumber,
+      },
+      request,
+    });
+    return refreshed;
   })
   // Update header (title, notes, validUntil, taxRate, status, dealId, salesRepId)
   .patch('/:id', async ({ params, body, set, userId, request }) => {

@@ -276,6 +276,14 @@ export interface Quotation {
   // Deals; we type it as nullable so the frontend can also clear the
   // link (dealId: null) to detach a quotation from its deal.
   dealId?: string | null;
+  // 2026-06-26: standard versioning. parentQuotationId points to
+  // the immediate predecessor (null for the original). revisionNumber
+  // is 0 for an original, 1 for R1, etc. The detail response
+  // includes a slim parentQuotation { id, number } so the detail
+  // page can render the "修訂自 X" chip without an extra fetch.
+  parentQuotationId?: string | null;
+  parentQuotation?: { id: string; number: string } | null;
+  revisionNumber?: number;
   // 2026-06-26: optional follow-up salesperson (separate from
   // createdById — the creator is often not the same person who
   // follows up with the customer). Nullable because the DB column
@@ -379,6 +387,12 @@ export const quotationsApi = {
   update: (id: string, data: Partial<Pick<Quotation, 'title' | 'notes' | 'taxRate' | 'status' | 'validUntil' | 'dealId' | 'salesRepId'>>) =>
     request<Quotation>(`/quotations/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   remove: (id: string) => request<{ success: boolean }>(`/quotations/${id}`, { method: 'DELETE' }),
+  // 2026-06-26: quick-hack revise flow. Clones the source as a
+  // new DRAFT quotation and returns it. The caller (detail
+  // page) navigates to the new id so the user can edit
+  // immediately. Returns the full Quotation (with items) so
+  // the detail page can render without a refetch.
+  revise: (id: string) => request<Quotation>(`/quotations/${id}/revise`, { method: 'POST' }),
   addItem: (quotationId: string, item: QuotationItemInput) =>
     request<QuotationItem>(`/quotations/${quotationId}/items`, { method: 'POST', body: JSON.stringify(item) }),
   updateItem: (quotationId: string, itemId: string, item: Partial<QuotationItemInput>) =>
