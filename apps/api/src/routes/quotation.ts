@@ -390,16 +390,33 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
     // been sent. The status field itself is still mutable (so the user
     // can mark it ACCEPTED, REJECTED, etc.) but the title/notes/etc.
     // are frozen because they form part of the contractual record.
-    // 2026-06-26: also include dealId in the SENT lock — moving a
-    // sent quotation to a different deal would silently change the
-    // sales-attribution trail.
+    //
+    // What's in the lock (contractual — appears on the customer-
+    // facing document):
+    //   title, notes, taxRate, validUntil
+    //   plus the line items (handled separately by the items POST/
+    //   PATCH/DELETE routes, all of which already 409 outside DRAFT)
+    //
+    // What's NOT in the lock (CRM metadata — internal classification):
+    //   dealId    — can be linked to a deal retroactively (e.g. the
+    //               rep creates the deal after sending the quote).
+    //               The audit log still records the change.
+    //   salesRepId — owner reassignment is always permitted (e.g. when
+    //                a colleague leaves the company).
+    //   status    — already excluded by the `if` not including it.
+    //
+    // 2026-06-26: an earlier draft of this comment incorrectly argued
+    // that dealId should be locked because changing it would "change
+    // the sales-attribution trail". That was wrong: sales attribution
+    // is salesRepId / createdById, not dealId. Locking dealId broke
+    // the legitimate use case of attaching a sent quotation to a deal
+    // after the fact (user-reported 2026-06-26).
     if (before.status !== 'DRAFT' && before.status !== undefined) {
       if (
         data.title !== undefined ||
         data.notes !== undefined ||
         data.validUntil !== undefined ||
-        data.taxRate !== undefined ||
-        data.dealId !== undefined
+        data.taxRate !== undefined
       ) {
         set.status = 409;
         return { error: `Quotation is ${before.status} and cannot be edited. Create a revision instead.` };
