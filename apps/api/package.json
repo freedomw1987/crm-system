@@ -18,7 +18,7 @@
     "@crm/shared": "workspace:*",
     "@elysiajs/cors": "^1.2.0",
     "@elysiajs/jwt": "^1.2.0",
-    "elysia": "^1.2.0",
+    "elysia": "^1.4.28",
     "lodash": "^4.17.23",
     "moment": "^2.30.1",
     "xlsx-js-style": "^1.2.0",
