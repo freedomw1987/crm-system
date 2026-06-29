@@ -666,3 +666,38 @@ export const toolRegistry: Tool[] = [
   logActivity,
   getTopCustomers,
 ];
+
+/**
+ * Tool-category partitions (RG-CHAT-002, Day 17 US-C5).
+ *
+ * `WRITE_TOOLS` = the set of tools that REQUIRE human confirmation
+ * before execution. The agent loop in `@crm/ai/index.ts` checks
+ * `WRITE_TOOLS.has(name)` before emitting a `confirmation_required`
+ * SSE event. Exporting the partition here (not deriving it inside
+ * the agent loop) means a test can assert:
+ *   1. Every tool flagged `requiresConfirmation: true` IS in WRITE_TOOLS
+ *      (no tool is in the registry that "silently" gets the guardrail)
+ *   2. Every tool in WRITE_TOOLS has `requiresConfirmation: true`
+ *      (no tool gets the guardrail accidentally)
+ *   3. Adding a new tool to the registry and forgetting to flag it
+ *      `requiresConfirmation: true` is caught here as a type error
+ *      when the new tool is added to `WRITE_TOOLS` (or not).
+ *
+ * Day-30 code review (RG-026 etc.) found that the previous inline
+ * check in `packages/ai/index.ts` had drifted from the registry's
+ * per-tool `requiresConfirmation` flag — pinning both sides here
+ * closes the gap.
+ */
+export const WRITE_TOOLS: ReadonlySet<string> = new Set(
+  toolRegistry.filter((t) => t.requiresConfirmation).map((t) => t.name),
+);
+
+/**
+ * Read-only tools: queries that don't mutate CRM state. Used by the
+ * agent prompt to seed a tool-selection hint and by tests to assert
+ * "no read tool got the requiresConfirmation flag set by accident"
+ * (the inverse invariant to WRITE_TOOLS).
+ */
+export const READ_TOOLS: ReadonlySet<string> = new Set(
+  toolRegistry.filter((t) => !t.requiresConfirmation).map((t) => t.name),
+);

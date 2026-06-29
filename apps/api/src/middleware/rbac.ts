@@ -2,6 +2,42 @@
 // `set.status` (typed as `number | "Unauthorized" | ...` literal union) and
 // on derive context across plugins. Day 1 trade-off: Dockerfile uses
 // `bun run` (no typecheck), so runtime is fine. Re-enable when Elysia 1.3 ships.
+
+// ----------------------------------------------------------------------------
+// Pinned permission exports (RG-004, Day 18 audit + t3 regression ports)
+// ----------------------------------------------------------------------------
+//
+// The PERMISSIONS map + ROLE_PERMISSIONS matrix live in
+// `packages/shared/src/permissions.ts` so both api + web can import them
+// (the frontend needs to render the role-permission matrix in the admin
+// UI). rbac.ts re-exports the canonical matrix + derives a single
+// `ADMIN_PERMISSIONS` set so tests can assert "ADMIN can do EVERY
+// current permission" without coupling to the implementation detail of
+// how the matrix is built.
+//
+// Invariants pinned by these exports:
+//   1. `ROLE_PERMISSIONS` matches `PERMISSIONS` keys exactly — adding
+//      a new permission key without a corresponding role default
+//      surfaces here as a type error in callers (e.g. the role UI).
+//   2. `ADMIN_PERMISSIONS` is exactly `Object.keys(PERMISSIONS)` — the
+//      admin role has every current permission, no exceptions.
+//   3. The non-ADMIN roles have an explicit subset (SALES / VIEWER).
+//      If a new permission is added but no role lists it, that's a
+//      configuration gap that this matrix exposes.
+// ----------------------------------------------------------------------------
+export {
+  PERMISSIONS,
+  ROLE_PERMISSIONS,
+  type Permission,
+  type UserRole,
+} from '@crm/shared';
+
+/** The set of every permission key currently declared in PERMISSIONS. */
+import { PERMISSIONS as _PERMISSIONS } from '@crm/shared';
+export const ADMIN_PERMISSIONS: ReadonlySet<string> = new Set(
+  Object.keys(_PERMISSIONS),
+);
+
 /**
  * Role-based access control (Day 7: dynamic, DB-driven)
  *

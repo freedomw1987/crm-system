@@ -4,6 +4,7 @@ import { prisma } from '@crm/db';
 import { authContext } from '../lib/context';
 import { logEvent } from '../middleware/audit';
 import { toIdArray } from '../lib/query-helpers';
+import { SENT_LOCKED_FIELDS, type QuotationPatchBody } from '../lib/quotation-patch-body';
 // 2026-06-07 (US-A5): port 落 CRM 嘅 Excel 5-sheet generator + Prisma adapter
 import { adaptCrmQuotationForExcel } from '../lib/excel/crm-adapter';
 import { generateQuotationExcel } from '../lib/excel/quotation';
@@ -667,32 +668,11 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
   })
   // Update header (title, notes, validUntil, taxRate, status, dealId, salesRepId, currency)
   .patch('/:id', async ({ params, body, set, userId, request }) => {
-    const data = body as {
-      title?: string;
-      notes?: string;
-      validUntil?: string | null;
-      taxRate?: number;
-      status?: string;
-      // 2026-06-26: PATCH now accepts dealId. Setting it links the
-      // quotation to a Deal (sales pipeline opportunity); passing
-      // null / empty string clears the link. The frontend's
-      // QuotationBuilder's edit-mode PATCH call includes this field
-      // so a quotation can be moved between Deals (or off a Deal
-      // entirely) while still in DRAFT.
-      dealId?: string | null;
-      // 2026-06-26: PATCH also accepts salesRepId to reassign the
-      // follow-up salesperson. Unlike title/notes/taxRate this is
-      // NOT covered by the SENT lock — the sales rep is internal
-      // metadata, and you need to be able to reassign it (e.g.
-      // when a colleague leaves the company) regardless of where
-      // the quotation is in its lifecycle.
-      salesRepId?: string | null;
-      // P2 multi-currency (2026-06-29): billing currency picked by
-      // the sales rep. This IS covered by the SENT lock (below)
-      // because the printed quote shows the currency — changing it
-      // after SENT would be a contract rewrite.
-      currency?: string;
-    };
+    // PATCH body shape is canonicalised in `lib/quotation-patch-body.ts`
+    // (RG-020 + RG-021). The route still uses an implicit `as` cast
+    // rather than a `t.Object` validator — see RG-024 for the
+    // planned migration to runtime validation.
+    const data = body as QuotationPatchBody;
     const before = await prisma.quotation.findUnique({ where: { id: params.id } });
     if (!before) { set.status = 404; return { error: 'Not found' }; }
 
@@ -726,14 +706,18 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
     // Changing the billing currency after SENT would silently
     // re-interpret the customer's contract; the only correct path is
     // to create a revision.
+    //
+    // Day-30 (t3 follow-up): the locked-field list is sourced from
+    // `SENT_LOCKED_FIELDS` in `lib/quotation-patch-body.ts` so the
+    // route doesn't drift from the canonical list. Adding a new
+    // contractual field is a single edit (add the field to
+    // `QuotationPatchBody` + `SENT_LOCKED_FIELDS`) and the SENT-lock
+    // block here updates automatically.
     if (before.status !== 'DRAFT' && before.status !== undefined) {
-      if (
-        data.title !== undefined ||
-        data.notes !== undefined ||
-        data.validUntil !== undefined ||
-        data.taxRate !== undefined ||
-        data.currency !== undefined
-      ) {
+      const lockedFieldTouched = SENT_LOCKED_FIELDS.some(
+        (k) => data[k] !== undefined,
+      );
+      if (lockedFieldTouched) {
         set.status = 409;
         return { error: `Quotation is ${before.status} and cannot be edited. Create a revision instead.` };
       }

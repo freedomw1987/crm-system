@@ -13,10 +13,15 @@ import {
   runAgentStream,
   AiNotConfiguredError,
   createConfirmationController,
-  type StreamEvent,
 } from '@crm/ai';
 import { authContext } from '../lib/context';
 import { requirePermission, getUserIdFromRequest } from '../middleware/rbac';
+import {
+  buildSseFrame,
+  buildChatHeaders,
+  buildChatPrecheckError,
+  CHAT_SSE_EVENT_TYPES,
+} from '../lib/chat-sse';
 
 // =============================================================================
 // US-C5 (Day 17, 2026-06-08): pending confirmation registry
@@ -38,14 +43,10 @@ const pendingConfirmations = new Map<
 
 /**
  * Wrap a `StreamEvent` in a Server-Sent Events (SSE) frame.
- *
- * Format per the SSE spec: each event is `data: <json>\n\n`. The
- * frontend reads chunks, splits on `\n\n`, and parses each frame's
- * `data:` line as JSON.
+ * Implemented in `lib/chat-sse.ts` so tests can assert the wire
+ * format directly without spinning up a ReadableStream.
  */
-function sseFrame(event: StreamEvent): string {
-  return `data: ${JSON.stringify(event)}\n\n`;
-}
+const sseFrame = buildSseFrame;
 
 export const chatRoutes = new Elysia({ prefix: '/chat', tags: ['ai-chat'] })
   .use(authContext)
@@ -99,11 +100,12 @@ export const chatRoutes = new Elysia({ prefix: '/chat', tags: ['ai-chat'] })
       select: { id: true },
     });
     if (!aiConfig) {
-      set.status = 503;
-      return {
-        error: 'AI Assistant is not configured',
-        message: 'Ask an admin to set up the AI Assistant at /admin/ai-config.',
-      };
+      // RG-002 + RG-003: surface 503 with a friendly message, not 500.
+      // Body shape comes from `lib/chat-sse.ts` so the contract is in
+      // one place (and testable directly).
+      const precheck = buildChatPrecheckError();
+      set.status = precheck.status;
+      return precheck.body;
     }
 
     // Build an SSE response. We construct the ReadableStream here
@@ -148,11 +150,11 @@ export const chatRoutes = new Elysia({ prefix: '/chat', tags: ['ai-chat'] })
           }
         } catch (err) {
           if (err instanceof AiNotConfiguredError) {
-            controller.enqueue(encoder.encode(sseFrame({ type: 'error', message: err.message })));
+            controller.enqueue(encoder.encode(sseFrame({ type: CHAT_SSE_EVENT_TYPES.ERROR, message: err.message })));
           } else {
             console.error('[chat] Agent error:', err);
             controller.enqueue(encoder.encode(sseFrame({
-              type: 'error',
+              type: CHAT_SSE_EVENT_TYPES.ERROR,
               message: (err as Error).message,
             })));
           }
@@ -163,15 +165,9 @@ export const chatRoutes = new Elysia({ prefix: '/chat', tags: ['ai-chat'] })
     });
 
     return new Response(stream, {
-      headers: {
-        'Content-Type': 'text/event-stream; charset=utf-8',
-        // Disable nginx response buffering so chunks flow to the
-        // browser immediately (see RG-005 + nginx sse fix in
-        // docker-compose / nginx.conf).
-        'Cache-Control': 'no-cache, no-transform',
-        'X-Accel-Buffering': 'no',
-        'Connection': 'keep-alive',
-      },
+      // RG-005: SSE-streaming headers consolidated in
+      // `lib/chat-sse.ts` so the wire format is testable in one place.
+      headers: buildChatHeaders(),
     });
   })
 

@@ -111,7 +111,7 @@ export const PERMISSIONS = {
 export type Permission = keyof typeof PERMISSIONS;
 
 /** Role -> set of permissions */
-const ROLE_PERMISSIONS: Record<UserRole, ReadonlySet<Permission>> = {
+export const ROLE_PERMISSIONS: Record<UserRole, ReadonlySet<Permission>> = {
   ADMIN: new Set<Permission>(Object.keys(PERMISSIONS) as Permission[]),
   SALES: new Set<Permission>([
     'company:read', 'company:create', 'company:update', 'company:delete',

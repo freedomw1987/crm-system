@@ -15,7 +15,7 @@ import OpenAI from 'openai';
 import { createHash } from 'node:crypto';
 import { prisma } from '@crm/db';
 import { Prisma } from '@crm/db';
-import { toolRegistry, type ToolContext } from './tools';
+import { toolRegistry, WRITE_TOOLS, type ToolContext } from './tools';
 import { SYSTEM_PROMPT } from './prompts';
 import { getAiConfig } from './config';
 
@@ -335,8 +335,22 @@ export async function* runAgentStream(input: AgentRunInput): AsyncGenerator<Stre
       // supplied (background / eval runs), we auto-deny with a
       // synthetic result — the LLM can then gracefully explain the
       // refusal to the user.
+      //
+      // Day-30 (RG-CHAT-002 follow-up): the gate is now sourced from
+      // the exported `WRITE_TOOLS` set rather than the per-tool
+      // `requiresConfirmation` flag. The two are kept in sync by
+      // construction (WRITE_TOOLS is derived from the flag) so the
+      // behaviour is identical, but a single grep against
+      // `WRITE_TOOLS` now answers "which tools require human
+      // confirmation?" without walking every tool definition.
+      //
+      // Both `tool` and `WRITE_TOOLS` must agree — if the tool is in
+      // WRITE_TOOLS but missing from the registry (or vice versa),
+      // skip the confirmation flow and let the execute-time error
+      // surface (which is more debuggable than a silent
+      // confirmation_required event for a phantom tool).
       let confirmedHash: string | null = null;
-      if (tool?.requiresConfirmation) {
+      if (tool && WRITE_TOOLS.has(toolName)) {
         const confirmationId = `cfm_${Date.now().toString(36)}_${Math.random()
           .toString(36)
           .slice(2, 8)}`;
