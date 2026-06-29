@@ -128,8 +128,9 @@ export function DealsPage() {
   });
 
   // Day N+1 (P1-X): delete a deal from the Kanban card. The Trash icon
-  // sits next to the Edit2 icon (group-hover) on the top-right of each
-  // card. We invalidate every kanban variant (regardless of active
+  // sits at the visual right edge of the card's top-right hover group
+  // (per 2026-06-29 user request — destructive action furthest from
+  // the eye). We invalidate every kanban variant (regardless of active
   // filter) so any cached view stays in sync.
   const deleteDeal = useMutation({
     mutationFn: (dealId: string) => dealsApi.remove(dealId),
@@ -560,6 +561,19 @@ function DealCard({
           )}
         </div>
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          {/* 2026-06-29: per user request, the destructive action
+              (delete) sits at the visual right edge of the card —
+              furthest from where the user's eye lands first. Order
+              is now [Edit] [Delete] so the Trash icon is the
+              rightmost control. */}
+          <button
+            type="button"
+            aria-label="編輯 deal"
+            onClick={(e) => { e.stopPropagation(); onEdit(deal); }}
+            className="text-muted-foreground hover:text-foreground transition-colors p-0.5 -m-0.5"
+          >
+            <Edit2 className="h-3.5 w-3.5" />
+          </button>
           {onDelete && (
             <button
               type="button"
@@ -571,14 +585,6 @@ function DealCard({
               <Trash2 className="h-3.5 w-3.5" />
             </button>
           )}
-          <button
-            type="button"
-            aria-label="編輯 deal"
-            onClick={(e) => { e.stopPropagation(); onEdit(deal); }}
-            className="text-muted-foreground hover:text-foreground transition-colors p-0.5 -m-0.5"
-          >
-            <Edit2 className="h-3.5 w-3.5" />
-          </button>
         </div>
       </div>
     </div>
