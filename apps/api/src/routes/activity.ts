@@ -133,6 +133,10 @@ async function parseMultipart(request: Request, boundary: string): Promise<{
 
 export const activityRoutes = new Elysia({ prefix: '', tags: ['activities', 'attachments'] })
   .use(authContext)
+  // Reads are gated by `activity:read` (any authenticated user with
+  // the role's permission — SALES + VIEWER both get it). The data
+  // is a feed of customer/deal follow-ups, open to the whole team.
+  .use(requirePermission('activity:read'))
 
   // ============================================================
   // ACTIVITY CRUD
@@ -213,6 +217,10 @@ export const activityRoutes = new Elysia({ prefix: '', tags: ['activities', 'att
     return { items, total: items.length };
   })
 
+  // Create an activity log entry. Gated by `activity:create`.
+  // The author is set from the authenticated userId (not from the
+  // body) — see POST handler body schema.
+  .use(requirePermission('activity:create'))
   .post('/activities', async ({ body, set, request }) => {
     const userId = await getUserIdFromRequest(request);
     if (!userId) { set.status = 401; return { error: 'Unauthorized' }; }
@@ -343,6 +351,11 @@ export const activityRoutes = new Elysia({ prefix: '', tags: ['activities', 'att
   // ============================================================
   // ATTACHMENT: flat list per company
   // ============================================================
+  // Attachment reads + writes are gated by `attachment:read|create`.
+  // The per-attachment PATCH/DELETE author-only check (uploader only)
+  // is enforced INSIDE the handler, not at this layer — see RG-018 +
+  // ADR-0018.
+  .use(requirePermission('attachment:read'))
   .get('/companies/:id/attachments', async ({ params, query, set, request }) => {
     const userId = await getUserIdFromRequest(request);
     if (!userId) { set.status = 401; return { error: 'Unauthorized' }; }

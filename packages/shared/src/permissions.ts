@@ -37,6 +37,36 @@ export const PERMISSIONS = {
   'service:update': 'Edit services',
   'service:delete': 'Delete services',
 
+  // Man-day role pricing catalogue (admin-managed; Day 19)
+  // These drive the `costSnapshot` per line in a ServiceManDay,
+  // and feed into QuotationItem GP%. SALES can read so the
+  // builder can show the live price next to the snapshot.
+  'man-day-role:read':   'View man-day role catalogue',
+  'man-day-role:create': 'Create new man-day roles',
+  'man-day-role:update': 'Edit man-day role name / price / cost',
+  'man-day-role:delete': 'Delete man-day roles (blocked if referenced)',
+
+  // Region catalogue (admin-managed; HK / MO / CN / OTHER).
+  // Region CRUD is admin-only; reads are public so the company
+  // form's region picker doesn't require a permissions check.
+  'region:read':   'View regions (also served publicly)',
+  'region:create': 'Create regions',
+  'region:update': 'Edit regions',
+  'region:delete': 'Delete regions',
+
+  // Activity log + attachments (Day 18-E; see ADR 0018).
+  // Reads are open; PATCH/DELETE enforce author-only at the
+  // route level (NOT at this permission layer — the rule is
+  // data-driven, not role-driven).
+  'activity:read':   'View activity feed',
+  'activity:create': 'Create activity log entries',
+  'activity:update': 'Edit any activity (admin-style override; default route is author-only)',
+  'activity:delete': 'Delete any activity (admin-style override; default route is author-only)',
+  'attachment:read':   'View attachments',
+  'attachment:create': 'Upload attachments',
+  'attachment:update': 'Edit any attachment (admin-style override; default route is uploader-only)',
+  'attachment:delete': 'Delete any attachment (admin-style override; default route is uploader-only)',
+
   // Role management (admin-only)
   'role:read':   'View roles and the permission matrix',
   'role:create': 'Create custom roles',
@@ -89,6 +119,11 @@ const ROLE_PERMISSIONS: Record<UserRole, ReadonlySet<Permission>> = {
     'product:read',
     'quotation:read', 'quotation:create', 'quotation:update', 'quotation:delete', 'quotation:send',
     'deal:read', 'deal:create', 'deal:update', 'deal:delete',
+    'service:read',
+    'man-day-role:read',
+    'region:read',
+    'activity:read', 'activity:create',
+    'attachment:read', 'attachment:create',
     'chat:use',
   ]),
   VIEWER: new Set<Permission>([
@@ -97,6 +132,11 @@ const ROLE_PERMISSIONS: Record<UserRole, ReadonlySet<Permission>> = {
     'product:read',
     'quotation:read',
     'deal:read',
+    'service:read',
+    'man-day-role:read',
+    'region:read',
+    'activity:read',
+    'attachment:read',
   ]),
 };
 

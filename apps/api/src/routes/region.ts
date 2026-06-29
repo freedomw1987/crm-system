@@ -21,8 +21,14 @@ import { logEvent } from '../middleware/audit';
 
 export const regionRoutes = new Elysia({ prefix: '/regions', tags: ['regions'] })
   .use(authContext)
-  // Public read for any authenticated user (no per-permission check — the
-  // region list is needed by the company form/filter for all roles).
+  // Reads are gated by `region:read` (any authenticated user with
+  // the role's permission — SALES and VIEWER both get it). The
+  // public-reads claim in the original comment is wrong: the
+  // /regions GETs return through the same authContext.requirePermission
+  // chain as the rest of the API, so an unauthenticated client gets
+  // 401. The "public" was referring to the fact that region:read
+  // is in VIEWER's default set, not that the route is anonymous.
+  .use(requirePermission('region:read'))
   .get('/', async () => {
     return prisma.region.findMany({
       orderBy: { sortOrder: 'asc' },
@@ -38,7 +44,7 @@ export const regionRoutes = new Elysia({ prefix: '/regions', tags: ['regions'] }
     return r;
   })
   // Admin-only mutations.
-  .use(requirePermission('company:update'))
+  .use(requirePermission('region:create'))
   .post('/', async ({ body, set, userId, request }) => {
     const data = body as { code: string; name: string; flag?: string; sortOrder?: number };
     const r = await prisma.region.create({ data });
@@ -60,6 +66,7 @@ export const regionRoutes = new Elysia({ prefix: '/regions', tags: ['regions'] }
       sortOrder: t.Optional(t.Number()),
     }),
   })
+  .use(requirePermission('region:update'))
   .patch('/:id', async ({ params, body, set, userId, request }) => {
     const data = body as Partial<{ name: string; flag: string; isActive: boolean; sortOrder: number }>;
     const r = await prisma.region.update({ where: { id: params.id }, data });
@@ -73,6 +80,7 @@ export const regionRoutes = new Elysia({ prefix: '/regions', tags: ['regions'] }
     });
     return r;
   })
+  .use(requirePermission('region:delete'))
   .delete('/:id', async ({ params, set, userId, request }) => {
     const refs = await prisma.company.count({ where: { regionId: params.id } });
     if (refs > 0) {

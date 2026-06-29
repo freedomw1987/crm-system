@@ -24,15 +24,11 @@ import { getUserIdFromRequest } from '../middleware/rbac';
 
 export const manDayRoleRoutes = new Elysia({ prefix: '/man-day-roles', tags: ['man-day-roles'] })
   .use(authContext)
-  // Read access: any authenticated user (the service form dropdown needs
-  // to list active roles). We do not use requirePermission('service:read')
-  // because the seed script doesn't currently write RolePermission rows.
-  // Note: we don't gate on userId here because Elysia 1.2's authContext
-  // derive does not reach the handler scope (see POST handler rationale).
-  // The list itself isn't sensitive — it's a catalogue of role+price
-  // pairs that all users need to see when pricing a service. If we ever
-  // need to lock the read to authenticated users only, the right place
-  // is a .guard() hook or a small re-derive helper, not a handler check.
+  // Reads are gated by `man-day-role:read` (any authenticated user with
+  // the role's permission — SALES + VIEWER both get it via the system
+  // role default set). The list is a catalogue of role+price pairs
+  // needed by the service form's man-day breakdown editor.
+  .use(requirePermission('man-day-role:read'))
   .get('/', async () => {
     return prisma.manDayRole.findMany({
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
@@ -45,13 +41,11 @@ export const manDayRoleRoutes = new Elysia({ prefix: '/man-day-roles', tags: ['m
     return role;
   })
 
-  // Admin-only mutations. We hardcode the role check here (instead of
-  // requirePermission) because the seed script doesn't currently write
-  // RolePermission rows — adding a permission name would 403 every user
-  // until the seed is updated. The simpler "userRole === 'ADMIN'" guard
-  // is correct for v1 (3 hardcoded roles) and matches the pattern used
-  // by other Day-N admin routes. If we move to per-role custom permissions
-  // for man-day roles, swap to requirePermission('admin:man_day_role:manage').
+  // Admin-only mutations. Gated by `man-day-role:create|update|delete`
+  // (ADMIN-only by default). The handler-internal userRole re-derive
+  // was kept as defense-in-depth in case Elysia 1.2's requirePermission
+  // doesn't reach the handler scope — see the rationale in PATCH below.
+  .use(requirePermission('man-day-role:create'))
   .post('/', async ({ body, set, userId, request }) => {
     // Admin-only: we re-derive the role here (not via authContext.userRole)
     // because Elysia 1.2's derive context does not reach the route
@@ -99,6 +93,7 @@ export const manDayRoleRoutes = new Elysia({ prefix: '/man-day-roles', tags: ['m
     }),
   })
 
+  .use(requirePermission('man-day-role:update'))
   .patch('/:id', async ({ params, body, set, userId, request }) => {
     // Admin-only (see POST handler for the rationale on re-deriving
     // the role inline).
@@ -145,6 +140,7 @@ export const manDayRoleRoutes = new Elysia({ prefix: '/man-day-roles', tags: ['m
     return role;
   })
 
+  .use(requirePermission('man-day-role:delete'))
   .delete('/:id', async ({ params, set, userId, request }) => {
     // Admin-only (see POST handler for the rationale).
     const adminUser = await prisma.user.findUnique({
