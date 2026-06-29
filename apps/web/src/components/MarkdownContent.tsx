@@ -110,28 +110,50 @@ export function MarkdownContent({ source, className }: MarkdownContentProps) {
  * available if they want to verify why the assistant said what it
  * said. Inner content is rendered as markdown so reasoning that
  * mentions lists, code, etc. still reads cleanly.
+ *
+ * 2026-06-29: polish the visual treatment. The previous version used
+ * a dashed border with a tiny monochrome Brain icon and a tight
+ * 8/6px padding, which read as "unfinished placeholder" rather
+ * than "deliberately hidden reasoning". Updated to:
+ *   - left border accent in primary tint (blockquote-style cue that
+ *     this is a meta-section, not body text)
+ *   - solid muted border on the other three sides (less noisy than
+ *     dashed; the left accent carries the visual weight)
+ *   - Brain icon bumped to 14px with a primary tint so it scans as
+ *     a label, not a glyph
+ *   - chevron pushed to the far right with `ml-auto` so the eye
+ *     reads the label as the primary affordance
+ *   - summary hover state gets a subtle bg fill so clickability is
+ *     obvious
  */
 function ThinkBlock({ content }: { content: string }) {
   if (!content) return null;
   return (
     <details
       className={cn(
-        'group my-2 rounded border border-dashed bg-muted/30 text-xs',
-        'open:bg-muted/50'
+        'group my-3 rounded-md overflow-hidden',
+        'border border-border bg-muted/20',
+        'border-l-4 border-l-primary/50',
+        'open:bg-muted/40 open:border-l-primary',
+        'transition-colors'
       )}
     >
       <summary
         className={cn(
-          'flex items-center gap-1.5 cursor-pointer select-none',
-          'px-2 py-1.5 text-muted-foreground hover:text-foreground',
-          'list-none [&::-webkit-details-marker]:hidden'
+          'flex items-center gap-2 cursor-pointer select-none',
+          'px-3 py-2 text-xs text-muted-foreground',
+          'hover:text-foreground hover:bg-muted/40',
+          'list-none [&::-webkit-details-marker]:hidden',
+          'transition-colors'
         )}
       >
-        <Brain className="h-3 w-3" />
+        <Brain className="h-3.5 w-3.5 text-primary/70 group-hover:text-primary transition-colors shrink-0" />
         <span className="font-medium">推理過程</span>
-        <span aria-hidden="true" className="text-[10px] group-open:rotate-90 transition-transform">▸</span>
+        <span aria-hidden="true" className="text-[10px] group-open:rotate-90 transition-transform ml-auto opacity-60 group-hover:opacity-100">
+          ▸
+        </span>
       </summary>
-      <div className="px-2 pb-2 pt-1 border-t border-dashed">
+      <div className="px-3 pb-3 pt-2 border-t border-border/50 text-foreground/80">
         <MarkdownSegment text={content} />
       </div>
     </details>
