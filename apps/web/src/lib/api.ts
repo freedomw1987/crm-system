@@ -902,11 +902,14 @@ export const activitiesApi = {
     Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') qs.set(k, String(v)); });
     return request<{ items: Activity[]; total: number }>(`/activities${qs.toString() ? `?${qs}` : ''}`);
   },
-  recent: (params: { limit?: number; authorId?: string; since?: string } = {}) => {
+  recent: (params: { limit?: number; authorId?: string; since?: string; until?: string } = {}) => {
     const qs = new URLSearchParams();
     if (params.limit !== undefined) qs.set('limit', String(Math.min(params.limit, 50)));
     if (params.authorId) qs.set('authorId', params.authorId);
     if (params.since) qs.set('since', params.since);
+    // 2026-06-29: optional upper bound for the Kanban view's
+    // "last week" / custom date-range filters.
+    if (params.until) qs.set('until', params.until);
     return request<{ items: Activity[]; total: number }>(`/activities/recent${qs.toString() ? `?${qs}` : ''}`);
   },
   create: (data: { companyId?: string; dealId?: string; type?: ActivityType; content: string }) =>

@@ -171,7 +171,7 @@ export const activityRoutes = new Elysia({ prefix: '', tags: ['activities', 'att
   .get('/activities/recent', async ({ query, set, request }) => {
     const userId = await getUserIdFromRequest(request);
     if (!userId) { set.status = 401; return { error: 'Unauthorized' }; }
-    const { limit: limitRaw, authorId, since } = query as {
+    const { limit: limitRaw, authorId, since, until } = query as {
       limit?: string;
       /** Day N+1: filter to a single sales rep (used by the Deal Kanban
        *  pipeline-meeting view). Empty/undefined = no filter. */
@@ -180,13 +180,25 @@ export const activityRoutes = new Elysia({ prefix: '', tags: ['activities', 'att
        *  instant. Lets the Kanban view limit the list to "this week" /
        *  "this month" without paging through old notes. */
       since?: string;
+      /** 2026-06-29: ISO timestamp; only return activities at-or-before
+       *  this instant. Combined with `since` this gives the Kanban view
+       *  a "last week" / custom date-range filter (the previous version
+       *  only had a lower bound, so "last week" had to be faked as a
+       *  14-day window from today). */
+      until?: string;
     };
     const limit = Math.min(Number(limitRaw ?? '10'), 50);
     // Build the where clause incrementally so undefined filters don't
-    // accidentally match everything.
+    // accidentally match everything. createdAt is an object only when
+    // at least one bound is present — passing `{ gte: undefined }` to
+    // Prisma would still emit a `createdAt > NULL` clause.
     const where: Record<string, unknown> = {};
     if (authorId) where.authorId = authorId;
-    if (since) where.createdAt = { gte: new Date(since) };
+    if (since || until) {
+      where.createdAt = {};
+      if (since) (where.createdAt as Record<string, Date>).gte = new Date(since);
+      if (until) (where.createdAt as Record<string, Date>).lte = new Date(until);
+    }
     const items = await prisma.activity.findMany({
       where,
       take: limit,
