@@ -23,6 +23,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input, Textarea } from '@/components/ui/input';
@@ -30,7 +31,7 @@ import { Select, Label } from '@/components/ui/select';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
-import { productsApi, ApiError, type Product } from '@/lib/api';
+import { productsApi, settingsApi, ApiError, type Product } from '@/lib/api';
 
 interface ProductDialogProps {
   /** When provided → edit mode. */
@@ -67,6 +68,21 @@ export function ProductDialog({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // P2 multi-currency (2026-06-29): pre-fill the currency picker with
+  // the admin-configured default (typically RMB), not hard-coded HKD.
+  // Same React Query key as /settings/currency so the cache is shared —
+  // by the time the user opens the create dialog the config is usually
+  // already in cache from the Quotation Builder's prefetch.
+  const { data: currencyCfg } = useQuery({
+    queryKey: ['settings', 'currency'],
+    queryFn: () => settingsApi.getCurrency(),
+    staleTime: 60_000,
+  });
+  // userTouchedCurrency guards against the second open of the dialog
+  // inheriting a stale value from the previous session. The re-seed
+  // useEffect below resets it on every open.
+  const [userTouchedCurrency, setUserTouchedCurrency] = useState(false);
+
   // Re-seed when the dialog opens (handles edit-mode opening with a
   // different product, and create-mode opening with a new defaultName).
   useEffect(() => {
@@ -77,14 +93,27 @@ export function ProductDialog({
       setCategory(product?.category ?? '');
       setUnitPrice(Number(product?.unitPrice) || 0);
       setCostPrice(Number(product?.costPrice) || 0);
-      setCurrency(product?.currency ?? 'HKD');
+      // Edit mode: trust the persisted row. Create mode: prefer the
+      // system default (from settingsApi); fall back to 'RMB' if the
+      // fetch hasn't resolved yet (matches the Prisma default).
+      setCurrency(product?.currency ?? currencyCfg?.default ?? 'RMB');
+      setUserTouchedCurrency(false);
       setStatus(product?.status ?? 'ACTIVE');
       setTrackInventory(product?.trackInventory ?? true);
       setStockQuantity(Number(product?.stockQuantity) || 0);
       setLowStockThreshold(Number(product?.lowStockThreshold) || 0);
       setError(null);
     }
-  }, [open, product, defaultName]);
+  }, [open, product, defaultName, currencyCfg?.default]);
+
+  // If the user hasn't touched the picker AND the currency config
+  // resolves after the dialog opens, sync the picker to the live
+  // default. Mirrors the userTouchedTax pattern in QuotationBuilder.
+  useEffect(() => {
+    if (open && !isEdit && !userTouchedCurrency && currencyCfg?.default) {
+      setCurrency(currencyCfg.default);
+    }
+  }, [open, isEdit, userTouchedCurrency, currencyCfg?.default]);
 
   async function submit() {
     setError(null);
@@ -234,13 +263,23 @@ export function ProductDialog({
               <Select
                 id="pd-cur"
                 value={currency}
-                onChange={(e) => setCurrency(e.target.value)}
+                onChange={(e) => {
+                  setCurrency(e.target.value);
+                  setUserTouchedCurrency(true);
+                }}
               >
-                <option>HKD</option>
-                <option>USD</option>
-                <option>CNY</option>
-                <option>EUR</option>
-                <option>GBP</option>
+                {/* P2 multi-currency (2026-06-29): RMB/HKD/MOP are the
+                    three system currencies (admin-configurable default
+                    in /settings/currency). USD/EUR/GBP/legacy CNY left
+                    in as fallbacks for products priced in a non-system
+                    currency. */}
+                <option value="RMB">人民幣 (RMB)</option>
+                <option value="HKD">港幣 (HKD)</option>
+                <option value="MOP">澳門幣 (MOP)</option>
+                <option value="USD">美元 (USD)</option>
+                <option value="CNY">CNY</option>
+                <option value="EUR">EUR</option>
+                <option value="GBP">GBP</option>
               </Select>
             </div>
           </div>

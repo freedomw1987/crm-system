@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { dealsApi, companiesApi, type KanbanData, type Deal, type Company } from '@/lib/api';
+import { dealsApi, companiesApi, settingsApi, type KanbanData, type Deal, type Company } from '@/lib/api';
 import { formatCurrency } from '@/lib/utils';
 import { CompanyAutocomplete } from '@/components/company-autocomplete';
 import { MultiCompanyAutocomplete } from '@/components/multi-company-autocomplete';
@@ -160,6 +160,22 @@ export function DealsPage() {
     return { totalValue, weightedValue, openCount };
   }, [kanban]);
 
+  // P2 multi-currency (2026-06-29): stats display amounts in the
+  // admin-configured system default (typically RMB). Falls back to
+  // 'RMB' until the API call resolves, matching the schema default.
+  // Caveat: this sums deals across mixed currencies (since Deal
+  // doesn't snapshot exchangeRateToHKD — only Quotation does). For
+  // v1 we accept that the sum is unitless; converting each deal to
+  // HKD-equivalent would require a Deal.currency rate, which is a
+  // bigger schema change. Sales teams reading the stat should
+  // interpret it as "rough magnitude" not "exact total".
+  const { data: currencyCfg } = useQuery({
+    queryKey: ['settings', 'currency'],
+    queryFn: () => settingsApi.getCurrency(),
+    staleTime: 60_000,
+  });
+  const systemCurrency = currencyCfg?.default ?? 'RMB';
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
@@ -172,7 +188,7 @@ export function DealsPage() {
         <div className="flex items-center gap-3">
           <div className="text-right text-sm hidden md:block">
             <div className="text-muted-foreground text-xs">Open / Total</div>
-            <div className="font-semibold">{stats.openCount} deals · {formatCurrency(stats.totalValue)}</div>
+            <div className="font-semibold">{stats.openCount} deals · {formatCurrency(stats.totalValue, systemCurrency)}</div>
           </div>
           <Button onClick={() => setCreateOpen(true)}>
             <Plus className="h-4 w-4 mr-1" /> 新增 Deal
@@ -223,8 +239,8 @@ export function DealsPage() {
       {/* Stats row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatCard label="Open Deals" value={`${stats.openCount}`} />
-        <StatCard label="Total Value" value={formatCurrency(stats.totalValue)} />
-        <StatCard label="Weighted (by prob.)" value={formatCurrency(stats.weightedValue)} highlight />
+        <StatCard label="Total Value" value={formatCurrency(stats.totalValue, systemCurrency)} />
+        <StatCard label="Weighted (by prob.)" value={formatCurrency(stats.weightedValue, systemCurrency)} highlight />
         <StatCard label="Stages" value={`${kanban?.buckets.length ?? 0}`} />
       </div>
 
@@ -247,6 +263,7 @@ export function DealsPage() {
                   deals={bucket.deals}
                   onDrop={(dealId) => moveStage.mutate({ dealId, stageId: bucket.stage.id })}
                   isMoving={moveStage.isPending}
+                  systemCurrency={systemCurrency}
                   onEdit={(deal) => setEditing(deal)}
                   onDelete={(deal) => {
                     if (confirm(`確定刪除 deal「${deal.title}」?此操作無法復原,相關 activities / quotations 會一齊 cascade。`)) {
@@ -338,6 +355,7 @@ function KanbanColumn({
   deals,
   onDrop,
   isMoving,
+  systemCurrency,
   onEdit,
   onDelete,
   onNewQuotation,
@@ -347,6 +365,9 @@ function KanbanColumn({
   deals: Deal[];
   onDrop: (dealId: string) => void;
   isMoving: boolean;
+  /** P2 multi-currency (2026-06-29): admin-set system default currency
+   *  (RMB/HKD/MOP) — used to format the per-stage value subtotal. */
+  systemCurrency: string;
   onEdit: (deal: Deal) => void;
   /** Day N+1 (P1-X): confirm-then-delete this deal from the card.
    *  Cascades to activities / quotations via Prisma onDelete: Cascade. */
@@ -391,7 +412,7 @@ function KanbanColumn({
           <Badge variant="secondary" className="text-xs">{deals.length}</Badge>
         </div>
         <div className="text-xs text-muted-foreground tabular-nums font-medium">
-          {formatCurrency(total)}
+          {formatCurrency(total, systemCurrency)}
         </div>
       </div>
 
