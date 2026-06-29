@@ -17,38 +17,24 @@
  * The filter UI lives next to the title so it doesn't push the kanban
  * board below the fold. Both filters update reactively via React
  * Query — no explicit "apply" button needed.
+ *
+ * 2026-06-29: per-row edit/delete/attachment CRUD is now delegated to
+ * the shared <ActivityItem> (apps/web/src/components/activity-feed.tsx).
+ * The deal-context line (deal title / company name) is rendered by
+ * ActivityItem itself when the API includes the joined deal/company
+ * objects — which the /activities/recent endpoint does — so we don't
+ * need to duplicate the header chrome here.
  */
 
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { StickyNote, Phone, Mail, Calendar, Paperclip, Filter, X, Download, Loader2 } from 'lucide-react';
+import { Filter, X } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, Label } from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
-import { activitiesApi, usersApi, type Activity, type ActivityType, type Attachment } from '@/lib/api';
-import { downloadAttachment } from '@/lib/attachment-download';
-
-const TYPE_META: Record<ActivityType, { icon: typeof StickyNote; label: string; color: string }> = {
-  NOTE:    { icon: StickyNote, label: '備註',   color: 'text-slate-500' },
-  CALL:    { icon: Phone,      label: '電話',   color: 'text-emerald-500' },
-  EMAIL:   { icon: Mail,       label: 'Email', color: 'text-blue-500' },
-  MEETING: { icon: Calendar,   label: '會議',   color: 'text-amber-500' },
-};
+import { activitiesApi, usersApi, type Activity } from '@/lib/api';
+import { ActivityItem } from '@/components/activity-feed';
 
 type TimeWindow = 'week' | 'month' | 'all';
-
-function relativeTime(iso: string): string {
-  const ms = Date.now() - new Date(iso).getTime();
-  const sec = Math.floor(ms / 1000);
-  if (sec < 60) return '剛剛';
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min} 分鐘前`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr} 小時前`;
-  const day = Math.floor(hr / 24);
-  if (day < 7) return `${day} 天前`;
-  return new Date(iso).toLocaleDateString('zh-HK');
-}
 
 function sinceForWindow(window: TimeWindow): string | undefined {
   if (window === 'all') return undefined;
@@ -89,26 +75,6 @@ export function DealsActivityPanel() {
   });
   const items: Activity[] = data?.items ?? [];
   const hasFilter = !!authorId || window !== 'week';
-
-  // Per-attachment download state. Kept at panel level (not per-row)
-  // so the set of busy ids is shared across the whole pipeline view
-  // and survives re-renders triggered by the filter changes above.
-  const [busyAtt, setBusyAtt] = useState<Record<string, boolean>>({});
-
-  async function handleDownload(att: Attachment) {
-    setBusyAtt((b) => ({ ...b, [att.id]: true }));
-    try {
-      await downloadAttachment(att);
-    } catch (e) {
-      // Download util already throws with a descriptive message; show
-      // it briefly via alert so the user knows why nothing happened.
-      // Use globalThis because the local `window` state shadows the
-      // browser window in this file's scope.
-      globalThis.alert(e instanceof Error ? e.message : '下載失敗');
-    } finally {
-      setBusyAtt((b) => ({ ...b, [att.id]: false }));
-    }
-  }
 
   return (
     <Card>
@@ -168,61 +134,12 @@ export function DealsActivityPanel() {
           </p>
         ) : (
           <ul className="divide-y">
-            {items.map((a) => {
-              const meta = TYPE_META[a.type] ?? TYPE_META.NOTE;
-              const Icon = meta.icon;
-              return (
-                <li key={a.id} className="flex items-start gap-3 p-4">
-                  <div className={`shrink-0 mt-0.5 ${meta.color}`}>
-                    <Icon className="h-4 w-4" />
-                  </div>
-                  <div className="flex-1 min-w-0 space-y-1">
-                    <div className="flex items-center gap-2 flex-wrap text-xs">
-                      <Badge variant="outline" className="text-[10px]">{meta.label}</Badge>
-                      {a.author && (
-                        <span className="font-medium text-foreground">{a.author.name}</span>
-                      )}
-                      <span className="text-muted-foreground">{relativeTime(a.createdAt)}</span>
-                      {a.deal && (
-                        <span className="text-muted-foreground">
-                          · <span className="font-medium text-foreground">{a.deal.title}</span>
-                        </span>
-                      )}
-                      {a.company && !a.deal && (
-                        <span className="text-muted-foreground">
-                          · <span className="font-medium text-foreground">{a.company.name}</span>
-                        </span>
-                      )}
-                    </div>
-                    {a.content && (
-                      <p className="text-sm whitespace-pre-wrap break-words line-clamp-2">{a.content}</p>
-                    )}
-                    {a.attachments && a.attachments.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 pt-0.5">
-                        {a.attachments.map((att) => (
-                          <button
-                            key={att.id}
-                            type="button"
-                            onClick={() => handleDownload(att)}
-                            disabled={!!busyAtt[att.id]}
-                            title={`下載 ${att.fileName}`}
-                            className="inline-flex items-center gap-1 text-[10px] bg-muted px-1.5 py-0.5 rounded text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
-                          >
-                            {busyAtt[att.id] ? (
-                              <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                            ) : (
-                              <Paperclip className="h-2.5 w-2.5" />
-                            )}
-                            {att.fileName}
-                            <Download className="h-2.5 w-2.5" />
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </li>
-              );
-            })}
+            {items.map((a) => (
+              // variant="plain" — the parent <ul> already provides
+              // dividers + flush layout, so the row itself stays
+              // unbordered (matches the original panel look).
+              <ActivityItem key={a.id} activity={a} variant="plain" />
+            ))}
           </ul>
         )}
       </CardContent>

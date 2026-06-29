@@ -130,7 +130,22 @@ function ActivityList({ items, isLoading }: { items: Activity[]; isLoading: bool
   );
 }
 
-function ActivityItem({ activity }: { activity: Activity }) {
+export function ActivityItem({
+  activity,
+  /**
+   * Visual variant. Different surfaces wrap ActivityItem in different
+   * containers (e.g. DealsActivityPanel uses `<ul className="divide-y">`
+   * with no per-row card chrome, while the company feed uses
+   * `<ul className="space-y-3">` and wants each row to read as a
+   * distinct card). Defaults to `'card'`.
+   *   - 'card'  : bordered, rounded, bg-card, p-3 (the original look)
+   *   - 'plain' : flush against a divide-y / hover-bg parent, p-4
+   */
+  variant = 'card',
+}: {
+  activity: Activity;
+  variant?: 'card' | 'plain';
+}) {
   const meta = TYPE_META[activity.type] ?? TYPE_META.NOTE;
   const Icon = meta.icon;
   // 2026-06-27: own-activity edit/delete affordances. The buttons
@@ -158,6 +173,43 @@ function ActivityItem({ activity }: { activity: Activity }) {
       setEditOpen(false);
     },
   });
+  // 2026-06-29: edit-time attachment CRUD. The dialog edits
+  // type + content as one PATCH, but attachment upload/remove are
+  // applied immediately and independently (each is its own
+  // multipart POST / DELETE) so the user doesn't have to re-pick
+  // files after a content edit. Author-only on the backend, but
+  // we already gate the entire edit affordance on `isOwn`, so
+  // these mutations are unreachable for non-authors.
+  const editFileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingFiles, setUploadingFiles] = useState<
+    Array<{ key: string; name: string; size: number; status: 'uploading' | 'error'; error?: string }>
+  >([]);
+  const removeAttachment = useMutation({
+    mutationFn: (id: string) => attachmentsApi.remove(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['activities'] }),
+  });
+
+  async function handleEditFilePick(list: FileList | null) {
+    if (!list) return;
+    // Snapshot the entries up front; `list` is a live FileList that
+    // resets when the underlying input clears.
+    const files = Array.from(list);
+    for (const f of files) {
+      const key = `${f.name}-${f.size}-${Date.now()}-${Math.random()}`;
+      setUploadingFiles((prev) => [...prev, { key, name: f.name, size: f.size, status: 'uploading' }]);
+      try {
+        await attachmentsApi.upload(activity.id, f);
+        // On success, refetch the feed. The new attachment transitions
+        // from the "uploading" chip into the "saved" list automatically.
+        qc.invalidateQueries({ queryKey: ['activities'] });
+        setUploadingFiles((prev) => prev.filter((p) => p.key !== key));
+      } catch (e) {
+        setUploadingFiles((prev) =>
+          prev.map((p) => p.key === key ? { ...p, status: 'error', error: (e as Error).message } : p)
+        );
+      }
+    }
+  }
   // Track per-attachment busy state so multiple attachments in the same
   // activity can be downloaded independently. Errors are kept as
   // {id, message} so the chip itself can show the failure inline.
@@ -181,7 +233,11 @@ function ActivityItem({ activity }: { activity: Activity }) {
   }
 
   return (
-    <li className="flex gap-3 p-3 rounded-lg border bg-card">
+    <li className={
+      variant === 'card'
+        ? 'flex gap-3 p-3 rounded-lg border bg-card'
+        : 'flex gap-3 p-4 hover:bg-muted/30 transition-colors'
+    }>
       <div className={`shrink-0 mt-0.5 ${meta.color}`}>
         <Icon className="h-4 w-4" />
       </div>
@@ -196,12 +252,28 @@ function ActivityItem({ activity }: { activity: Activity }) {
           <span className="text-muted-foreground">
             {relativeTime(activity.createdAt)}
           </span>
+          {/* 2026-06-29: deal / company context. Only the /activities/recent
+              endpoint includes the joined deal/company objects, so this
+              renders on the pipeline panel but not on the company feed
+              (where the deal/company context is implicit from the page
+              the user is on). Edit/delete buttons still come after. */}
+          {activity.deal && (
+            <span className="text-muted-foreground">
+              · <span className="font-medium text-foreground">{activity.deal.title}</span>
+            </span>
+          )}
+          {activity.company && !activity.deal && (
+            <span className="text-muted-foreground">
+              · <span className="font-medium text-foreground">{activity.company.name}</span>
+            </span>
+          )}
           {/* 2026-06-27: own-activity edit/delete affordances. Only
-              rendered when the current user is the author. The
-              buttons are subtle (hover-visible) so they don't
-              clutter the read-only view for other users. */}
+              rendered when the current user is the author. 2026-06-29
+              bumped to always-visible icon chips (h-3.5 w-3.5 + border)
+              — the previous hover-only 12px muted icons were effectively
+              invisible to users. */}
           {isOwn && (
-            <div className="ml-auto inline-flex items-center gap-0.5">
+            <div className="ml-auto inline-flex items-center gap-1 shrink-0">
               <button
                 type="button"
                 aria-label="編輯 activity"
@@ -211,10 +283,10 @@ function ActivityItem({ activity }: { activity: Activity }) {
                   setEditContent(activity.content);
                   setEditOpen(true);
                 }}
-                className="text-muted-foreground hover:text-foreground transition-colors p-1 -m-1"
+                className="inline-flex items-center justify-center h-6 w-6 rounded border bg-background text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
                 data-testid="activity-edit"
               >
-                <Pencil className="h-3 w-3" />
+                <Pencil className="h-3.5 w-3.5" />
               </button>
               <button
                 type="button"
@@ -225,13 +297,13 @@ function ActivityItem({ activity }: { activity: Activity }) {
                   deleteActivity.mutate(activity.id);
                 }}
                 disabled={deleteActivity.isPending}
-                className="text-muted-foreground hover:text-destructive transition-colors p-1 -m-1 disabled:opacity-50"
+                className="inline-flex items-center justify-center h-6 w-6 rounded border bg-background text-muted-foreground hover:text-destructive hover:bg-muted transition-colors disabled:opacity-50"
                 data-testid="activity-delete"
               >
                 {deleteActivity.isPending ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 ) : (
-                  <Trash2 className="h-3 w-3" />
+                  <Trash2 className="h-3.5 w-3.5" />
                 )}
               </button>
             </div>
@@ -305,6 +377,97 @@ function ActivityItem({ activity }: { activity: Activity }) {
                 className="mt-1"
                 data-testid="activity-edit-content"
               />
+            </div>
+            <div>
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-muted-foreground">
+                  附件 ({(activity.attachments ?? []).length})
+                </label>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => editFileInputRef.current?.click()}
+                  disabled={uploadingFiles.some((u) => u.status === 'uploading')}
+                  data-testid="activity-edit-add-attachment"
+                >
+                  <Paperclip className="h-3.5 w-3.5 mr-1" /> 加附件
+                </Button>
+                <input
+                  ref={editFileInputRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => { handleEditFilePick(e.target.files); e.target.value = ''; }}
+                />
+              </div>
+              {((activity.attachments && activity.attachments.length > 0) || uploadingFiles.length > 0) && (
+                <ul className="space-y-1.5 mt-1.5">
+                  {(activity.attachments ?? []).map((att) => (
+                    <li
+                      key={att.id}
+                      className="flex items-center gap-2 text-xs bg-muted/40 border rounded px-2 py-1.5"
+                      data-testid="activity-edit-attachment-row"
+                    >
+                      <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                      <span className="truncate flex-1" title={att.fileName}>{att.fileName}</span>
+                      <span className="text-muted-foreground shrink-0">{formatBytes(att.sizeBytes)}</span>
+                      <button
+                        type="button"
+                        aria-label={`下載 ${att.fileName}`}
+                        title="下載"
+                        onClick={() => handleDownload(att as Attachment)}
+                        disabled={!!busy[att.id]}
+                        className="text-muted-foreground hover:text-foreground p-0.5 disabled:opacity-50"
+                      >
+                        {busy[att.id] ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`移除 ${att.fileName}`}
+                        title="移除"
+                        onClick={() => {
+                          if (!confirm(`確定移除附件「${att.fileName}」?`)) return;
+                          removeAttachment.mutate(att.id);
+                        }}
+                        disabled={removeAttachment.isPending}
+                        className="text-muted-foreground hover:text-destructive p-0.5 disabled:opacity-50"
+                        data-testid="activity-edit-attachment-remove"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </li>
+                  ))}
+                  {uploadingFiles.map((u) => (
+                    <li
+                      key={u.key}
+                      className={`flex items-center gap-2 text-xs border rounded px-2 py-1.5 ${
+                        u.status === 'error' ? 'border-destructive/40 bg-destructive/5' : 'bg-muted/20 border-dashed'
+                      }`}
+                      data-testid="activity-edit-attachment-pending"
+                    >
+                      <Paperclip className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                      <span className="truncate flex-1" title={u.name}>{u.name}</span>
+                      <span className="text-muted-foreground shrink-0">{formatBytes(u.size)}</span>
+                      {u.status === 'uploading' ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                      ) : (
+                        <span className="text-destructive text-[10px]" title={u.error}>失敗</span>
+                      )}
+                      {u.status === 'error' && (
+                        <button
+                          type="button"
+                          aria-label={`移除 ${u.name}`}
+                          onClick={() => setUploadingFiles((prev) => prev.filter((p) => p.key !== u.key))}
+                          className="text-muted-foreground hover:text-destructive p-0.5"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
             {updateActivity.error && (
               <p className="text-sm text-destructive">

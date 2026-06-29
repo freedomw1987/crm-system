@@ -22,8 +22,13 @@
  *   Reads are open to any logged-in user (similar to /companies).
  *   Writes (create) are open — sales reps are expected to log their
  *   own follow-ups. Edits and deletes (PATCH/DELETE on /:id) are
- *   author-only: only the activity's `authorId` may modify it. A
- *   future perms cleanup can grant admin override via the
+ *   author-only: only the activity's `authorId` may modify it.
+ *   Attachment CRUD inherits the same author-only rule (2026-06-29):
+ *     - POST   /activities/:id/attachments  → 403 if not author
+ *     - DELETE /attachments/:id             → 403 if not author of
+ *       the parent activity (not the uploader — keeps ownership
+ *       rule consistent with activity edit/delete).
+ *   A future perms cleanup can grant admin override via the
  *   `activity:update` / `activity:delete` permissions; for now the
  *   ownership rule matches what the user requested (2026-06-27)
  *   and aligns with how Quotation edits work.
@@ -374,6 +379,14 @@ export const activityRoutes = new Elysia({ prefix: '', tags: ['activities', 'att
     if (!userId) { set.status = 401; return { error: 'Unauthorized' }; }
     const activity = await prisma.activity.findUnique({ where: { id: params.id } });
     if (!activity) { set.status = 404; return { error: 'Activity not found' }; }
+    // 2026-06-29: author-only attachment upload. Mirrors the
+    // PATCH/DELETE author check on the activity itself — the
+    // user is now editing attachments from the activity edit
+    // dialog, so the ownership rule must hold for them too.
+    if (activity.authorId !== userId) {
+      set.status = 403;
+      return { error: 'Only the author can upload attachments to this activity.' };
+    }
     const ctype = request.headers.get('content-type') ?? '';
     const m = ctype.match(/^multipart\/form-data;\s*boundary=(.+)$/i);
     if (!m) {
@@ -448,8 +461,19 @@ export const activityRoutes = new Elysia({ prefix: '', tags: ['activities', 'att
   .delete('/attachments/:id', async ({ params, set, request }) => {
     const userId = await getUserIdFromRequest(request);
     if (!userId) { set.status = 401; return { error: 'Unauthorized' }; }
-    const before = await prisma.attachment.findUnique({ where: { id: params.id } });
+    const before = await prisma.attachment.findUnique({
+      where: { id: params.id },
+      include: { activity: { select: { authorId: true } } },
+    });
     if (!before) { set.status = 404; return { error: 'Attachment not found' }; }
+    // 2026-06-29: author-only attachment delete. We check the parent
+    // activity's authorId (not the uploader) so the ownership rule
+    // stays consistent with PATCH/DELETE on /activities/:id — the
+    // activity author owns the whole record, including attachments.
+    if (before.activity.authorId !== userId) {
+      set.status = 403;
+      return { error: 'Only the activity author can delete this attachment.' };
+    }
     await prisma.attachment.delete({ where: { id: params.id } });
     const path = join(DATA_DIR, before.storageKey);
     try { await unlink(path); } catch { /* missing file is fine */ }
