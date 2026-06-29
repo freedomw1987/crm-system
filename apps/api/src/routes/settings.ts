@@ -1,5 +1,6 @@
 import { Elysia, t } from 'elysia';
 import { prisma } from '@crm/db';
+import { getCurrencyConfig } from '@crm/db';
 import { getUserIdFromRequest, requirePermission } from '../middleware/rbac';
 import { logEvent } from '../middleware/audit';
 
