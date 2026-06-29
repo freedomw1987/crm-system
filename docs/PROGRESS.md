@@ -401,3 +401,133 @@ delete other users' attachments.
 4. **Wire-format vs type-format on Service man-day payload** — `POST/PATCH /services` JSON body must use `manDayLines` (Prisma relation name) to match the Elysia validator. The `Service` TypeScript type uses `manDays` (singular).
 5. **When adding a new `.post('/:id/...')` chain method, REPLACE the entire method (from `.post(` through the closing `})`)**, not just the inner body. Edit-tool `old_string` matches a fixed substring — leaving the old opening/middle leaves orphan code that breaks Bun parsing. (Lesson from commit `214f255` / RG-018.)
 
+
+---
+
+## Day 20 — Doc refresh + regression-test sweep
+
+### Docs updated (t1)
+
+Project was at Day 9 in `PROGRESS.md` and Day 10 in `PROJECT-OVERVIEW`
+when reality is Day 18+. The "Day 18+" sweep caught every doc up:
+
+- **`PROGRESS.md`** — extended through Day 19 (multi-currency snapshot
+  + author-only attachment CRUD). Now 403 lines.
+- **`PROJECT-OVERVIEW.md`** — rewrote §3-7 for the Day 18+ state.
+  Tech stack + module layout unchanged. Day-by-day shipping
+  history adds Days 11-18+. Permissions model bumped to 29
+  entries (was 23).
+- **`QA-TRACKER.md`** — added Epic E (sales activity: E1-E5) and
+  Epic F (deal drill-down: F1). 22 US rows total. Open follow-ups
+  updated for Day 18+.
+- **`TECH-DEBT.md`** — added Day 18 P2 sprint shipped list (P2-snapshot-
+  display, P2-list-page-edit, P2-quotation-deal-link, P2-sales-rep,
+  P2-sales-rep follow-up, P2-quotation-revisions, P2-Activity
+  edit/delete, P2-attachment author-only, P2-multi-currency,
+  P2-prisma-migration-format, P2-orphaned-chain-method parse fix).
+- **`api.md`** — added 16 missing endpoints (revise, status,
+  per-item CRUD, GET /services/:id, PATCH/DELETE /services/:id,
+  full region CRUD, GET /man-day-roles/:id, PATCH/DELETE,
+  PATCH /attachments/:id, full settings currency, POST
+  /auth/change-password, POST /chat/confirm/:id, GET
+  /products/:id, PATCH/DELETE /products/:id, GET
+  /deals/kanban, PATCH /deals/:id/stage, GET
+  /settings/retention-policy, etc.).
+- **`architecture.md`** — bumped 12 → 16 route groups in §2 module
+  layout. Added §11 Decision log with table of ADRs (0001,
+  0014-0018).
+- **`database.md`** — Quotation section now lists
+  salesRepId / exchangeRateToHKD / totalHKD /
+  exchangeRateToMOP / totalMOP / parentQuotationId /
+  revisionNumber + Revision chain block. Renamed §18 from
+  ActivityLog to Activity. Added §12b ManDayRole, §19
+  Attachment, §20 AiConfig, §21 SystemConfig. Renumbered
+  §22/23 Conversation/Message, §24 AuditLog. Migration
+  history table: 16 migrations listed.
+
+### Regression-test ports added (t3 + t4)
+
+Code review (t2) found several high-RG-density areas with
+fragile contracts. Extracted to importable pure helpers + tests
+(t3 + t4) so future refactors fail at one source-of-truth
+import rather than silently drifting.
+
+- `apps/api/src/lib/quotation-patch-body.ts` — `QuotationPatchBody`
+  type + `SENT_LOCKED_FIELDS` / `SENT_UNLOCKED_FIELDS` arrays +
+  `buildQuotationPatchBody` factory + `validateQuotationPatchBody`
+  (pinned by RG-020 / RG-021).
+- `apps/api/src/lib/quotation-edit-prefill.ts` —
+  `linesFromQuotation` + `assertPrefillReady` +
+  `QuotationPrefillMissingError` (pinned by RG-019).
+- `apps/api/src/lib/chat-sse.ts` — `CHAT_SSE_EVENT_TYPES`
+  constants + `buildSseFrame` + `buildChatHeaders` +
+  `buildChatPrecheckError` + `isChatSseEventType` (pinned by
+  RG-002 / RG-003 / RG-005 / RG-CHAT-002).
+- `apps/api/src/middleware/rbac.ts` — re-exports
+  `PERMISSIONS` + `ROLE_PERMISSIONS` + adds derived
+  `ADMIN_PERMISSIONS` Set (pinned by RG-004).
+- `packages/ai/src/tools.ts` — exports `WRITE_TOOLS` +
+  `READ_TOOLS` partitions (pinned by RG-CHAT-002).
+
+Each helper is consumed by the existing route file (no
+dead-code extractions): `quotation.ts` imports
+`QuotationPatchBody` + `SENT_LOCKED_FIELDS`, `chat.ts`
+imports `buildSseFrame` + `buildChatHeaders` +
+`buildChatPrecheckError` + `CHAT_SSE_EVENT_TYPES`,
+`packages/ai/src/index.ts` uses `WRITE_TOOLS.has(toolName)`
+for the confirmation-required gate.
+
+93 new test cases across 5 test files pin the contracts
+(`b7ce018` test(t4)): 32 in `quotation-patch-body.test.ts`
+(RG-020/021), 18 in `quotation-edit-prefill.test.ts`
+(RG-019), 20 in `chat-sse.test.ts` (RG-002/003/005/CHAT-002),
+13 in `rbac.test.ts` (RG-004), 10 in `tools.test.ts`
+(RG-CHAT-002). Each file's header references the RG (matching
+the existing `quotation-gp.test.ts` / `confirm.test.ts`
+convention).
+
+### RG-2026-06-30 entries (t2 code review)
+
+Code review of high-RG-density files produced 9 RG entries
+documented in `REGRESSION-GUARD.md` (16 → 25 entries total):
+
+- 🔴 **RG-022** `quotation.ts` has zero `requirePermission`
+  calls (P0-2 class gap)
+- 🔴 **RG-023** `DELETE /quotations/:id` doesn't check status
+  (silent data-loss for SENT/ACCEPTED/INVOICED)
+- 🟨 **RG-024** PATCH body has no `t.Object` validator (known
+  gap, not closed)
+- 🟨 **RG-025** QuotationBuilder's `CompanyAutocomplete` is
+  not `disabled={isEdit}` (edit-mode change silently lost)
+- 🟨 **RG-026** `ai-config.ts` parallel auth system
+  (inline checks + dynamic import dance)
+- 🟢 **RG-027** `pendingConfirmations` Map is in-memory
+  (restart wipes in-flight confirmations)
+- 🟢 **RG-028** codify the RG-019 list-edit fetch pattern
+  (next: list-endpoint addition)
+- 🟢 **RG-029** consolidated into RG-025 (pointer)
+- 🟢 **RG-030** permission-lint suggestion for new mutating
+  routes
+
+### Day-20 final pass/fail counts (t5 + t7)
+
+- `apps/api` bun test: **172 / 0** (89 pre-existing + 83 new from
+  t4)
+- `apps/web` vitest: **34 / 0** (no regression)
+- `packages/ai` bun test: **23 / 0** (13 pre-existing + 10 new)
+- `apps/api` build: success (2.40 MB)
+- typecheck: pre-existing P2-10 baseline (Elysia 1.2 plugin-context
+  + `@prisma/client` regen needed for the ~1k `TS2307` block);
+  documented in `TECH-DEBT.md`. Pinned by the `bun run verify`
+  script which deliberately omits typecheck.
+
+### Day-20 new commits (this batch)
+
+- `b9c4851` docs: refresh docs for Day 18+ sprint + file
+  RG-2026-06-30-* review findings
+- `029eb9a` fix(rbac): close perm-gap on activity / man-day-role
+  / region routes + add 3 ADRs
+- `55c9c31` refactor(t3): extract regression-test ports as pure
+  helpers
+- `b7ce018` test(t4): regression tests for the t3 helper ports
+

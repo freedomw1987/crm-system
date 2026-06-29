@@ -19,7 +19,7 @@
     "db:migrate": "bun --filter '@crm/db' migrate",
     "db:seed": "bun --filter '@crm/db' seed",
     "db:studio": "bun --filter '@crm/db' studio",
-    "verify": "bun install --frozen-lockfile && bun run --filter '@crm/web' test && bun run --filter '@crm/web' build && bun run --filter '@crm/api' build"
+    "verify": "bun install --frozen-lockfile && bun run --filter '@crm/web' test && bun run --filter '@crm/api' test && bun run --filter '@crm/web' build && bun run --filter '@crm/api' build"
 
   },
   "devDependencies": {
