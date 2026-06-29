@@ -140,3 +140,264 @@
 2. **Docker compose `api` service has no host volume mount for `migrations/`** — when you add a new migration on the host, `docker cp <folder> crm-api:/app/packages/db/prisma/migrations/` + `docker restart crm-api` so the container's entrypoint picks it up. Otherwise the container's `prisma migrate deploy` will P3009-drift.
 3. **`request<T>` in `apps/web/src/lib/api.ts` is a pure typecast** — it does not normalise backend field names. Any Prisma relation field that doesn't match the frontend's `camelCase` expectation must be normalised at the API boundary (see `normaliseService` for the Service pattern).
 4. **Wire-format vs type-format on Service man-day payload** — `POST/PATCH /services` JSON body must use `manDayLines` (Prisma relation name) to match the Elysia validator. The `Service` TypeScript type uses `manDays` (singular). The dialog and API wrapper handle the rename.
+
+---
+
+## Day 10 — AI Assistant infrastructure
+
+**Shipped**
+- Singleton `AiConfig` row (admin-set endpoint URL, encrypted API key,
+  model name, optional system prompt). API key AES-256-GCM encrypted
+  with `AI_CONFIG_ENCRYPTION_KEY` from env.
+- `Conversation` + `ConversationMessage` tables (user-scoped, persisted
+  history for re-opening chats later)
+- `AI_CONFIG_UPDATED` audit action
+- `packages/ai` package: tool registry (11 tools), OpenAI function-calling
+  loop, conversation replay
+- Backend routes: `/ai/config` (admin CRUD with masked key in responses)
+  + `/chat/conversations/*` + `/chat/send`
+- Frontend: `/admin/ai-config` admin page + `/ai` chat page + `AiFab`
+  floating button visible on every page except `/ai`
+- Audit log every change to the AI config
+
+## Day 10.1 — Streaming responses + inline tool pill UX
+
+**Shipped**
+- `runAgentStream` async generator backend loop (chunked SSE)
+- `/chat/send` SSE response (`text/event-stream`) with
+  `Cache-Control: no-cache, no-transform` + `X-Accel-Buffering: no`
+- Frontend `chatApi.send` returns `Promise<{conversationId}>` via callback
+- `MessageBubble` tool branch → inline pill (no max-w, no bot icon)
+- `ToolPill` component (in-flight pulse + "執行中" / ok / failed states)
+- `StreamingBotMessage` (single bot-anchored bubble with pills above)
+- `quotations.tsx` AI draft — collects `draft_quotation` from `tool_end`
+  events for the post-create navigate
+- Backend: token, tool_start, tool_end, done events
+
+## Day 11 — Settings + Pipeline CRUD + AI `list_pipelines` tool
+
+**Shipped**
+- `GET/PATCH/POST/DELETE /settings/pipelines[/stages]` for pipeline
+  management (Lead / Qualified / Proposal / Negotiation / Won / Lost
+  seeded by default)
+- Stage move / name / probability / position swaps via
+  `/settings/pipelines/stages/:id` (409 on delete with non-empty stage)
+- AI tool `list_pipelines` returning the configured pipeline + stages
+- Audit log on every mutation (`PIPELINE_*` actions)
+
+## Day 14 — `SystemConfig` table + Tax rate (US-S4)
+
+**Shipped**
+- Generic key-value `system_config` table (JSON values, audit-logged)
+- `SYSTEM_CONFIG_UPDATED` audit action
+- `GET /settings/tax` + `PUT /settings/tax` (admin-only via
+  `settings:read` + `settings:update` permissions)
+- Frontend `QuotationBuilder` auto-prefills tax from system default
+  unless user has manually touched the field (`userTouchedTax` race-safe)
+- `default_tax_rate` is the first key, seeded via the `SEED_DB=true`
+  init flow
+
+## Day 14.7 — Settings sub-route refactor (7-tab layout) + 5 admin tabs
+
+**Shipped** (across 10 commits, see `docs/REGRESSION-GUARD.md` §
+"Day 14.7 wire-shape drift")
+- `SettingsLayout` shell with 7 tabs: Pipelines / Users / Roles /
+  AI / Man-day / Tax / Audit. URL = source of truth.
+- 5 placeholder admin pages → real pages (settings/users, settings/roles,
+  settings/ai, settings/man-day, settings/audit)
+- 5 backward-compat `<Navigate />` routes for old top-level URLs
+  (`/users`, `/roles`, `/audit`, etc.) — so existing bookmarks + chat
+  share links still land on the right tab
+- Sidebar collapsed from 5 entries into one "系統設置" entry
+- "View audit log" deep link uses `/settings/audit?action=…` and
+  survives the `<Navigate />` (the wire-shape drift fix)
+
+## Day 17 — P0-SP1 / P1 sprint
+
+**Shipped** (see `docs/TECH-DEBT.md` § "Day 17 P1 sprint shipped" for the
+full list; highlights):
+- P1-7: `/ai/config/status` perm gate
+- P1-5: strong password policy (`minLength: 12` + digit + special)
+- P1-6: audit log retention script + endpoint (cron deferred)
+- P1-1 / P1-2: typecheck critical errors PARTIAL (11 of 36 fixed)
+- P1-10: QuotationItem snapshot preserved on PATCH — edit dialog
+  shows snapshot of deleted/renamed Product/Service
+- RG-007: Day 17 AI tool confirmation migration was never applied
+  to prod; now applied
+- P1-9: frontend delete + edit on Companies / Deals / Quotations lists
+  + `api.ts` CRUD-surface regression guard
+
+## Day 17 — AI tool human-in-the-loop confirmation (RG-CHAT-002)
+
+**Shipped** (backend complete; frontend dialog deferred to Day 18+ batch)
+- 3 write tools tagged `requiresConfirmation: true`:
+  `draftQuotation`, `updateDealStage`, `logActivity`
+- Agent emits `confirmation_required` SSE event with stable `hashArgs()`
+- Backend stores the proposal in `ConversationMessage` keyed by hash
+- Audit log records `AI_TOOL_CONFIRMED` / `AI_TOOL_DENIED` per call
+- Pinned by 13 unit tests in `packages/ai/src/__tests__/confirm.test.ts`
+- Frontend gap: Radix Dialog with diff preview is the punted-to-Day-18
+  piece
+
+## Day 17.5 — Quotation GP% formula regression test (RG-2026-06-08-A3)
+
+**Shipped**
+- Extracted `gpOf()` + `costPerManDayFromSnapshot()` from the route
+  file into `apps/api/src/lib/quotation-gp.ts` so they can be unit-tested
+- 14 unit tests in `apps/api/src/__tests__/quotation-gp.test.ts` pin
+  the formula across product / service / mixed-currency line types
+
+---
+
+# Day 18+ sprint — Standard versioning + sales rep + multi-currency + Activity CRUD
+
+## Day 18-A — QuotationItem snapshot on read-only surfaces (P2-snapshot-display)
+
+**User-reported** (2026-06-26): opening an old quotation whose Product /
+Service was deleted or renamed showed blank line items on the detail
+page and print route, even though the data was in the DB.
+
+**Shipped**
+- Shared `<LineItemSnapshotMeta>` component
+  (`apps/web/src/components/quotation-line-item-snapshot.tsx`) renders:
+  - Description (snapshot-precedence + live fallback)
+  - SERVICE SOW / man-day breakdown via `manDaySnapshot`
+  - "(已刪除)" badge + "原紀錄已刪除,以下為 snapshot 資料"
+    hint when the live `product` / `service` relation is null
+- Used on both `QuotationDetailPage` tables (normal mode + print mode)
+- `crm-adapter.ts` `sow` / `sow_en` fields now prefer `item.description`
+  (snapshot) over the live catalogue
+- Pinned by 8 vitest tests in
+  `apps/web/src/components/__tests__/quotation-line-item-snapshot.test.ts`
+  + 6 bun:test cases in `crm-adapter.test.ts`
+
+## Day 18-B — Quotation ↔ Deal linkage fix (P2-quotation-deal-link)
+
+**User-reported**: editing a quotation, picking a Deal, hitting
+save — the link was gone.
+
+**Root cause**: `PATCH /quotations/:id` body schema silently dropped
+`dealId` (TS type didn't include it; backend route typecast didn't
+either).
+
+**Shipped**: backend accepts `dealId` in PATCH body; frontend includes
+it on save. (See `docs/REGRESSION-GUARD.md` "Quotation-deal-link"
+entry.)
+
+## Day 18-C — Sales rep on Deal + Quotation (P2-sales-rep)
+
+**User-reported**: "I want Deal and Quotation to both have a sales
+rep for following up."
+
+**Shipped**
+- `Quotation.salesRepId String?` FK to User; new `salesRep` relation
+- `POST /quotations` defaults `salesRepId` to authenticated user;
+  `PATCH /quotations/:id` accepts the field
+- `DealDialog` + QuotationBuilder get a 銷售員 picker
+  (new shared `UserAutocomplete`)
+- Kanban `DealCard` shows owner-initial avatar (top-right corner)
+- List / detail pages surface sales rep column / row
+- Migration: `20260626000000_p2_quotation_sales_rep` (Prisma-generated,
+  backfill from `createdById`, FK ON DELETE SET NULL)
+
+## Day 18-C follow-up — Drop `dealId` from the SENT lock
+
+**User-reported**: after the previous commit, editing a SENT
+quotation to attach a Deal failed with the SENT-lock 409.
+
+**Root cause**: I had incorrectly added `dealId` to the SENT-lock
+guard with the reasoning "moving a sent quotation to a different
+deal would silently change the sales-attribution trail." That's
+wrong — sales attribution is `salesRepId` / `createdById`, not
+`dealId`. Deal is a CRM container, not a commission rule.
+
+**Shipped**: reverted that inclusion. `dealId` (and `salesRepId`) are
+treated as CRM metadata and remain mutable across the lifecycle;
+only the contractual fields (title / notes / taxRate / validUntil /
+line items) are locked once SENT.
+
+## Day 18-D — Quotation revisions (standard versioning)
+
+**User-reported**: SENT lock errors tell users to "create a revision
+instead" but no such flow existed.
+
+**Shipped**
+- `Quotation.parentQuotationId` (FK to self, ON DELETE SET NULL) +
+  `Quotation.revisionNumber Int @default(0)`
+- `POST /quotations/:id/revise` — refuses DRAFT source; computes
+  chain-aware next number + revision via `nextRevisionInfo` (walk to
+  root + BFS-count descendants to handle branching)
+- Number format: `Q-YYYY-NNNN-R{N}` (R1, R2, …)
+- Audit log records `parentQuotationId` + `parentQuotationNumber` in
+  metadata
+- Frontend: 「建立修訂」button on detail page (only when status !==
+  DRAFT); inline confirm dialog; navigates to new `R{N}` on success
+- Detail page header: 「修訂自 {parent.number}」chip + `R{N}` badge
+- Migration: `20260627000000_p2_quotation_revisions`
+- Manual chain smoke test confirmed: R1 → R2 → R3 numbers, revisions,
+  parents all correct
+
+## Day 18-E — Author-only Activity edit + delete
+
+**User-reported**: "Activity has no way to edit or delete (my own
+Activity should be editable and deletable)."
+
+**Shipped**
+- `PATCH /activities/:id` (author-only, 403 otherwise): accepts
+  `{ type?, content? }`. Audit log: `ACTIVITY_UPDATED`.
+- `DELETE /activities/:id` tightened from "any user" to author-only
+- Frontend `ActivityItem`: edit + delete icons visible only when
+  `activity.author.id === currentUser.id`. Inline edit dialog
+  (type dropdown + content textarea). Delete uses the existing
+  `useDeleteActivity` mutation + confirm flow.
+
+## Day 19 — Multi-currency snapshots (HKD + MOP)
+
+**Shipped**
+- `SystemConfig` keys `cny_to_hkd` + `hkd_to_mop` (with `cny_to_hkd`
+  as the system default)
+- `Quotation.exchangeRateToHKD` + `totalHKD` (and `…ToMOP` / `totalMOP`)
+  — captured at create time and at status=SENT transition
+- `GET /settings/currency` + `PUT /settings/currency` (admin) returns
+  the live rates + cached snapshot
+- Frontend: currency picker on `DealDialog`, `ProductDialog`, and
+  `ServiceQuickCreate`; default flows from system → product/service
+- Detail / print / Excel views render HKD (default) + MOP equivalent
+  rows when present
+- `Quotation` builder shows the HKD preview alongside the customer-currency
+  total
+
+## Day 19 follow-up — Author-only attachment CRUD
+
+**User-reported**: similar gap to Activity edit/delete — users could
+delete other users' attachments.
+
+**Shipped**
+- `PATCH /activities/:id/attachments/:id` + `DELETE /…/:id` are
+  uploader-only (403 otherwise)
+- Frontend attachment chip surfaces edit/delete affordances only when
+  `uploadedBy.id === currentUser.id`
+
+---
+
+## 🟡 Updated pending / known gaps
+
+- **Production deploy to AWS** — local `docker compose -f docker-compose.prod.yml` works; CDK infra-as-code not written
+- **CI/CD** — no GitHub Actions / CodePipeline
+- **Email notifications** — quotation SENT status exists but no SMTP/SES
+- **Customer-facing quotation view** — internal detail page exists; public share link isn't built
+- **Inventory alerts** — `lowStockThreshold` is stored, no background job
+- **Region selector on sign-up** — companies seeded with regions; no UI to attach during onboarding
+- **Frontend AI confirmation dialog** — backend guardrail shipped (RG-CHAT-002); Radix Dialog + diff preview still punted
+- **Audit log retention cron** — script + endpoint shipped (P1-6); the actual cron schedule deferred to US-OPS-2
+
+---
+
+## ⚠️ Updated known issues / workarounds
+
+1. **Elysia 1.2 d.ts noise** — see Day 1. Use `--skipLibCheck` in `typecheck`. Bun runtime is clean. **Note**: most routes no longer need `@ts-nocheck` after the Day 17 P1-1 work; some still do (P2-10).
+2. **Docker compose `api` service has no host volume mount for `migrations/`** — when you add a new migration on the host, `docker cp <folder> crm-api:/app/packages/db/prisma/migrations/` + `docker restart crm-api` so the container's entrypoint picks it up. (The Dockerfile also bakes `packages/db` into the image at build time, so `docker compose up -d --build` is sufficient for most migrations.)
+3. **`request<T>` in `apps/web/src/lib/api.ts` is a pure typecast** — it does not normalise backend field names. Any Prisma relation field that doesn't match the frontend's `camelCase` expectation must be normalised at the API boundary (see `normaliseService` for the Service pattern).
+4. **Wire-format vs type-format on Service man-day payload** — `POST/PATCH /services` JSON body must use `manDayLines` (Prisma relation name) to match the Elysia validator. The `Service` TypeScript type uses `manDays` (singular).
+5. **When adding a new `.post('/:id/...')` chain method, REPLACE the entire method (from `.post(` through the closing `})`)**, not just the inner body. Edit-tool `old_string` matches a fixed substring — leaving the old opening/middle leaves orphan code that breaks Bun parsing. (Lesson from commit `214f255` / RG-018.)
+

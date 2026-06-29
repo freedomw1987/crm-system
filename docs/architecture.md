@@ -56,7 +56,7 @@ crm-system/
 │   │   │   ├── middleware/
 │   │   │   │   ├── rbac.ts        # requirePermission('product:write') factory
 │   │   │   │   └── audit.ts       # logEvent() — writes AuditLog rows
-│   │   │   └── routes/            # 12 route groups, one file per resource
+│   │   │   └── routes/            # 16 route groups, one file per resource (auth, users, roles, region, company, contact, product, service, man-day-role, deal, quotation, activity, attachment, audit, ai-config, chat, settings)
 │   │   ├── Dockerfile             # multi-stage, oven/bun:1.2 base
 │   │   └── docker-entrypoint.sh   # prisma migrate deploy + (optional) seed
 │   │
@@ -377,3 +377,152 @@ The client:
 - Has per-resource helpers (e.g. `quotationsApi.addItem`) for nested
   endpoints that don't fit the standard `get/list/create/update/remove`
   pattern
+
+---
+
+## 10. Recent features (Day 16-18 sprint bundle)
+
+The architecture above describes the as-built skeleton. The Day 16-18
+sprints layered on these subsystems. Each subsection below points at
+its decision record (`docs/architecture/001N-*.md`):
+
+- §10.1 Quotation revisions — [`0016-quotation-revisions.md`](./architecture/0016-quotation-revisions.md)
+- §10.2 Sales-rep assignment
+- §10.3 Multi-currency snapshots — [`0017-multi-currency-snapshot.md`](./architecture/0017-multi-currency-snapshot.md)
+- §10.4 Activity + Attachment author-only CRUD — [`0018-author-only-crud.md`](./architecture/0018-author-only-crud.md)
+- §10.5 Deal detail page
+- §10.6 SENT lock semantics
+
+### 10.1 Quotation revisions (Day 18-D)
+
+`Quotation` carries a self-referencing `parentQuotationId` FK + an
+integer `revisionNumber`. The chain forms via `parentQuotationId`
+links; the root has `parentQuotationId = null` and `revisionNumber = 0`.
+
+```
+Q-2026-0001          (root, R0, parent=null)
+└─ Q-2026-0001-R1   (parent=root, R1)
+   └─ Q-2026-0001-R2 (parent=R1, R2)
+      └─ Q-2026-0001-R3 (parent=R2, R3)
+```
+
+`POST /quotations/:id/revise` walks the parent chain to find the
+root, BFS-counts descendants to pick the next position (handles
+branching without number collisions), then clones the source as a
+DRAFT with `parentQuotationId = source.id`, `revisionNumber = count`,
+and `number = root.number-R{N}`. The new DRAFT's `updatedAt` is
+auto-refreshed; audit log records `parentQuotationId` +
+`parentQuotationNumber` in metadata.
+
+`onDelete: SetNull` on `parentQuotationId` means deleting a row in
+the middle of a chain doesn't orphan its descendants — they
+become new roots.
+
+### 10.2 Sales-rep assignment (Day 18-C)
+
+`Quotation.salesRepId` (FK to User, `ON DELETE SET NULL`) joins the
+existing `Deal.ownerId` field as the follow-up salesperson.
+
+`POST /quotations` defaults `salesRepId` to the authenticated user
+when omitted; `PATCH /quotations/:id` accepts the field. The
+`UserAutocomplete` shared component is reused by `DealDialog` and
+`QuotationBuilder` for both pickers.
+
+The frontend surfaces the sales rep column on:
+- `QuotationsListPage` table
+- `QuotationDetailPage` Summary card (falls back to `createdBy` when null)
+- `DealDetailPage` Quotations tab
+- `DealCard` (Kanban) shows owner-initial avatar in the top-right corner
+
+### 10.3 Multi-currency snapshots (Day 19)
+
+`SystemConfig` stores the live exchange rates `cny_to_hkd` (system
+default; admin-editable) and `hkd_to_mop`. Each Quotation captures
+the rates at create time as `exchangeRateToHKD` /
+`exchangeRateToMOP` and computes `totalHKD` / `totalMOP` snapshots
+that survive rate changes.
+
+```
+┌──────────────────────────┐  create-time snapshot  ┌──────────────────┐
+│ SystemConfig             │ ──────────────────────▶│ Quotation         │
+│ cny_to_hkd = 1.08         │                          │ rateToHKD = 1.08 │
+│ hkd_to_mop = 1.16         │                          │ rateToMOP = 1.16 │
+│ (admin-editable)          │                          │ totalHKD = 162k │
+└──────────────────────────┘                          │ totalMOP = 174k │
+                                                     └──────────────────┘
+```
+
+The Excel `sow` sheet renders both HKD (default) and MOP equivalent
+rows when the snapshots are present. Currency picker flows from
+system default → Deal → Product/Service → Quotation, so users never
+have to type a currency manually.
+
+### 10.4 Activity + Attachment author-only CRUD (Day 18-E / Day 19-E-fix)
+
+Both `PATCH /activities/:id` and `DELETE /activities/:id` are
+author-only (403 otherwise). Same shape for per-attachment
+`PATCH /activities/:id/attachments/:id` and `DELETE /…/:id`
+(uploader-only).
+
+The frontend `ActivityItem` mounts ✏️ + 🗑️ inline affordances only
+when `activity.author?.id === currentUser.id`. The same conditional
+applies on attachment chips. Audit log records `ACTIVITY_UPDATED`
+/ `ACTIVITY_DELETED` per the existing pattern.
+
+### 10.5 Deal detail page (Day 18-F)
+
+`/deals/:id` is a new page that surfaces the full Deal context in
+one place:
+
+- Header: deal title, company link, owner, stage badge, status,
+  action buttons (編輯, 刪除, + 新增報價)
+- Meta strip: deal value, expected close date, closed-at, 報價數量
+- Tab nav: `報價` (default) + `Activity`
+  - `報價` tab: re-fetches `quotationsApi.list({ dealId })` and renders a
+    read-only table with number / title / status / total / 銷售員 /
+    created / sent / accepted columns + 查看 link
+  - `Activity` tab: lazy-fetches `/api/activities?dealId=…` on first
+    switch; renders type-badge + author + timestamp + content cards
+
+The Kanban card's outer `onClick` now navigates to `/deals/:id` (was:
+open edit dialog). The edit icon is still a separate click target
+with `stopPropagation` for quick-edit.
+
+### 10.6 SENT lock semantics (Day 18-C follow-up)
+
+The `PATCH /quotations/:id` SENT-lock guard covers only the
+**contractual** fields — what the customer sees on the document:
+
+| Locked (contractual)  | Unlocked (CRM metadata) |
+| --------------------- | ----------------------- |
+| `title`                | `dealId`                |
+| `notes`                | `salesRepId`             |
+| `taxRate`              | `status` (excluded by `if`) |
+| `validUntil`           |                         |
+| line items (separate routes, all 409 on non-DRAFT) | |
+
+This is the correction of an earlier mistake (RG-021): the original
+"lock `dealId` because it's sales-attribution" reasoning was wrong.
+Sales attribution is `salesRepId` / `createdById`, not `dealId`.
+Deal is a CRM container, not a commission rule.
+
+---
+
+## 11. Decision log
+
+All ADRs live under `docs/architecture/NNNN-slug.md`. Numbering is
+strictly sequential; a new ADR takes the next available number.
+The full machine-readable index lives at `_meta/adr-index.json`.
+
+| ADR   | Title                                                          | Date       |
+| ----- | -------------------------------------------------------------- | ---------- |
+| 0001  | AI Assistant architecture                                     | 2026-06-08 |
+| 0014  | Audit log retention (12mo default, 24mo sensitive)            | 2026-06-07 |
+| 0015  | System settings 7-tab layout                                  | 2026-06-07 |
+| 0016  | Quotation revisions via self-referencing chain                | 2026-06-26 |
+| 0017  | Multi-currency snapshots on Quotation (HKD + MOP)              | 2026-06-29 |
+| 0018  | Author-only edit + delete for Activity + Attachment            | 2026-06-26 |
+
+The `[0-9]{4}-.+\.md$` filename pattern is what load-bearing indexers
+grep on. Don't rename; deprecate by adding a `superseded-by` note
+at the top instead.

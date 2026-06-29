@@ -25,7 +25,19 @@
 - ✅ P1-9 — frontend CRUD gaps on Companies/Deals/Quotations list pages (commit fca07ee) + api.ts surface regression guard (commit c578759)
 - ✅ P1-10 — Quotation line items preserve snapshot when Product/Service is deleted/renamed (commits 3b36451 + 835d972)
 - ✅ P1-11 — Docker base-image floating tag + Bun install cache (bunfig.toml + Dockerfile pin to `oven/bun:1.2.23`)
-- ✅ P2-snapshot-display — extend P1-10's snapshot precedence to the read-only surfaces: QuotationDetailPage (normal + print) now renders description + SOW breakdown + "(已刪除)" badge via the shared `<LineItemSnapshotMeta>` component, and `crm-adapter.ts` now prefers `item.description` for the Excel `sow` / `sow_en` fields (commits 1464b4e + this docs commit)
+- ✅ P2-snapshot-display — extend P1-10's snapshot precedence to the read-only surfaces: QuotationDetailPage (normal + print) now renders description + SOW breakdown + "(已刪除)" badge via the shared `<LineItemSnapshotMeta>` component, and `crm-adapter.ts` now prefers `item.description` for the Excel `sow` / `sow_en` fields (commits 1464b4e + 9d1da86 docs)
+
+**Day 18 P2 sprint (2026-06-26 to 2026-06-30) shipped:**
+- ✅ P2-list-page-edit — list-page 編輯 previously opened an empty form because the list endpoint excludes `items[]`; new `openEdit(q)` handler on the list page fetches the full quotation first via `quotationsApi.get(q.id)` and pre-seeds the detail-page cache (commit `b95abae`)
+- ✅ P2-quotation-deal-link — `PATCH /quotations/:id` previously dropped `dealId` (silent void); backend accepts + persists it on PATCH, frontend includes on save, frontend type adds `dealId` to the `Pick<Quotation, …>` (commit `d2f2444`)
+- ✅ P2-sales-rep — `Quotation.salesRepId String?` FK to User + `Deal.ownerId` now editable via `DealDialog`; surfaces on list / detail / Kanban (owner-initial avatar); new shared `UserAutocomplete` component (commit `9d4accd` + `a023536`)
+- ✅ P2-sales-rep follow-up — `dealId` was incorrectly added to the SENT lock alongside the contractual fields; reverted because sales attribution is `salesRepId`/`createdById`, not `dealId` (commit `02c333a` — entry filed as `RG-018-SENT-lock-regression` in REGRESSION-GUARD.md)
+- ✅ P2-quotation-revisions — `parentQuotationId` (FK to self, `ON DELETE SET NULL`) + `revisionNumber Int @default(0)` + `POST /quotations/:id/revise` with chain-aware `nextRevisionInfo` helper; UI 「建立修訂」button + 「修訂自 X」chip (commits `7173f0a` + `7a3ee6f`)
+- ✅ P2-Activity-edit-delete — author-only `PATCH /activities/:id` + tightened `DELETE /activities/:id`; frontend inline edit + delete affordances on `ActivityItem` (commit `0da8766`)
+- ✅ P2-attachment-author-only — same shape for per-attachment edit/delete (Day 19)
+- ✅ P2-multi-currency — system-default currency config + `Quotation.{exchangeRateToHKD, totalHKD, exchangeRateToMOP, totalMOP}` snapshot fields + Excel `sow` sheet HKD + MOP rows (Day 19)
+- ✅ P2-prisma-migration-format — prefer Prisma's auto-generated migrations over hand-written SQL (single-line lesson; commit `d9f93a4`)
+- ✅ P2-orphaned-chain-method — fix parsing regression caused by overlapping edits to the same `.post('/:id/...')` chain method (commit `214f255` — entry in REGRESSION-GUARD.md as Lesson #5 in PROGRESS.md)
 - 📌 Critical follow-up: RG-007 — Day 17 AI tool confirmation migration was
    never applied to prod (also fixed in this sprint)
 

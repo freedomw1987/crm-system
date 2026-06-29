@@ -322,43 +322,94 @@ A single role × day-rate × days row inside a Service.
 
 ---
 
+### 12b. `ManDayRole`
+
+Admin-managed catalogue of role types used by `ServiceManDay`. Lets
+admins set the price + cost per man-day for roles like "Senior
+Engineer", "Project Manager", "Designer", etc. — without hard-coding
+those values into the per-service `ServiceManDay` row.
+
+| Field        | Type           | Notes                                |
+| ------------ | -------------- | ------------------------------------ |
+| `id`         | cuid           |                                      |
+| `name`       | String         | unique (e.g. `Senior Engineer`)      |
+| `price`      | Decimal(12, 2) | sell per man-day                     |
+| `cost`       | Decimal(12, 2) | cost per man-day (default 0)         |
+| `isActive`   | Boolean        | default `true`                       |
+| `sortOrder`  | Int            | default 0; UI ordering               |
+| `createdAt`  | DateTime       |                                      |
+| `updatedAt`  | DateTime       |                                      |
+
+**Index:** `(isActive, sortOrder)`
+
+> **Relationship to `ServiceManDay`.** Each `ServiceManDay` line may
+> optionally reference a `ManDayRole` via `manDayRoleId` (nullable for
+> legacy rows). When DRAFT services re-render, the current role
+> price feeds into GP% computation; when a Quotation is built, the
+> `ServiceManDay.role` text + `dayRate` are snapshotted into the
+> QuotationItem (so the original role name + price are preserved
+> even if the catalogue role is later renamed or repriced — see
+> `QuotationItem.manDaySnapshot`).
+
+---
+
 ### 13. `Quotation`
 
 The quotation header.
 
-| Field                | Type             | Notes                                            |
-| -------------------- | ---------------- | ------------------------------------------------ |
-| `id`                 | cuid             |                                                  |
-| `number`             | String           | unique, e.g. `Q-2026-0001`; auto-generated       |
-| `companyId`          | String           | FK to Company                                    |
-| `createdById`        | String           | FK to User (`QuotationCreatedBy`)                |
-| `dealId`             | String?          | FK to Deal, `onDelete: SetNull` (Day 8)          |
-| `status`             | `QuotationStatus`| default `DRAFT`                                  |
-| `issueDate`          | DateTime         | default `now()`                                  |
-| `validUntil`         | DateTime?        |                                                  |
-| `sentAt`             | DateTime?        | stamped when status → SENT                        |
-| `viewedAt`           | DateTime?        |                                                  |
-| `acceptedAt`         | DateTime?        |                                                  |
-| `subtotal`           | Decimal(12, 2)   | default 0                                        |
-| `taxRate`            | Decimal(5, 2)    | percentage, default 0                            |
-| `taxAmount`          | Decimal(12, 2)   | default 0                                        |
-| `discount`           | Decimal(12, 2)   | default 0                                        |
-| `total`              | Decimal(12, 2)   | default 0                                        |
-| `currency`           | String           | default `HKD`                                    |
-| `title`              | String?          |                                                  |
-| `notes`              | String?          | Text — internal                                   |
-| `termsAndConditions` | String?          | Text                                              |
-| `generatedByAi`      | Boolean          | default `false` — true if created by AI agent     |
-| `aiPrompt`           | String?          | Text — the original user prompt (audit trail)     |
-| `createdAt`          | DateTime         |                                                  |
-| `updatedAt`          | DateTime         |                                                  |
+| Field                | Type             | Notes                                                                                              |
+| -------------------- | ---------------- | -------------------------------------------------------------------------------------------------- |
+| `id`                 | cuid             |                                                                                                    |
+| `number`             | String           | unique, e.g. `Q-2026-0001` (revision: `Q-2026-0001-R1`); auto-generated                          |
+| `companyId`          | String           | FK to Company                                                                                      |
+| `createdById`        | String           | FK to User (`QuotationCreatedBy`)                                                                  |
+| `dealId`             | String?          | FK to Deal, `onDelete: SetNull` (Day 8); CRM metadata, editable across lifecycle                 |
+| `salesRepId`         | String?          | FK to User (`QuotationSalesRep`), `onDelete: SetNull` (Day 18-C); the follow-up salesperson. Nullable so deleting a User doesn't block the quotation. Backend defaults to authenticated user on POST. CRM metadata. |
+| `exchangeRateToHKD`  | Decimal?         | rate captured at create time (Day 19)                                                              |
+| `totalHKD`           | Decimal?         | snapshot total in HKD                                                                              |
+| `exchangeRateToMOP`  | Decimal?         | rate captured at create time                                                                       |
+| `totalMOP`           | Decimal?         | snapshot total in MOP                                                                              |
+| `parentQuotationId`  | String?          | FK to Quotation (`QuotationRevisions`), `onDelete: SetNull` (Day 18-D); null for the original; points to the immediate predecessor |
+| `revisionNumber`     | Int              | default 0 (original); 1+ = nth revision                                                            |
+| `status`             | `QuotationStatus`| default `DRAFT`                                                                                    |
+| `issueDate`          | DateTime         | default `now()`                                                                                    |
+| `validUntil`         | DateTime?        |                                                                                                    |
+| `sentAt`             | DateTime?        | stamped when status → SENT                                                                          |
+| `viewedAt`           | DateTime?        |                                                                                                    |
+| `acceptedAt`         | DateTime?        |                                                                                                    |
+| `subtotal`           | Decimal(12, 2)   | default 0                                                                                          |
+| `taxRate`            | Decimal(5, 2)    | percentage, default 0                                                                              |
+| `taxAmount`          | Decimal(12, 2)   | default 0                                                                                          |
+| `discount`           | Decimal(12, 2)   | default 0                                                                                          |
+| `total`              | Decimal(12, 2)   | default 0                                                                                          |
+| `currency`           | String           | default `HKD`                                                                                      |
+| `title`              | String?          |                                                                                                    |
+| `notes`              | String?          | Text — internal                                                                                     |
+| `termsAndConditions` | String?          | Text                                                                                                |
+| `generatedByAi`      | Boolean          | default `false` — true if created by AI agent                                                       |
+| `aiPrompt`           | String?          | Text — the original user prompt (audit trail)                                                       |
+| `createdAt`          | DateTime         |                                                                                                    |
+| `updatedAt`          | DateTime         |                                                                                                    |
 
-**Indexes:** `companyId`, `status`, `issueDate`, `createdById`, `dealId`
+**Indexes:** `companyId`, `status`, `issueDate`, `createdById`, `dealId`, `salesRepId`, `parentQuotationId`
 
 > **Numbering.** The `number` is generated by the AI tool
 > `draft_quotation` (see `ai-agent.md`); the manual API path
 > (`POST /quotations`) auto-numbers in the same way as of Day 8.
-> Format: `Q-<year>-<4-digit-seq>`.
+> Format: `Q-<year>-<4-digit-seq>`. Revisions append `-R{N}` —
+> see "Revision chain" below.
+>
+> **Revision chain (Day 18-D).** When the customer comes back with
+> changes on a SENT quotation, the user clicks "建立修訂" → backend
+> `POST /quotations/:id/revise` clones the source as a new DRAFT,
+> linked via `parentQuotationId`, with `revisionNumber = source.revisionNumber + 1`.
+> The new `number` is `root.number-R{N}` (where the root is the
+> original via the `parentQuotationId` chain). The chain-aware
+> helper `nextRevisionInfo` walks to root + BFS-counts descendants
+> to handle branching without producing `number` collisions.
+> `onDelete: SetNull` on `parentQuotationId` means deleting a row
+> in the middle of a chain converts its descendants into new roots
+> rather than orphaning them.
 
 ---
 
@@ -493,32 +544,110 @@ A sales opportunity in a pipeline stage.
 
 ---
 
-### 18. `ActivityLog`
+### 18. `Activity`
 
-Polymorphic log of customer/deal interactions. A row can be tied to
-a company, contact, or deal (any combination; at least one FK is
-typically set).
+Polymorphic log of customer/deal interactions. A row can be tied
+to a **company** OR a **deal** (exactly one — the application layer
+enforces this; the schema allows both for migration flexibility).
 
-| Field          | Type            | Notes                                          |
-| -------------- | --------------- | ---------------------------------------------- |
-| `id`           | cuid            |                                                |
-| `type`         | `ActivityType`  |                                                |
-| `companyId`    | String?         | FK, Cascade                                    |
-| `contactId`    | String?         | FK, Cascade                                    |
-| `dealId`       | String?         | FK, Cascade                                    |
-| `assignedToId` | String?         | FK to User                                     |
-| `subject`      | String?         |                                                |
-| `body`         | String?         | Text                                            |
-| `metadata`     | Json?           | e.g. `{duration: 1800, outcome: "interested"}` |
-| `dueAt`        | DateTime?       | for `TASK`                                     |
-| `completedAt`  | DateTime?       |                                                |
-| `createdAt`    | DateTime        |                                                |
+| Field          | Type            | Notes                                                                                          |
+| -------------- | --------------- | ---------------------------------------------------------------------------------------------- |
+| `id`           | cuid            |                                                                                                |
+| `type`         | `ActivityType`  | `NOTE` / `CALL` / `EMAIL` / `MEETING`                                                          |
+| `companyId`    | String?         | FK to Company, `onDelete: Cascade`                                                            |
+| `dealId`       | String?         | FK to Deal, `onDelete: Cascade`                                                               |
+| `authorId`     | String          | FK to User (`ActivityAuthor`); required; the user who created the activity (Day N)            |
+| `assignedToId` | String?         | FK to User (`ActivityAssignedTo`), `onDelete: SetNull`; currently unused (kept for future "follow up reminders") |
+| `content`      | String          | Text; the body of the note/call/email/meeting                                                 |
+| `createdAt`    | DateTime        | default `now()`                                                                                |
+| `updatedAt`    | DateTime        |                                                                                                |
 
-**Indexes:** `companyId`, `contactId`, `dealId`, `type`, `createdAt`
+**Indexes:** `(companyId, createdAt DESC)`, `(dealId, createdAt DESC)`,
+`(authorId, createdAt DESC)`, `(type, createdAt)`
+
+> **Author-only edit + delete (Day 18-E).** Both `PATCH /activities/:id`
+> and `DELETE /activities/:id` are author-only — `actorId` must equal
+> the requester's `userId`, otherwise the route returns 403. The audit
+> log records `ACTIVITY_UPDATED` / `ACTIVITY_DELETED` accordingly.
+> See `docs/REGRESSION-GUARD.md` for the rationale + invariants.
 
 ---
 
-### 19. `Conversation` & 20. `ConversationMessage`
+### 19. `Attachment`
+
+File metadata for an upload attached to an Activity. Files live under
+`DATA_DIR` (default `/app/data/uploads`) keyed by a uuid + original
+extension — the **storageKey** (relative key) is stored, not the
+absolute path, so the container host can be swapped without rewriting
+rows.
+
+| Field         | Type     | Notes                                                                |
+| ------------- | -------- | -------------------------------------------------------------------- |
+| `id`          | cuid     |                                                                      |
+| `activityId`  | String   | FK to Activity, `onDelete: Cascade`                                  |
+| `fileName`    | String   | user-visible name                                                    |
+| `mimeType`    | String   |                                                                      |
+| `sizeBytes`   | Int      |                                                                      |
+| `storageKey`  | String   | unique; relative path under `DATA_DIR`                               |
+| `uploadedById`| String   | FK to User (`AttachmentUploader`)                                    |
+| `createdAt`   | DateTime |                                                                      |
+
+**Indexes:** `activityId`, `uploadedById`
+
+> **50MB hard cap.** Both nginx (`client_max_body_size 50m`) and the
+> Elysia route enforce it. MIME whitelist deferred (P2-5).
+>
+> **Author-only edit + delete (Day 19-E-fix).** Same shape as Activity:
+> only `uploadedById === userId` may edit/delete. 403 otherwise.
+
+---
+
+### 20. `AiConfig`
+
+Singleton (always `id=1`) row storing the AI Assistant's LLM connection.
+Designed per "T2 spec: API key, model, endpoint are admin-controlled;
+no env-var fallback."
+
+| Field             | Type      | Notes                                                                  |
+| ----------------- | --------- | ---------------------------------------------------------------------- |
+| `id`              | Int       | primary key; always `1`                                               |
+| `endpointUrl`     | String    | e.g. `https://api.openai.com/v1`                                      |
+| `apiKeyCipher`    | String    | Text — AES-256-GCM encrypted at rest                                  |
+| `modelName`       | String    | e.g. `gpt-4o`, `claude-3-5-sonnet`                                      |
+| `systemPrompt`    | String?   | Text; optional override of the package default                         |
+| `createdAt`       | DateTime  |                                                                        |
+| `updatedAt`       | DateTime  |                                                                        |
+| `updatedById`     | String?   | FK to User (`AiConfigUpdater`), `onDelete: SetNull`                    |
+
+> **Endpoints:**
+> - `GET  /ai/config/status` (was: anonymous; gated by `ai-config:read` per P1-7)
+> - `GET  /ai/config` (admin; returns masked key `sk-…2345`)
+> - `PUT  /ai/config` (admin; upserts by `id=1`; audit `AI_CONFIG_UPDATED`)
+
+---
+
+### 21. `SystemConfig`
+
+Generic key-value store for admin-managed system defaults. Single
+source of truth at runtime for things like tax rate, currency rates,
+etc. Every change is audit-logged with before/after diff per ADR-0014.
+
+| Field         | Type     | Notes                                                                                  |
+| ------------- | -------- | -------------------------------------------------------------------------------------- |
+| `key`         | String   | natural primary key; admin-facing stable identifier (e.g. `default_tax_rate`, `cny_to_hkd`, `hkd_to_mop`) |
+| `value`       | Json     | typed payload (numbers, strings, nested objects)                                        |
+| `description` | String?  |                                                                                        |
+| `updatedAt`   | DateTime | default `now()`                                                                        |
+| `updatedById` | String?  | FK to User (`SystemConfigUpdater`), `onDelete: SetNull`                                |
+
+> **Seeded keys (Day 14 / Day 19):**
+> - `default_tax_rate` (number; admin-editable; QuotationBuilder auto-prefills)
+> - `cny_to_hkd` (number; system-default HKD rate)
+> - `hkd_to_mop` (number; system-default MOP rate)
+
+---
+
+### 22. `Conversation` & 23. `ConversationMessage`
 
 AI Agent memory. Each user has many conversations; each conversation
 has many messages (user / assistant / tool roles).
@@ -532,24 +661,25 @@ has many messages (user / assistant / tool roles).
 | `createdAt`          | DateTime |                                             |
 | `updatedAt`          | DateTime |                                             |
 
-| `ConversationMessage` field | Type      | Notes                                  |
-| --------------------------- | --------- | -------------------------------------- |
-| `id`                        | cuid      |                                        |
-| `conversationId`            | String    | FK, `onDelete: Cascade`                |
-| `role`                      | String    | `user` / `assistant` / `tool`          |
-| `content`                   | String    | Text                                   |
-| `toolName`                  | String?   | for `role=tool`                        |
-| `toolArgs`                  | Json?     |                                        |
-| `toolResult`                | Json?     |                                        |
-| `promptTokens`              | Int?      | for cost monitoring                    |
-| `completionTokens`          | Int?      |                                        |
-| `createdAt`                 | DateTime  |                                        |
+| `ConversationMessage` field        | Type      | Notes                                                       |
+| ---------------------------------- | --------- | ----------------------------------------------------------- |
+| `id`                               | cuid      |                                                             |
+| `conversationId`                   | String    | FK, `onDelete: Cascade`                                     |
+| `role`                             | String    | `user` / `assistant` / `tool`                               |
+| `content`                          | String    | Text                                                        |
+| `toolName`                         | String?   | for `role=tool`                                             |
+| `toolArgs`                         | Json?     |                                                             |
+| `toolResult`                       | Json?     |                                                             |
+| `aiToolConfirmationHash`          | String?   | Day 17: SHA-256 hash of proposed tool args for `confirmation_required` SSE events; lets us correlate the persisted row with the matching `AI_TOOL_CONFIRMED` / `AI_TOOL_DENIED` audit log entry without storing PII |
+| `promptTokens`                     | Int?      | for cost monitoring                                         |
+| `completionTokens`                 | Int?      |                                                             |
+| `createdAt`                        | DateTime  |                                                             |
 
-**Index:** `(conversationId, createdAt)`
+**Indexes:** `(conversationId, createdAt)`
 
 ---
 
-### 21. `AuditLog`
+### 24. `AuditLog`
 
 Admin-visible trail of every create/update/delete/state-change.
 
@@ -572,18 +702,30 @@ Admin-visible trail of every create/update/delete/state-change.
 
 ## Migration history
 
-| Timestamp         | Name                                            | Day |
-| ----------------- | ----------------------------------------------- | --- |
-| 20260605014842    | `init`                                          | 1   |
-| 20260605020000    | `add_audit_log`                                 | 7   |
-| 20260605030000    | `day7_dynamic_rbac_services`                    | 7   |
-| 20260605030001    | `day7_extend_audit_enum`                        | 7   |
-| 20260605040000    | `day8_region_deal_kanban`                       | 8   |
-| 20260606000000    | `day9_region_table_quotation_item_string`       | 9   |
-| 20260606080526    | `add_service_status_enum` *(manual)*            | 9   |
+| Timestamp              | Name                                                       | Day    |
+| ---------------------- | ---------------------------------------------------------- | ------ |
+| 20260605014842         | `init`                                                     | 1      |
+| 20260605020000         | `add_audit_log`                                            | 7      |
+| 20260605030000         | `day7_dynamic_rbac_services`                               | 7      |
+| 20260605030001         | `day7_extend_audit_enum`                                   | 7      |
+| 20260605040000         | `day8_region_deal_kanban`                                  | 8      |
+| 20260606000000         | `day9_region_table_quotation_item_string`                  | 9      |
+| 20260606080526         | `add_service_status_enum` *(manual)*                       | 9      |
+| 20260606120000         | `man_day_role_activity_attachment_gp`                      | N (Day N — `ManDayRole` + `Activity` rename + `Attachment`) |
+| 20260607000000         | `day14_system_config`                                      | 14     |
+| 20260608000000         | `p1-1_audit_action_enum`                                   | 17 (P1-1) |
+| 20260609000000         | `day10_ai_config`                                          | 10     |
+| 20260609000001         | `day9_region_table_actual_ddl` *(manual)*                  | 9 (Day 9 enum drift follow-up) |
+| 20260609000002         | `day17_ai_tool_confirmation`                               | 17 (US-C5) |
+| 20260626000000         | `p2_quotation_sales_rep`                                   | 18-C   |
+| 20260627000000         | `p2_quotation_revisions`                                   | 18-D   |
+| 20260629120000         | `p2_multi_currency_snapshot_hkd`                           | 19     |
+| 20260629140000         | `p2_multi_currency_snapshot_mop`                           | 19     |
 
 Migrations are applied in lexical timestamp order. Manual migrations
-follow the recipe in the `prisma-migrate-private-rds` skill.
+follow the recipe in the `prisma-migrate-private-rds` skill. All
+non-manual migrations are Prisma-generated (the `d9f93a4` doc
+commit explains why we stopped hand-writing them).
 
 ---
 

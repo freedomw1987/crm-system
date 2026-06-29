@@ -766,3 +766,672 @@ confirmation record to the audit log.
 - **Day 18**: schedule a full migration-applied audit — re-run
   `prisma migrate status` in prod for every deployed commit since
   Day 1 and verify nothing else was lost.
+
+---
+
+## RG-018-SNAPSHOT-DISPLAY — Quotation read-only surfaces showed deleted/renamed Product/Service as blank
+
+- **Shipped (bug discovered):** 2026-06-26 (user-reported)
+- **Fixed in:** commit `1464b4e` + docs `9d1da86`
+- **Files:** `apps/web/src/pages/quotation-detail.tsx`, `apps/api/src/lib/excel/crm-adapter.ts`
+- **Status:** ✅ Fixed
+
+### Root cause
+
+`Quotation` had snapshot fields (name, description, sku, unitPrice,
+manDaySnapshot) at the line-item level since Day 7 (P1-10), and
+the `QuotationBuilder` autocompletes (Day 17, P1-10) honoured
+"snapshot wins, live is fallback" so an old quotation's edit
+dialog would still show the product/service it was originally
+quoted against. But the READ-ONLY surfaces were never updated:
+
+- `QuotationDetailPage` (normal + print mode tables) rendered only
+  `item.name` + `item.sku` + `unitPrice` etc. — and the `manDaySnapshot`
+  / `description` were never displayed. So a SENT quotation whose
+  Service had been edited later showed only the name + sku, with
+  no SOW breakdown.
+- `crm-adapter.ts` (Excel export) emitted `sow` / `sow_en` from
+  `service?.description ?? product?.description` — never `item.description`
+  (the snapshot). So a deleted Service produced a blank SOW sheet.
+
+### Invariant
+
+> **For any line-item rendered or exported from a Quotation, prefer
+> the line-item snapshot fields over the live catalogue record.
+> Helpers live in `apps/web/src/components/quotation-line-item-snapshot.tsx`:
+> `isLineItemDeleted(item)` (true when `product`/`service` relation is
+> null), `resolveLineItemDescription(item)` (snapshot > live catalogue > null),
+> and the `<LineItemSnapshotMeta item={...} [print] />` presentational
+> component. The Excel path uses the same precedence in
+> `crm-adapter.ts:generate.().sow / sow_en`.** Pinned by 8 vitest cases
+> in `quotation-line-item-snapshot.test.ts` and 6 bun:test cases in
+> `crm-adapter.test.ts`.
+
+### Prevention
+
+- Any new read-only surface (list page, kanban card, dashboard widget,
+  export) that displays line items must use the helper or import the
+  `QuotationItemSnapshotMeta` component. Grep for `item.name` /
+  `item.description` on render paths that don't go through
+  `<LineItemSnapshotMeta>` — the only acceptable exception is the edit
+  builder, which uses the autocomplete.
+- Future addition of a line-item clone / split helper should preserve
+  the snapshot precedence verbatim.
+
+---
+
+## RG-019-LIST-PAGE-EDIT — 編輯 button on /quotations opened an empty form
+
+- **Shipped (bug discovered):** 2026-06-26 (user-reported)
+- **Fixed in:** commit `b95abae`
+- **File:** `apps/web/src/pages/quotations.tsx`
+- **Status:** ✅ Fixed
+
+### Root cause
+
+`GET /api/quotations` (the list endpoint) deliberately does not
+include `items[]` in its response — only `_count.items` for the row
+badge. The detail endpoint (`GET /api/quotations/:id`) includes the
+full line items. So:
+
+1. The list page stored the list-shape quotation in `editing` state
+   with no `items` field.
+2. `<QuotationBuilder existing={editing}>` opened.
+3. `linesFromQuotation(editing)` returned `[emptyLine()]` because
+   `editing.items === undefined`.
+4. The form opened with no historical line items at all.
+
+The detail page didn't have this bug because it already calls
+`quotationsApi.get(id!)` which returns the full data.
+
+### Invariant
+
+> **The list page edit flow MUST call `quotationsApi.get(id)` before
+> opening `QuotationBuilder` in edit mode.** `linesFromQuotation`
+> (in `quotation-builder.tsx`) trusts that `existing.items` is present
+> — callers are responsible for fetching the full row. The helper `openEdit(q)`
+> on `quotations.tsx` line ~134 now does this and also pre-seeds the
+> React Query cache under `['quotation', q.id]` so a subsequent
+> navigation to `/quotations/:id` doesn't refetch.
+
+### Prevention
+
+- Same shape would apply to any future list-with-edit pattern (companies,
+  deals, services). The fix is the same: the row's edit click handler
+  should always fetch the full row first.
+- A defensive guard inside `QuotationBuilder` could throw if
+  `existing` is provided but `existing.items` is missing — would
+  catch a future regression automatically. Filed as a follow-up
+  (no commit yet).
+
+---
+
+## RG-020-QUOTATION-DEAL-LINK — PATCH /quotations silently dropped `dealId`
+
+- **Shipped (bug discovered):** 2026-06-26 (user-reported)
+- **Fixed in:** commit `d2f2444`
+- **Files:** `apps/api/src/routes/quotation.ts` (body typecast + update
+  object), `apps/web/src/lib/api.ts` (Pick type), `apps/web/src/components/quotation-builder.tsx` (PATCH body)
+- **Status:** ✅ Fixed
+
+### Root cause
+
+Three bugs collided to drop the Deal association silently on
+Quotation edit:
+
+1. The backend PATCH route's body typecast
+   `({ title?, notes?, validUntil?, taxRate?, status? })` did not
+   include `dealId`. The `update` object construction didn't process
+   a `dealId` field. So even when the frontend sent it, the value
+   was dropped on the floor.
+2. The frontend `quotationsApi.update` wrapper type was
+   `Partial<Pick<Quotation, 'title' | 'notes' | 'taxRate' | 'status' | 'validUntil'>>`
+   — TypeScript would reject any attempt to send `dealId`.
+3. The frontend `QuotationBuilder` edit-mode PATCH body omitted
+   `dealId` entirely.
+
+The Quotation model already had `dealId String?` in the schema, the
+GET response already included it, and the list-detail column was
+already rendered. There just wasn't a write path.
+
+### Invariant
+
+> **`PATCH /quotations/:id` accepts `dealId` (string to link,
+> null/empty to clear). Same for `salesRepId`. Both are CRM
+> metadata — NOT contractual — so they are NOT protected by the
+> SENT lock alongside title/notes/taxRate/validUntil.**
+> The frontend type wrapper must match: `Pick<Quotation, …>` includes
+> both fields. If a future PR adds another optional quote field
+> (e.g. `assignedToId`, `expiresAt`), follow the exact same pattern:
+> add to backend typecast, add to `update` object, add to frontend
+> `Pick`, include in the PATCH body if the edit UI exposes it.
+
+### Prevention
+
+- The PATCH route body typecast is intentionally implicit (no
+  `body: t.Object(...)` validator) for backwards-compatibility with
+  older callers. The "did you forget to handle a field?" question
+  lives in code review. A future defensive guard could grep the
+  PATCH body keys against a whitelist before constructing `update` —
+  but that's strict and would break forward-compat.
+
+---
+
+## RG-021-SENT-LOCK-REGRESSION — P2-sales-rep accidentally locked `dealId` against SENT edits
+
+- **Shipped (bug introduced):** 2026-06-26 (commit `9d4accd`)
+- **Discovered:** 2026-06-26 (user-reported the very next commit)
+- **Fixed in:** commit `02c333a`
+- **File:** `apps/api/src/routes/quotation.ts` (SENT-lock guard)
+- **Status:** ✅ Fixed (revert)
+
+### Root cause
+
+The P2-sales-rep commit (`9d4accd`) added `dealId` to the SENT-lock
+guard with this comment:
+
+```
+// 2026-06-26: also include dealId in the SENT lock — moving a
+// sent quotation to a different deal would silently change the
+// sales-attribution trail.
+```
+
+That reasoning was wrong on two counts:
+
+1. Sales attribution is `salesRepId` / `createdById`, not `dealId`.
+   A Deal is a CRM container, not a commission rule.
+2. The user flow that broke: a sales rep sends a quote standalone,
+   then a pipeline opportunity opens and they want to attach the
+   quote to it retroactively. Forcing them to create a revision
+   just to set a CRM classification is friction without a payoff.
+
+### Invariant
+
+> **The SENT lock on `PATCH /quotations/:id` covers what the customer
+> sees on the document, not what the CRM classifies the quotation as:**
+>
+> | Locked (contractual, customer-visible)     | Unlocked (CRM metadata)         |
+> | ---------------------------------------- | ------------------------------- |
+> | `title`                                   | `dealId`                        |
+> | `notes`                                   | `salesRepId`                     |
+> | `taxRate`                                 | `status` (already excluded by `if`) |
+> | `validUntil`                              |                                 |
+> | `line items` (separate routes, all 409 on non-DRAFT) | |
+>
+> Day-18's mistake was treating `dealId` as a contractual concern.
+> It's not — it's a CRM classification. If you find yourself
+> wanting to lock another field, first ask "does the customer see
+> this on the document they signed?". If no, do not add it to the
+> lock.
+
+### Prevention
+
+- PR review check: any change to the SENT-lock guard must justify
+  each added field with a "customer-visible" argument or it gets
+  rejected.
+- Future fields added to `Quotation`: the default assumption is
+  unlocked. Only move into the locked set with an explicit comment
+  naming the contractual reason.
+
+---
+
+## RG-022-QUOTATION-PERM-GAP — quotation.ts route file has zero `requirePermission` calls
+
+- **Discovered:** 2026-06-30 (code review, no live bug reported yet)
+- **File:** `apps/api/src/routes/quotation.ts` (the entire route group)
+- **Status:** 🔴 OPEN — P0-2-class gap, comparable to RG-006 / RG-007
+
+### Root cause
+
+`quotationRoutes` only adds `.use(authContext)` at the top of the
+chain. There is **no `.use(requirePermission(...))` anywhere** in
+the 1066-line file. Every endpoint — `GET /quotations`, `GET /quotations/:id`,
+`POST /quotations`, `POST /quotations/:id/revise`, `PATCH /quotations/:id`,
+`POST /quotations/:id/status`, `POST /quotations/:id/items`,
+`PATCH /quotations/:id/items/:itemId`, `DELETE /quotations/:id/items/:itemId`,
+`DELETE /quotations/:id`, `GET /quotations/:id/export-xlsx` — runs for
+**any authenticated user**, including a VIEWER role.
+
+Compare this to the other route groups which were fixed in the
+P0-2 sprint: `company.ts`, `contact.ts`, `deal.ts`, `product.ts`,
+`service.ts`, `roles.ts`, `users.ts` all gate their writes with
+`.use(requirePermission('…:write'))`. `quotation.ts` is the largest
+route group by far and has zero of those gates.
+
+### Invariant
+
+> **`quotationRoutes` gates EACH verb with the matching
+> `quotation:<action>` permission.** Reads use `quotation:read`,
+> writes use `quotation:update|create|delete|send`. The `/:id/revise`
+> route uses `quotation:update` (same as PATCH). Status transitions
+> use `quotation:send` (already in `PERMISSIONS`). Item routes
+> inherit `quotation:update`. A user with only `quotation:read`
+> must get 403 on every mutating verb.
+
+> **Defense-in-depth: also disable the Quotation tab in the
+> sidebar for VIEWER.** Otherwise the user clicks "編輯", the form
+> opens, the first save returns 403, and the form is now open over
+> a half-typed state with no way to revert.
+
+### Suggested test port
+
+`apps/api/src/routes/quotation.test.ts` (new bun:test file, route-level
+test via `app.handle(new Request(...))`):
+
+```
+test('GET /quotations requires quotation:read', async () => {
+  // VIEWER role: 200 OK, list returned
+  // SALES role: 200 OK
+  // no auth header: 401
+});
+
+test('POST /quotations rejects user without quotation:create', async () => {
+  // VIEWER: 403
+  // SALES: 200
+});
+
+test('PATCH /quotations/:id rejects user without quotation:update', async () => {
+  // VIEWER: 403
+});
+
+test('DELETE /quotations/:id rejects user without quotation:delete', async () => {
+  // VIEWER: 403
+});
+
+test('POST /quotations/:id/revise requires quotation:update', ...)
+test('POST /quotations/:id/status requires quotation:send', ...)
+test('item routes /:id/items* require quotation:update', ...)
+```
+
+Pin: rolePermission seeded in `bun:test`'s `beforeEach` matches
+`PERMISSIONS` so future permission-key additions surface here.
+
+---
+
+## RG-023-QUOTATION-DELETE-NO-STATUS-GUARD — DELETE /quotations/:id doesn't check `status`
+
+- **Discovered:** 2026-06-30 (code review)
+- **File:** `apps/api/src/routes/quotation.ts` DELETE handler (line 877-892)
+- **Status:** 🔴 OPEN — silent data-loss bug for contract-bearing records
+
+### Root cause
+
+`DELETE /quotations/:id` (line 877) finds the row, then `await
+prisma.quotation.delete({...})` without any check on `before.status`.
+A SENT / VIEWED / ACCEPTED / INVOICED quotation — i.e. a
+**contract-bearing record** — can be deleted with a single DELETE
+request.
+
+Compare this to the line-item handlers (`:id/items`, `:id/items/:itemId`)
+which all check `quotation.status !== 'DRAFT'` and 409. The pattern
+"once SENT, contractual fields are immutable" should extend to
+DELETE the quotation itself. Otherwise the audit log records the
+deletion but the user's history of "I sent this to ACME on 2026-05-12"
+disappears.
+
+### Invariant
+
+> **DELETE /quotations/:id refuses non-DRAFT status with 409.**
+> The only way to "remove" a SENT quotation is to keep the audit
+> trail — record an explicit `QUOTATION_DELETED` action, but keep
+> the row. If the user truly wants to purge, an admin can hard-delete
+> via a separate `admin:quotation:purge` permission (not in scope
+> today). A future enhancement could mark the row as `deletedAt` (soft
+> delete) and hide it from default list views; for now, refusing the
+> delete is the safer default.
+
+### Suggested test port
+
+Add to `apps/api/src/routes/quotation.test.ts`:
+
+```
+test('DELETE /quotations/:id refuses SENT status with 409', async () => {
+  // arrange: create DRAFT, transition to SENT
+  // act: send DELETE
+  // assert: 409, error message names "contract" or "non-DRAFT",
+  //         row still exists in DB
+});
+test('DELETE /quotations/:id is allowed only when status === DRAFT', async () => {
+  // parametrized: ['DRAFT' → 200, 'SENT' → 409, 'VIEWED' → 409,
+  //               'ACCEPTED' → 409, 'INVOICED' → 409, 'REJECTED' → 200 (?)
+  //               decide: should REJECTED be allowed to delete? — yes,
+  //               no contract on a rejected quote, but be defensive
+});
+```
+
+---
+
+## RG-024-QUOTATION-PATCH-NO-BODY-VALIDATOR — `body as {...}` raw typecast on PATCH /quotations/:id
+
+- **Discovered:** 2026-06-30 (code review)
+- **File:** `apps/api/src/routes/quotation.ts` PATCH handler (line 666-775)
+- **Status:** 🟨 OPEN — known gap (raised as RG-020 followup, not closed)
+
+### Root cause
+
+`PATCH /quotations/:id` uses a raw `body as { title?; notes?; ... }`
+typecast. There is no `body: t.Object({...})` validator (Elysia's
+runtime schema check). Consequences:
+
+1. Field renames are silent. If the frontend sends `{ heading: 'X' }`
+   hoping it maps to `title`, the value is dropped with no 4xx — the
+   user thinks they edited the title but it didn't change.
+2. Wrong types (e.g. `taxRate: "abc"`) pass through and let Prisma
+   surface a 500 instead of a clean 400.
+3. Extra fields (e.g. `description: 'X'`) pass through; only the
+   explicitly destructured fields are read. The frontend can grow new
+   fields client-side without server validation, which is dangerous.
+
+The README / api.md indicates this is intentional for backwards
+compat with older callers, but it means the contract surface is
+implicit.
+
+### Invariant
+
+> **`PATCH /quotations/:id` MUST validate its body via a
+> `t.Object({...})` schema.** Required-fields-with-types is non-
+> negotiable for our API surface; the previous freedom was a Day-5
+> shortcut when Elysia's t.Object mode was unstable. Now stable. The
+> schema should accept the 7 mutable fields (`title`, `notes`,
+> `validUntil`, `taxRate`, `dealId`, `salesRepId`, `currency`) and
+> reject unknowns with 422 so frontend contract drifts surface
+> immediately.
+
+### Suggested test port
+
+`apps/api/src/routes/quotation.test.ts`:
+
+```
+test('PATCH /quotations/:id rejects unknown fields with 422', async () => {
+  const body = { title: 'X', heading: 'X' };
+  const res = await app.handle(makeRequest('PATCH', '/quotations/:id', body));
+  expect(res.status).toBe(422);
+});
+test('PATCH /quotations/:id rejects taxRate: "abc" with 422', async () => {
+  // wrong type
+});
+test('PATCH /quotations/:id accepts null validUntil (clears)', async () => {
+  // null is the explicit-clear signal
+});
+test('PATCH /quotations/:id rejects dealId: "" (treats as null)', async () => {
+  // backend coerces but server-side validation must allow it
+});
+```
+
+---
+
+## RG-025-QUOTATION-EDIT-BUILDER-COMPANY-NOT-DISABLED — edit-mode user can change Company but PATCH ignores it
+
+- **Discovered:** 2026-06-30 (code review)
+- **File:** `apps/web/src/components/quotation-builder.tsx` line 545
+- **Status:** 🟨 OPEN — UX bug; the field looks editable but isn't
+
+### Root cause
+
+`<CompanyAutocomplete value={companyId} onChange={setCompanyId} />` is
+unconditionally rendered without a `disabled={isEdit}` prop. In edit
+mode the user can pick a different company from the dropdown, the
+local React state updates to the new id, but the PATCH body
+(`quotationsApi.update(...)`) does NOT include `companyId` — the
+backend PATCH handler doesn't accept companyId either (see
+RG-022 / RG-024).
+
+So the change is silently lost on save. The state shows the new
+company until the user clicks save and the modal closes; on reopen
+from /quotations/:id the original company is restored. The user
+experiences this as "the form ate my edit" with no error message.
+
+`apps/web/src/pages/deals.tsx` (the DealDialog) uses
+`<CompanyAutocomplete disabled={isEdit} />` — the deal side already
+has this right. The quotation side does not.
+
+### Invariant
+
+> **In edit mode, the CompanyAutocomplete MUST be `disabled={true}`.**
+> The Quotation ↔ Company relationship is contractual — the customer
+> on the document doesn't change between revisions; that's what
+> REVISIONS (Day 18-D) are for, not in-place company swap. Either:
+> 1. Add `disabled={isEdit}` to the builder (matches the DealDialog
+>    pattern), or
+> 2. Add `companyId` to PATCH (requires backend schema change + UX
+>    caveat: this would silently redirect a SENT quotation, breaking
+>    the audit trail).
+>
+> **Choose option 1** — matches existing pattern, no schema change.
+
+### Suggested test port
+
+Vitest with RTL (`apps/web/src/components/__tests__/quotation-builder-rg-025.test.tsx`):
+
+```
+test('CompanyAutocomplete is disabled in edit mode (RG-025)', async () => {
+  render(<QuotationBuilder existing={mockQuotation} ... />);
+  const companyInput = screen.getByPlaceholderText(/搜尋客戶/);
+  expect(companyInput).toBeDisabled();
+});
+test('CompanyAutocomplete is enabled in create mode', async () => {
+  render(<QuotationBuilder ... />);  // no existing=
+  const companyInput = screen.getByPlaceholderText(/搜尋客戶/);
+  expect(companyInput).not.toBeDisabled();
+});
+```
+
+The disabled property checks the React `disabled` attribute on the
+underlying input. No need to mount the autocomplete's popover.
+
+---
+
+## RG-026-ROUTER-DECISION-TREE-MISSING-PERMS — unused permission keys or routes that ignore the chain
+
+- **Discovered:** 2026-06-30 (code review)
+- **File:** `apps/api/src/routes/ai-config.ts` (no `.use(requirePermission)` calls)
+- **Status:** 🟨 OPEN — parallel auth system that bypasses the central RBAC
+
+### Root cause
+
+`apps/api/src/routes/ai-config.ts` imports `requirePermission` but
+**never calls `.use(requirePermission(...))`**. Every handler does
+its own inline check:
+
+```ts
+const allowed = await import('../middleware/rbac').then((m) =>
+  m.userHasPermission(userId, 'ai-config:read')
+);
+if (!allowed) { set.status = 403; return ... }
+```
+
+This is fragile in two ways:
+
+1. **Inconsistency** — the rest of the codebase uses the chain pattern
+   (`.use(requirePermission('…'))`); this one route file reverts to
+   hand-rolled inline checks. A new contributor adding a route
+   here will copy the surrounding pattern and the route will skip
+   the permission entirely.
+2. **Dynamic import** — `await import('../middleware/rbac').then(...)`
+   is used because `userHasPermission` isn't in the static import
+   on line 34. The static import only pulls `getUserIdFromRequest`
+   and `requirePermission`. Adding `userHasPermission` to the static
+   import would let us drop the dynamic import dance.
+3. **Missing chain enforcement** — every method (GET /status, GET /,
+   PUT /, POST /test) requires the same check as a `.use()` would do,
+   but they're spelled out in handler code. If a new method is added
+   (e.g. `DELETE /ai/config` for an "AI reset" feature), the
+   permission gate has to be remembered by the author.
+
+### Invariant
+
+> **`ai-config.ts` uses the same `.use(requirePermission(...))` chain
+> pattern as every other route file.** `getUserIdFromRequest` is
+> fine to keep (Elysia 1.2 has authContext-not-reaching-handler
+> issues), but the per-perm check should be a plugin chain, not
+> inline JS. Inline checks ARE acceptable for "defense-in-depth"
+> secondary checks, but must not be the only check.
+
+### Suggested test port
+
+`apps/api/src/routes/ai-config.test.ts` (route-level bun:test):
+
+```
+test('GET /ai/config/status requires ai-config:read (already enforced)', () => {}); // existing
+test('GET /ai/config requires ai-config:read', ...);
+test('PUT /ai/config requires ai-config:update', ...);
+test('POST /ai/config/test requires ai-config:update', ...);
+test('userHasPermission static-imported (no dynamic import)', () => {
+  // grep test: assert no `await import('../middleware/rbac')` in the built output
+});
+```
+
+The "no dynamic import" test is informal but easily enforceable
+via a build artifact grep.
+
+---
+
+## RG-027-CHAT-CONFIRMATION-IN-MEMORY-MAP — confirmation state lost on server restart
+
+- **Discovered:** 2026-06-30 (code review)
+- **File:** `apps/api/src/routes/chat.ts` line 50-60 (pendingConfirmations Map)
+- **Status:** 🟨 OPEN — graceful degradation only; not a correctness bug
+
+### Root cause
+
+`pendingConfirmations` is a module-level `Map<id, { controller, userId }>`
+held in process memory. When the user is mid-confirmation and the
+api container restarts (e.g. `docker compose restart api` for a
+deploy), the map is wiped. The next `/chat/confirm/:id` returns 404
+("No pending confirmation with that id").
+
+Mitigation: the LLM-side handler that created the confirmation
+request will eventually hit the SSE timeout (configurable, default
+no explicit timeout) and either re-emit a new proposal or error
+out — the user's action is recoverable, just annoying.
+
+### Invariant
+
+> **`pendingConfirmations` map state is best-effort, in-memory
+> only.** A graceful 404 on confirm-after-restart is acceptable
+> for Day 18; persistence (Redis / DB) is a future enhancement
+> (filed under "future ops"). The current invariant: **the user
+> can always re-send their chat message** — restart does not lose
+> unsaved chat content (the conversation row is in `prisma`), only
+> the in-flight confirmation nonce.
+
+### Suggested test port
+
+```
+test('pendingConfirmations is wiped on restart (graceful)', ...)
+test('/chat/confirm/:id after restart returns 404 with explanatory message', ...)
+test('user can re-send and re-receive confirmation_required', ...)
+```
+
+These are opportunistic tests; the main value is documenting
+behavior, not regression-catching. Mark test as 🟨 expected.
+
+---
+
+## RG-028-LIST-EDIT-FETCH-PATTERN-OTHER-LISTS — same trap as RG-019 in non-quotation lists (deferred)
+
+- **Discovered:** 2026-06-30 (code review)
+- **Files:**
+  - `apps/web/src/pages/man-day-roles.tsx`
+  - `apps/web/src/pages/companies.tsx`
+  - `apps/web/src/pages/products.tsx`
+- **Status:** 🟢 MONITORED — no live bug, but track for future list-edit additions
+
+### Root cause
+
+The list-edit fetch-before-edit pattern (RG-019) was applied to
+`pages/quotations.tsx` after the bug surfaced (the list endpoint
+deliberately omits `items[]`). For ManDayRoles, Companies, Products,
+Services — the list endpoints include enough fields for the edit
+dialog, so a fetch-before-edit isn't needed today.
+
+But: this is a project-policy invariant, not a per-route proof.
+If a future list endpoint is added with the same "omit detail fields
+for list-shape" optimization (e.g. `GET /quotations` already did
+this for `items`), the same bug will recur unless the policy is
+codified.
+
+### Invariant
+
+> **For any `ListPage → EditDialog` flow, the edit-dialog "open"
+> handler MUST either:**
+> 1. Fetch the full row via `<resource>Api.get(id)` before opening
+>    the dialog, **OR**
+> 2. Document explicitly that the list endpoint returns the full
+>    shape needed by the edit dialog (the current `deals.tsx`,
+>    `companies.tsx`, `products.tsx`, `man-day-roles.tsx` fall in
+>    this bucket).
+>
+> Option 2 is acceptable if the list endpoint is read-heavy and the
+> "full shape" is small. For Quotation specifically, option 1 is
+> required (list endpoint omits `items[]` for performance).
+>
+> **Codify this as a CODEOWNERS / lint rule** — when a route module
+> exports a list-shaped endpoint AND a list-edit flow, the list-edit
+> handler MUST either fetch or document the full-shape contract.
+> Suggested linter: a grep that fails `pages/*` files where
+> `setEditing(...)` is called without `await *Api.get(...)` OR
+> without an explicit "list endpoint returns full shape" comment.
+
+### Suggested test port
+
+Vitest (frontend) — `apps/web/src/lib/__tests__/list-edit-policy.test.ts`:
+
+```
+test('quotations.tsx openEdit calls quotationsApi.get(id)', ...)
+test('companies.tsx onEdit does NOT fetch — list endpoint returns full shape', ...)
+test('deals.tsx onEdit does NOT fetch — kanban endpoint returns full shape', ...)
+```
+
+The test simply checks for the presence (or absence) of the
+`await *Api.get` pattern in the relevant handlers; a regression
+where someone silently changes a list endpoint shape would surface
+here.
+
+---
+
+## RG-029-QUOTATION-BUILDER-EDIT-MISSING-COMPANY-DISABLED — duplicate / consolidated with RG-025
+
+(This entry has been consolidated into RG-025. QuotationBuilder
+lacks `disabled={isEdit}` on `CompanyAutocomplete`, which is the
+single source of truth for this invariant.)
+
+---
+
+## RG-030-ROUTER-PERMS-DROPPED-FROM-NEWER-MUTATIONS — registration-on-update path doesn't check perm
+
+- **Discovered:** 2026-06-30 (code review)
+- **File:** `apps/api/src/routes/users.ts` line 116-162 (PATCH /users/:id)
+- **Status:** 🟨 DEFERRED — admin-only path, less risky than RG-022
+
+### Root cause
+
+`users.ts` DOES call `requirePermission('user:update')` for PATCH
+(line 116), so this is fine. But adjacent code paths (RESET
+PASSWORD endpoint at line 188 `POST /users/:id/reset-password`)
+was not re-audited for `requirePermission` during this review.
+
+Spot-check: `apps/api/src/routes/users.ts` line 188 → looks at
+`requirePermission('user:create')` (intentional — only ADMIN can
+reset). Probably fine. Filed as "always re-audit on the next
+permission-key change".
+
+### Invariant
+
+> **Every mutating user endpoint MUST be gated by the matching
+> `user:<verb>` permission.** Spot-audits on each new route
+> addition. Suggested: a custom lint that grep + grep-flags-a-warning
+> for `^(post|patch|put|delete)` in `apps/api/src/routes/users.ts`
+> without `requirePermission` within ±10 lines.
+
+### Suggested test port
+
+`apps/api/src/routes/users.test.ts`:
+
+```
+test('POST /users/:id/reset-password requires user:create', ...)
+test('GET /users/:id requires user:read', ...)
+```
+
+---
+

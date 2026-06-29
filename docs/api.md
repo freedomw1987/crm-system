@@ -35,6 +35,13 @@
 - **Auth:** required
 - **200:** `{ success: true }` (token is client-side only; logout just clears localStorage)
 
+### POST /auth/change-password
+- **Auth:** required
+- **Body:** `{ currentPassword: string, newPassword: string }` — `newPassword` validated by `validateStrongPassword` (P1-5): `minLength: 12` + at least one digit + at least one special character.
+- **200:** `{ success: true }`
+- **400:** if `newPassword` fails the strength policy (error message names the failing rule)
+- **401:** if `currentPassword` doesn't match the authenticated user's existing hash.
+
 ## Users
 
 ### GET /users
@@ -145,6 +152,24 @@
 - **Auth:** `activity:create` (or via AI tool)
 - **Body:** `{ type: "NOTE"|"CALL"|..., content, subject? }`
 
+### GET /deals/kanban
+- **Auth:** `deal:read`
+- **Query:** `companyId?` + `companyIds?` + `ownerId?` + `ownerIds?` + `pipelineId?`
+- **200:** `{ pipeline: { id, name, isDefault }, buckets: [{ stage: { id, name, position, probability, color }, deals: Deal[] }] }`
+  - Each deal is `{ id, title, companyId, ownerId, stageId, status, value, currency, expectedCloseDate, ... }`
+  - `owner` and `stage` are inlined for the Kanban card render.
+
+### PATCH /deals/:id/stage
+- **Auth:** `deal:update`
+- **Body:** `{ stageId: string, status?: 'OPEN' | 'WON' | 'LOST' }`
+- **200:** Updated `Deal`. Side effects:
+  - Stage name `Won` → `status = 'WON'` (unless explicit `status` provided)
+  - Stage name `Lost` → `status = 'LOST'`
+  - Otherwise `status = 'OPEN'`
+  - Non-OPEN final state → `closedAt = now()`
+- **404:** `{ error: 'Stage not found' }`
+- **Audit log:** `DEAL_STAGE_CHANGED` with metadata `{ stage, status }`.
+
 ## Quotations
 
 ### GET /quotations
@@ -189,58 +214,218 @@
   `~/www/bc-quotation/src/{quotation.ts, helpers/*_worksheet.ts}` —
   the only new code is the Prisma-to-bc-shape adapter.
 
+### POST /quotations/:id/revise
+- **Auth:** `quotation:update`
+- **Body:** _none_
+- **201:** Full `Quotation` (status=`DRAFT`) cloned from the source.
+  Response includes `parentQuotationId`, `revisionNumber` (chain-aware,
+  BFS-counted), and `parentQuotation: { id, number }` for the detail page
+  to render the "修訂自 X" chip without an extra fetch. The new `number`
+  follows `Q-YYYY-NNNN-R{N}` (e.g. `Q-2026-0001-R1`, `R2`, ...).
+- **404:** `{ error: "Source quotation not found" }`
+- **409:** `{ error: "Source quotation is DRAFT — edit it directly instead of creating a revision." }`
+
+Cloned fields: `companyId`, `dealId`, `salesRepId` (defaults to
+`userId` if source has none), `title`, `notes`, `validUntil`, `taxRate`,
+plus ALL line items with snapshot fields preserved (so a deleted /
+renamed Product/Service still shows in the new draft). See
+`docs/architecture/0016-quotation-revisions.md`.
+
+### POST /quotations/:id/status
+- **Auth:** `quotation:send`
+- **Body:** `{ status: 'DRAFT' | 'SENT' | 'VIEWED' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED' | 'INVOICED' }`
+- **200:** Updated `Quotation`. `sentAt` stamped on `→ SENT`,
+  `acceptedAt` on `→ ACCEPTED`. Recalc runs only if transitioning to
+  SENT (last chance to refresh GP% from live man-day role costs).
+- **422:** If transitioning to SENT and a SERVICE line has `costSnapshot == 0`
+  AND `lineTotal > 0` — i.e. a man-day role has no cost configured.
+  Response body: `{ error, lines: [{ id, name }] }`.
+
+### POST /quotations/:id/items
+- **Auth:** `quotation:update` — **DRAFT only** (409 on SENT/VIEWED/ACCEPTED/etc.)
+- **Body:** `{ itemType: 'PRODUCT' | 'SERVICE', productId?: string, serviceId?: string, sku?: string, name: string, description?: string, quantity: number, unitPrice: number, discount?: number, manDaySnapshot?: unknown }`
+- **201:** Created `QuotationItem`. Recomputes header `subtotal` /
+  `taxAmount` / `total` + per-line `costSnapshot` / `lineGp` /
+  `lineGpPercent`.
+
+### PATCH /quotations/:id/items/:itemId
+- **Auth:** `quotation:update` — **DRAFT only**
+- **Body:** Any subset of the POST fields
+- **200:** Updated `QuotationItem` + recomputed totals.
+
+### DELETE /quotations/:id/items/:itemId
+- **Auth:** `quotation:update` — **DRAFT only**
+- **200:** `{ success: true }`
+
 ## Products
 
 ### GET /products
 - **Auth:** `product:read`
-- **Query:** `?query=&category=&status=ACTIVE&limit=`
+- **Query:** `?query=&category=&status=ACTIVE&limit=` (default limit 50)
+- **200:** `Product[]` with `_count.quotationItems` per product
 
 ### POST /products
 - **Auth:** `product:create`
+- **Body:** `{ sku, name, unitPrice, currency?, description?, category?, costPrice?, trackInventory?, stockQuantity?, lowStockThreshold?, status?, imageUrl? }`
+- **201:** `Product`
+
+### GET /products/:id
+- **Auth:** `product:read`
+- **200:** `Product & { _count: { quotationItems: number } }`
+
+### PATCH /products/:id
+- **Auth:** `product:update`
+- **Body:** Any subset of POST fields
+- **200:** Updated `Product`
+
+### DELETE /products/:id
+- **Auth:** `product:delete`
+- **200:** `{ success: true }`
 
 ## Services
 
 ### GET /services
 - **Auth:** `service:read`
+- **Query:** `?status=&category=&query=&limit=`
+- **200:** `Service[]` with normalised `manDays` field (Prisma's `manDayLines` → frontend's `manDays`).
 
 ### POST /services
 - **Body:** `{ name, type: "catalogue"|"custom", description?, manDayLines: ServiceManDay[] }`
+
+### GET /services/:id
+- **Auth:** `service:read`
+- **200:** `Service & { manDayLines: ServiceManDay[] }`
+
+### PATCH /services/:id
+- **Auth:** `service:update`
+- **Body:** Any subset of POST fields (including `manDayLines` — full replacement)
+- **200:** Updated `Service`
+- **Side effect:** Recomputes `subtotal` / `taxAmount` for any in-flight DRAFT Quotation that references this service (queued, not synchronous, handled by `recalcQuotationAndItems` on next save).
+
+### DELETE /services/:id
+- **Auth:** `service:delete`
+- **200:** `{ success: true }`
+- Side effect: existing QuotationItems referencing this Service retain their `manDaySnapshot` (the snapshot preserved their state at quote time). The Service row's `serviceId` FK on QuotationItem is `ON DELETE SET NULL`.
+
+## Regions
+
+### GET /regions
+- **Auth:** public (no auth required — used by the company form's region picker)
+- **200:** `Region[]` (HK / MO / CN / OTHER seeded, plus any admin-added entries)
+
+### POST /regions
+- **Auth:** `region:create` (admin only)
+- **Body:** `{ code: string, name: string, flag?: string, isActive?: boolean, sortOrder?: number }`
+- **201:** `Region`
+- **409:** `{ error: 'code must be unique' }` if `code` already used
+
+### GET /regions/:id
+- **Auth:** public
+- **200:** `Region & { _count: { companies: number } }`
+
+### PATCH /regions/:id
+- **Auth:** `region:update` (admin only)
+- **Body:** Any subset of POST fields
+- **200:** Updated `Region`
+
+### DELETE /regions/:id
+- **Auth:** `region:delete` (admin only)
+- **200:** `{ success: true }` if no companies reference it; otherwise 409 with `companiesCount`.
 
 ## Man-Day Roles
 
 ### GET /man-day-roles
 - **Auth:** `man-day-role:read`
+- **Query:** `?isActive=` (default true)
+- **200:** `ManDayRole[]` sorted by `sortOrder`.
 
 ### POST /man-day-roles
 - **Auth:** `man-day-role:create`
+- **Body:** `{ name, price, cost?, isActive?, sortOrder? }`
+- **201:** `ManDayRole`
+
+### GET /man-day-roles/:id
+- **Auth:** `man-day-role:read`
+- **200:** `ManDayRole & { _count: { serviceLines: number } }`
+
+### PATCH /man-day-roles/:id
+- **Auth:** `man-day-role:update`
+- **Body:** Any subset of POST fields
+- **200:** Updated `ManDayRole`
+- **Side effect:** Existing ServiceManDay rows carrying `manDayRoleId = id` keep their snapshot `role` text + `dayRate` intact (the snapshot was captured at service-write time per ADR-0016-ish invariant). New services pick up the new price.
+
+### DELETE /man-day-roles/:id
+- **Auth:** `man-day-role:delete`
+- **200:** `{ success: true }`
+- Side effect: existing ServiceManDay rows have their `manDayRoleId` set to `NULL` (`ON DELETE SET NULL`); the snapshot `role` text + `dayRate` are preserved.
 
 ## Activity
 
 ### GET /activities
 - **Auth:** `activity:read`
-- **Query:** `?companyId=&dealId=&authorId=&since=&limit=`
-- **200:** `Activity[]`
+- **Query:** `?companyId=&dealId=&authorId=&type=&since=&limit=&offset=` (default limit 50)
+- **200:** `{ items: Activity[], total: number }`
 
 ### GET /activities/recent
 - **Auth:** `activity:read`
-- **Query:** `?authorId=&since=&limit=50` (added Day 9+ for Kanban panel)
+- **Query:** `?authorId=&since=&limit=50`
 - **200:** `Activity[]`
 
 ### POST /activities
 - **Auth:** `activity:create`
+- **Body:** `{ type: 'NOTE'|'CALL'|'EMAIL'|'MEETING', companyId?, dealId?, content }`
+- **201:** `Activity`
+
+### PATCH /activities/:id
+- **Auth:** author only (`activity.authorId === userId`); **403** for non-authors
+- **Body:** `{ type?: 'NOTE'|'CALL'|'EMAIL'|'MEETING', content?: string }`
+- **200:** Updated `Activity`
+- **404:** `{ error: 'Activity not found' }`
+- **403:** `{ error: 'Only the author can edit this activity.' }`
+- **400:** `{ error: 'content cannot be empty' }` (if `content` is `''` or whitespace-only)
+
+See `docs/architecture/0018-author-only-crud.md`.
+
+### DELETE /activities/:id
+- **Auth:** author only (`activity.authorId === userId`); **403** for non-authors
+- **200:** `{ success: true }`
+- Side effect: deletes ALL attachments of this Activity (and unlinks the
+  files from `DATA_DIR`).
+- **Audit log:** `ACTIVITY_DELETED` with metadata `{ attachmentsDeleted: N }`.
 
 ## Attachments
 
 ### GET /attachments?companyId=
 - **Auth:** `attachment:read`
+- **Query:** `?companyId=` (required)
+- **200:** `{ items: Attachment[], total: number }`
 
-### POST /attachments/upload
+### GET /activities/:id/attachments
+- **Auth:** `attachment:read`
+- **200:** `{ items: Attachment[], total: number }` (per-activity list, used by the activity feed's chip tray)
+
+### POST /activities/:id/attachments
 - **Auth:** `attachment:create`
-- **Body:** `multipart/form-data` with `file` + `companyId`
+- **Body:** `multipart/form-data` with `file` field
 - **201:** `Attachment`
+- **413:** File over 50MB (matches nginx `client_max_body_size`).
+- **Audit log:** `ATTACHMENT_UPLOADED`.
 
 ### GET /attachments/:id/download
+- **Auth:** `attachment:read`
 - **200:** binary stream with `Content-Disposition: attachment; filename=…`
+
+### PATCH /attachments/:id
+- **Auth:** uploader only (`attachment.uploadedById === userId`); **403** for non-uploaders
+- **Body:** `{ fileName?: string }` (currently the only mutable field; mime/size/storage are immutable post-upload)
+- **200:** Updated `Attachment`
+- **Audit log:** `ATTACHMENT_UPDATED`.
+
+### DELETE /attachments/:id
+- **Auth:** uploader only (`attachment.uploadedById === userId`); **403** for non-uploaders
+- **200:** `{ success: true }`
+- Side effect: unlinks the file from `DATA_DIR`.
+- **Audit log:** `ATTACHMENT_DELETED`.
 
 ## Audit Log
 
@@ -341,6 +526,30 @@
 - **500:** if the LLM call fails (network, invalid key, rate limit, etc.)
   — body includes the upstream error message
 
+### POST /chat/confirm/:id
+- **Auth:** required (`chat:use`)
+- **Body:** `{ confirm: 'approve' | 'deny' }` — `approve` accepts the pending tool proposal, `deny` skips it.
+- **200:**
+  ```json
+  {
+    "conversationId": "cmq…",
+    "status": "approved" | "denied",
+    "toolName": "create_quotation",
+    "auditId": "audit_logs.cm_…"
+  }
+  ```
+- **404:** if no pending confirmation exists for the conversation.
+- **Behavior:** On approve, the route executes the previously-proposed
+  tool args (the AI proposal is stored in `ConversationMessage`
+  keyed by `aiToolConfirmationHash`) and writes an `AI_TOOL_CONFIRMED`
+  audit log row. On deny, just writes an `AI_TOOL_DENIED` row.
+
+This is the **user-side handshake** for the human-in-the-loop
+guardrail (ADR-0018 + RG-CHAT-002). The agent emits a
+`confirmation_required` SSE event with a stable `hashArgs()`; the
+frontend surfaces a Radix Dialog with the diff preview; the
+human's response hits this endpoint.
+
 ### DELETE /chat/conversations/:id
 - **Auth:** required (caller must own)
 - **200:** `{ success: true }`
@@ -416,6 +625,10 @@ this value does NOT retroactively rewrite history (Plan option A, see
 The Quotation builder reads GET at open time to prefill the tax input;
 sales can still override per-quote.
 
+### GET /settings/retention-policy
+- **Auth:** `audit:read`
+- **200:** `{ defaultRetentionDays: number, sensitiveRetentionDays: number, sensitiveActions: AuditAction[] }` (matches the constants in `apps/api/src/scripts/audit-log-prune.ts` per ADR-0014).
+
 ### GET /settings/tax
 - **Auth:** required (any logged-in user — SALES / VIEWER can read so
   the quotation builder can prefill; we deliberately do NOT require
@@ -467,6 +680,38 @@ sales can still override per-quote.
 - **422:** if `rate` is missing, non-numeric, or outside `[0, 100]`.
 - **Used by:** Settings → Tax tab (`SettingsTaxPage`), SettingsLayout
   (for cross-link to audit), Quotation builder (mount-time prefill).
+
+---
+
+## Settings — Currency (Day 19)
+
+Live exchange rates used as the source for `Quotation.{exchangeRate,
+total}` snapshots. The admin sets `cny_to_hkd` + `hkd_to_mop` once;
+subsequent Quotation creations snapshot the current rate. See
+[`0017-multi-currency-snapshot.md`](./architecture/0017-multi-currency-snapshot.md)
+for the snapshot semantics.
+
+### GET /settings/currency
+- **Auth:** `settings:read` (ADMIN by default; SALES reads too for the Quotation builder's HKD preview)
+- **200:**
+  ```json
+  {
+    "cny_to_hkd": 1.08,
+    "hkd_to_mop": 1.16,
+    "updatedAt": "2026-06-29T10:00:00.000Z",
+    "updatedById": "user_…"
+  }
+  ```
+
+### PUT /settings/currency
+- **Auth:** `settings:update` (ADMIN only)
+- **Body:** `{ cny_to_hkd: number, hkd_to_mop: number }` — both required, both must be `> 0`.
+- **200:** Same shape as GET.
+- **422:** if either rate is `<= 0`, `NaN`, or missing.
+- **Side effect:** Only affects NEW Quotation snapshots. Existing quotations
+  retain their captured rate per the ADR-0017 invariant.
+- **Audit log:** `SYSTEM_CONFIG_UPDATED` with metadata `{ key, oldValue, newValue }`
+  per rate key.
 
 ---
 
