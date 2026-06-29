@@ -311,14 +311,18 @@ export interface Quotation {
   taxAmount: number;
   total: number;
   // P2 multi-currency (2026-06-29): billing currency chosen by the
-  // sales rep, plus the HKD snapshot that was persisted at save
-  // time. The detail page renders the native total in this
-  // currency AND a `≈ HKD {totalHKD} @ {rate}` line below it.
-  // The snapshot is immutable on the row — future rate changes
-  // do not rewrite historical quotations.
+  // sales rep, plus the HKD + MOP snapshots that were persisted at
+  // save time. The detail page renders the native total in this
+  // currency AND a `≈ HKD {totalHKD} @ {rate}` line AND a
+  // `≈ MOP {totalMOP} @ {rate}` line below it. The snapshots are
+  // immutable on the row — future rate changes do not rewrite
+  // historical quotations. Legacy rows (pre-MOP-snapshot migration)
+  // have totalMOP=0 and the display layer hides the MOP row.
   currency: string;
   exchangeRateToHKD?: number | string;
   totalHKD?: number | string;
+  exchangeRateToMOP?: number | string;
+  totalMOP?: number | string;
   notes?: string | null;
   generatedByAi: boolean;
   aiPrompt?: string | null;

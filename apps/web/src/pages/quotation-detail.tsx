@@ -202,6 +202,16 @@ export function QuotationDetailPage() {
                 <span className="tabular-nums">{formatCurrency(quotation.totalHKD ?? 0, 'HKD')}</span>
               </div>
             )}
+            {/* P2 multi-currency (2026-06-30): mirror the HKD row for
+                MOP. Hidden when the chosen currency is MOP (redundant),
+                and hidden on legacy rows where totalMOP == 0 (the
+                default before the snapshot migration). */}
+            {quotation.currency !== 'MOP' && Number(quotation.totalMOP ?? 0) > 0 && (
+              <div className="flex justify-between text-xs text-gray-600 pt-1 mt-1 border-t border-dashed">
+                <span>≈ MOP (匯率 {Number(quotation.exchangeRateToMOP ?? 0).toFixed(4)})</span>
+                <span className="tabular-nums">{formatCurrency(quotation.totalMOP ?? 0, 'MOP')}</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -465,6 +475,17 @@ export function QuotationDetailPage() {
                     ≈ HKD (匯率 {Number(quotation.exchangeRateToHKD ?? 0).toFixed(4)})
                   </span>
                   <span className="tabular-nums">{formatCurrency(quotation.totalHKD ?? 0, 'HKD')}</span>
+                </div>
+              )}
+              {/* P2 multi-currency (2026-06-30): mirror the HKD row
+                  for MOP. Same snapshot semantics + same legacy-row
+                  guard (`totalMOP > 0`). */}
+              {quotation.currency !== 'MOP' && Number(quotation.totalMOP ?? 0) > 0 && (
+                <div className="flex justify-between text-xs text-muted-foreground pt-1 mt-1 border-t border-dashed">
+                  <span title="喺儲存時 snapshot,改系統匯率唔會重寫">
+                    ≈ MOP (匯率 {Number(quotation.exchangeRateToMOP ?? 0).toFixed(4)})
+                  </span>
+                  <span className="tabular-nums">{formatCurrency(quotation.totalMOP ?? 0, 'MOP')}</span>
                 </div>
               )}
             </CardContent>

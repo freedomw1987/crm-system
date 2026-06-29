@@ -10,7 +10,7 @@ import { generateQuotationExcel } from '../lib/excel/quotation';
 // P2 multi-currency (2026-06-29): getCurrencyConfig / hkdRateFor live
 // in @crm/db so this route + the AI draft_quotation tool share one
 // source of truth (see packages/db/src/currency.ts).
-import { getCurrencyConfig, hkdRateFor } from '@crm/db';
+import { getCurrencyConfig, hkdRateFor, mopRateFor } from '@crm/db';
 
 // Quotation number generator (Q-YYYY-NNNN)
 async function nextQuotationNumber(): Promise<string> {
@@ -345,9 +345,10 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
     };
     // P2 multi-currency: resolve the chosen currency up front so
     // we can validate the rate lookup before we hit the DB. The
-    // chosen currency persists on the row along with a snapshot
-    // of the rate-to-HKD and the pre-computed totalHKD — see the
-    // update step after recalcQuotationAndItems below.
+    // chosen currency persists on the row along with snapshots
+    // of the rate-to-HKD + rate-to-MOP and the pre-computed
+    // totalHKD + totalMOP — see the update step after
+    // recalcQuotationAndItems below.
     const currencyCfg = await getCurrencyConfig();
     const chosenCurrency = (data.currency || currencyCfg.default) as 'RMB' | 'HKD' | 'MOP';
     if (chosenCurrency !== 'RMB' && chosenCurrency !== 'HKD' && chosenCurrency !== 'MOP') {
@@ -358,6 +359,18 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
     if (rateToHKD == null) {
       set.status = 400;
       return { error: `No exchange rate configured for ${chosenCurrency} → HKD. Set it in /settings/currency.` };
+    }
+    // 2026-06-29: MOP snapshot — mirrors the HKD path. Both rates
+    // are derived from the same `chosenCurrency` + `currencyCfg`,
+    // so the two snapshots can never disagree about which currency
+    // the row is in. `mopRateFor` returns null only for currencies
+    // outside the supported set (RMB/HKD/MOP), which we already
+    // 400'd above — the null check is defensive against future
+    // 4th-currency support.
+    const rateToMOP = mopRateFor(chosenCurrency, currencyCfg);
+    if (rateToMOP == null) {
+      set.status = 400;
+      return { error: `No exchange rate configured for ${chosenCurrency} → MOP. Set it in /settings/currency.` };
     }
     const number = await nextQuotationNumber();
     let subtotal = 0;
@@ -415,20 +428,22 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
     });
     // DRAFT: refresh GP from live man-day role costs.
     await recalcQuotationAndItems(created.id, { liveCostRefresh: true });
-    // P2 multi-currency: snapshot the HKD equivalent now that the
-    // `total` has been recomputed. We compute the HKD total from
-    // the persisted `total` field, then update the row with both
-    // the rate and the HKD-equivalent in a single UPDATE. The
-    // snapshot is immutable from here on — future rate changes
-    // will not rewrite this row's HKD figure.
+    // P2 multi-currency: snapshot the HKD + MOP equivalents now
+    // that the `total` has been recomputed. We compute both totals
+    // from the persisted `total` field, then update the row with
+    // all four fields in a single UPDATE. The snapshots are
+    // immutable from here on — future rate changes will not
+    // rewrite this row's HKD or MOP figures.
     const postRecalc = await prisma.quotation.findUnique({
       where: { id: created.id },
       select: { total: true },
     });
-    const totalHKD = Number(postRecalc?.total ?? 0) * rateToHKD;
+    const nativeTotal = Number(postRecalc?.total ?? 0);
+    const totalHKD = nativeTotal * rateToHKD;
+    const totalMOP = nativeTotal * rateToMOP;
     const refreshed = await prisma.quotation.update({
       where: { id: created.id },
-      data: { exchangeRateToHKD: rateToHKD, totalHKD },
+      data: { exchangeRateToHKD: rateToHKD, totalHKD, exchangeRateToMOP: rateToMOP, totalMOP },
       include: {
         items: true,
         company: true,
@@ -445,18 +460,20 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
       action: 'QUOTATION_CREATED',
       resourceType: 'quotation',
       resourceId: created.id,
-      description: `Created quotation ${created.number} for ${created.company?.name ?? data.companyId} (total ${refreshed?.total} ${chosenCurrency}, ≈ HKD ${totalHKD.toFixed(2)})`,
+      description: `Created quotation ${created.number} for ${created.company?.name ?? data.companyId} (total ${refreshed?.total} ${chosenCurrency}, ≈ HKD ${totalHKD.toFixed(2)}, ≈ MOP ${totalMOP.toFixed(2)})`,
       metadata: {
         number: created.number,
         total: Number(refreshed?.total ?? 0),
         // P2 multi-currency (2026-06-29): include the chosen
-        // currency + the snapshotted HKD fields so the audit log
+        // currency + both snapshotted equivalents so the audit log
         // is self-describing (a sales rep reading the log doesn't
         // need to join to the quotation row to know what the
         // customer was quoted in).
         currency: chosenCurrency,
         exchangeRateToHKD: rateToHKD,
         totalHKD,
+        exchangeRateToMOP: rateToMOP,
+        totalMOP,
         itemCount: items.length,
         dealId: data.dealId ?? null,
         salesRepId,
@@ -555,13 +572,17 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
         validUntil: source.validUntil,
         taxRate: source.taxRate,
         // P2 multi-currency (2026-06-29): inherit the source's
-        // billing currency + HKD snapshot. The new draft opens
-        // with the same contractual numbers the customer saw on
-        // the previous version — sales reps edit the draft and
-        // can change the currency later if needed.
+        // billing currency + HKD + MOP snapshots. The new draft
+        // opens with the same contractual numbers the customer
+        // saw on the previous version — sales reps edit the draft
+        // and can change the currency later if needed. Inheriting
+        // both snapshots keeps the print preview consistent with
+        // what the customer saw on the previous version.
         currency: source.currency,
         exchangeRateToHKD: source.exchangeRateToHKD,
         totalHKD: source.totalHKD,
+        exchangeRateToMOP: source.exchangeRateToMOP,
+        totalMOP: source.totalMOP,
         status: 'DRAFT',
         // 2026-06-26: standard-versioning links. Persisted on
         // the row so the detail page can render the chain
@@ -740,8 +761,9 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
     // the admin hasn't configured a rate for the chosen currency
     // (the field already passed the SENT-lock check above, so we
     // know we're in DRAFT). The chosen currency also flows into
-    // the recalc below so the new HKD total is consistent.
+    // the recalc below so the new HKD + MOP totals are consistent.
     let rateToHKD: number | null = null;
+    let rateToMOP: number | null = null;
     let chosenCurrency: string | undefined;
     if (data.currency !== undefined) {
       if (data.currency !== 'RMB' && data.currency !== 'HKD' && data.currency !== 'MOP') {
@@ -753,6 +775,11 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
       if (rateToHKD == null) {
         set.status = 400;
         return { error: `No exchange rate configured for ${data.currency} → HKD. Set it in /settings/currency.` };
+      }
+      rateToMOP = mopRateFor(data.currency, cfg);
+      if (rateToMOP == null) {
+        set.status = 400;
+        return { error: `No exchange rate configured for ${data.currency} → MOP. Set it in /settings/currency.` };
       }
       update.currency = data.currency;
       chosenCurrency = data.currency;
@@ -769,32 +796,36 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
     if (data.taxRate !== undefined || (data.status === undefined && before.status === 'DRAFT')) {
       await recalcQuotationAndItems(params.id, { liveCostRefresh: before.status === 'DRAFT' });
     }
-    // P2 multi-currency: re-snapshot totalHKD whenever the
-    // currency was changed (we just stored the new currency) OR
-    // whenever the total itself could have moved (tax rate change,
-    // DRAFT line-item re-snapshot). The defensive recompute on
-    // every PATCH in DRAFT state means the HKD figure stays
-    // consistent with the persisted `total` without the frontend
-    // having to ask for it.
+    // P2 multi-currency: re-snapshot totalHKD + totalMOP whenever
+    // the currency was changed (we just stored the new currency)
+    // OR whenever the total itself could have moved (tax rate
+    // change, DRAFT line-item re-snapshot). The defensive
+    // recompute on every PATCH in DRAFT state means both the HKD
+    // and MOP figures stay consistent with the persisted `total`
+    // without the frontend having to ask for it.
     const effectiveCurrency = chosenCurrency ?? before.currency;
-    if (rateToHKD == null) {
+    if (rateToHKD == null || rateToMOP == null) {
       // Currency wasn't changed in this PATCH — but the total may
-      // have moved (e.g. tax rate change). Re-derive the rate from
-      // the existing currency and recompute totalHKD so the
-      // snapshot stays in sync.
+      // have moved (e.g. tax rate change). Re-derive the rates
+      // from the existing currency and recompute both snapshots
+      // so they stay in sync with `total`.
       const cfg = await getCurrencyConfig();
-      rateToHKD = hkdRateFor(effectiveCurrency, cfg);
+      if (rateToHKD == null) rateToHKD = hkdRateFor(effectiveCurrency, cfg);
+      if (rateToMOP == null) rateToMOP = mopRateFor(effectiveCurrency, cfg);
     }
-    if (rateToHKD != null) {
+    if (rateToHKD != null && rateToMOP != null) {
       const postRecalc = await prisma.quotation.findUnique({
         where: { id: params.id },
         select: { total: true },
       });
+      const nativeTotal = Number(postRecalc?.total ?? 0);
       await prisma.quotation.update({
         where: { id: params.id },
         data: {
           exchangeRateToHKD: rateToHKD,
-          totalHKD: Number(postRecalc?.total ?? 0) * rateToHKD,
+          totalHKD: nativeTotal * rateToHKD,
+          exchangeRateToMOP: rateToMOP,
+          totalMOP: nativeTotal * rateToMOP,
         },
       });
     }
@@ -828,13 +859,15 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
         metadata: {
           number: q.number,
           fields: Object.keys(data),
-          // P2 multi-currency (2026-06-29): include the HKD
+          // P2 multi-currency (2026-06-29): include the HKD + MOP
           // fields in the audit metadata so a sales rep scanning
           // the log can see what was actually persisted (e.g.
           // "currency changed RMB→HKD, totalHKD reset to total").
           currency: refreshed?.currency,
           exchangeRateToHKD: refreshed ? Number(refreshed.exchangeRateToHKD) : undefined,
           totalHKD: refreshed ? Number(refreshed.totalHKD) : undefined,
+          exchangeRateToMOP: refreshed ? Number(refreshed.exchangeRateToMOP) : undefined,
+          totalMOP: refreshed ? Number(refreshed.totalMOP) : undefined,
         },
         request,
       });
@@ -898,15 +931,22 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
     // service-line cost snapshot update), and we want the HKD
     // figure that prints on the customer's quote to reflect the
     // final total, not a stale value from before the SENT lock.
+    // 2026-06-29: also re-snapshot totalMOP in lock-step with
+    // totalHKD, so the printed quote carries both HKD and MOP
+    // equivalents against the final (post-recalc) total.
     if (status === 'SENT') {
       const cfg = await getCurrencyConfig();
-      const rate = hkdRateFor(updated.currency, cfg);
-      if (rate != null) {
+      const rateHKD = hkdRateFor(updated.currency, cfg);
+      const rateMOP = mopRateFor(updated.currency, cfg);
+      if (rateHKD != null && rateMOP != null) {
+        const nativeTotal = Number(updated.total);
         await prisma.quotation.update({
           where: { id: params.id },
           data: {
-            exchangeRateToHKD: rate,
-            totalHKD: Number(updated.total) * rate,
+            exchangeRateToHKD: rateHKD,
+            totalHKD: nativeTotal * rateHKD,
+            exchangeRateToMOP: rateMOP,
+            totalMOP: nativeTotal * rateMOP,
           },
         });
       }

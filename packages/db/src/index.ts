@@ -29,9 +29,12 @@ export {
 
 // P2 multi-currency (2026-06-29): single source of truth for currency
 // config reads + HKD rate computation. See ./currency.ts for rationale.
+// 2026-06-30: also re-export `mopRateFor` for the MOP-equivalent
+// snapshot pattern (mirror of `hkdRateFor`).
 export {
   getCurrencyConfig,
   hkdRateFor,
+  mopRateFor,
   resolveCurrencySnapshot,
   type CurrencyCode,
   type CurrencyConfig,

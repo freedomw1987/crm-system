@@ -146,6 +146,30 @@ function hkdRateFromConfig(
   return cfg.rates['RMB->HKD'] / m;
 }
 
+/**
+ * 2026-06-29: mirror of `hkdRateFromConfig` for the MOP equivalent
+ * row. Math:
+ *   MOP → MOP: 1
+ *   RMB → MOP: cfg.rates['RMB->MOP']
+ *   HKD → MOP: cfg.rates['RMB->MOP'] / cfg.rates['RMB->HKD']
+ * Returns 0 when the config is missing or the divisor is
+ * non-positive — same defensive pattern as `hkdRateFromConfig`.
+ * Used only for the live preview row in the Totals card; the
+ * saved snapshot on the Quotation row is the source of truth
+ * after save+reload (see apps/api/src/routes/quotation.ts).
+ */
+function mopRateFromConfig(
+  picked: 'RMB' | 'HKD' | 'MOP',
+  cfg: { rates: { 'RMB->HKD': number; 'RMB->MOP': number } } | null,
+): number {
+  if (!cfg) return 0;
+  if (picked === 'MOP') return 1;
+  if (picked === 'RMB') return cfg.rates['RMB->MOP'];
+  const h = cfg.rates['RMB->HKD'];
+  if (!Number.isFinite(h) || h <= 0) return 0;
+  return cfg.rates['RMB->MOP'] / h;
+}
+
 export function QuotationBuilder({
   existing, initialDealId, initialCompanyId, defaultCompanyId, defaultDealId, onSaved, onCancel,
 }: QuotationBuilderProps) {
@@ -687,6 +711,27 @@ export function QuotationBuilder({
               >
                 <span>≈ HKD (匯率 {rate.toFixed(4)})</span>
                 <span className="tabular-nums">{formatCurrency(totalHKD, 'HKD')}</span>
+              </div>
+            );
+          })()}
+          {/* P2 multi-currency (2026-06-30): MOP equivalent preview.
+              Mirror of the HKD row above; hidden when the chosen
+              currency is MOP (redundant). Rate is sourced from
+              /settings/currency so it reflects admin edits since the
+              page loaded. After save+reload the snapshot value on
+              the Quotation row is the source of truth (replacing
+              this live preview). */}
+          {currency !== 'MOP' && (() => {
+            const rate = mopRateFromConfig(currency, currencyConfig);
+            if (rate <= 0) return null;
+            const totalMOP = total * rate;
+            return (
+              <div
+                className="flex justify-between text-xs text-muted-foreground pt-1"
+                title="用 /settings/currency 嘅當前匯率計算。儲存後呢個數字會用嗰個時候嘅匯率 snapshot 落 row,改系統匯率唔會再重寫。"
+              >
+                <span>≈ MOP (匯率 {rate.toFixed(4)})</span>
+                <span className="tabular-nums">{formatCurrency(totalMOP, 'MOP')}</span>
               </div>
             );
           })()}

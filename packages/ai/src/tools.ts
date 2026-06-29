@@ -10,7 +10,7 @@ import { prisma } from '@crm/db';
 // its HKD rate before persisting the draft, so the snapshot we
 // write matches what the Quotation route does on manual create.
 // See packages/db/src/currency.ts for the rationale + edge cases.
-import { resolveCurrencySnapshot } from '@crm/db';
+import { resolveCurrencySnapshot, mopRateFor, getCurrencyConfig } from '@crm/db';
 
 export interface ToolContext {
   userId: string;
@@ -331,6 +331,13 @@ const draftQuotation: Tool = {
     const isKnownPick = requested === 'RMB' || requested === 'HKD' || requested === 'MOP';
     let currency: 'RMB' | 'HKD' | 'MOP' = 'RMB';
     let rate = 1;
+    // 2026-06-29: MOP snapshot mirrors the HKD path. We resolve
+    // both rates from the same `currencyCfg` so the two snapshots
+    // can never disagree about which currency the row is in. The
+    // MOP default of 1 + totalMOP default of `total` covers the
+    // "fall-back to RMB" code path below (same as the HKD block).
+    let mopRate = 1;
+    let totalMOP = total * mopRate;
     // totalHKD is the HKD equivalent that gets persisted on the row.
     // Computed here so the snapshot is consistent with whatever
     // (currency, rate) pair we resolved above.
@@ -341,6 +348,17 @@ const draftQuotation: Tool = {
         currency = snapshot.currency;
         rate = snapshot.rate;
         totalHKD = total * rate;
+        // Derive mopRate from the same config the HKD helper used.
+        // Reading the config again here is one extra DB call but
+        // keeps the two helpers independent; if this becomes a
+        // hot-path concern, extend resolveCurrencySnapshot to also
+        // return mopRate (see packages/db/src/currency.ts).
+        const cfg = await getCurrencyConfig();
+        const mRate = mopRateFor(currency, cfg);
+        if (mRate != null) {
+          mopRate = mRate;
+          totalMOP = total * mopRate;
+        }
       } else if (isKnownPick) {
         // Known currency, no rate configured — surface the error so
         // the confirmation dialog can tell the user what to fix.
@@ -368,6 +386,8 @@ const draftQuotation: Tool = {
         currency,
         exchangeRateToHKD: rate,
         totalHKD,
+        exchangeRateToMOP: mopRate,
+        totalMOP,
         generatedByAi: true,
         aiPrompt: args.prompt,
         items: { create: items },
@@ -381,9 +401,10 @@ const draftQuotation: Tool = {
       total,
       // P2 multi-currency (2026-06-29): surface both numbers in
       // the tool response so the assistant can render "RMB X
-      // (≈ HKD Y)" without having to re-fetch.
+      // (≈ HKD Y, ≈ MOP Z)" without having to re-fetch.
       currency,
       totalHKD,
+      totalMOP,
       itemCount: created.items.length,
     };
   },

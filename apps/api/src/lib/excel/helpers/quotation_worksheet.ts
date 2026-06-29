@@ -276,6 +276,44 @@ export const quotationWorkSheet = (
     });
   }
 
+  // 2026-06-29: append a MOP-equivalent row under the HKD row.
+  // Mirrors the HKD block exactly — same shape, same styling,
+  // same merges — only emitted when the chosen currency isn't
+  // MOP and total_price_mop is non-zero (legacy rows pre-MOP-
+  // snapshot migration have total_price_mop == 0; the worksheet
+  // skips them rather than emit "≈ MOP 0.00"). The row sits at
+  // startRow+2 when both HKD and MOP blocks are emitted (RMB
+  // row), or startRow+1 when only the MOP block is emitted
+  // (HKD row), so callers below need the bumped startRow.
+  if (quotation?.currency && quotation.currency !== "MOP" && Number(quotation?.total_price_mop ?? 0) > 0) {
+    const mopOffset = quotation.currency !== "HKD" ? 2 : 1;
+    const mopRow = startRow + mopOffset;
+    setCellValue(worksheet, `A${mopRow}`, `≈ MOP (rate ${(Number(quotation?.exchangeRateToMOP ?? 0)).toFixed(4)}):`, {
+      ...tableCellStyle,
+      font: { sz: "11", italic: true, color: { rgb: "595959" } },
+      alignment: { horizontal: "right" },
+    });
+    setCellValue(worksheet, `B${mopRow}`, "", tableCellStyle);
+    setCellValue(worksheet, `C${mopRow}`, "", tableCellStyle);
+    setCellValue(worksheet, `D${mopRow}`, "", tableCellStyle);
+    setCellValue(worksheet, `E${mopRow}`, "", tableCellStyle);
+    setCellValue(
+      worksheet,
+      `F${mopRow}`,
+      Number(quotation?.total_price_mop ?? 0),
+      { ...tableCellStyle, font: { sz: "11", italic: true, color: { rgb: "595959" } } },
+      "$##,##0.00",
+    );
+    worksheet["!merges"].push({
+      s: { r: mopRow - 1, c: 0 },
+      e: { r: mopRow - 1, c: 4 },
+    });
+    worksheet["!merges"].push({
+      s: { r: mopRow - 1, c: 6 },
+      e: { r: mopRow - 1, c: 8 },
+    });
+  }
+
   worksheet["!merges"].push({
     s: { r: startRow - 1, c: 0 },
     e: { r: startRow - 1, c: 4 },
@@ -286,11 +324,16 @@ export const quotationWorkSheet = (
   });
 
   // // 設置工作表範圍
-  // P2 multi-currency (2026-06-29): if we appended an HKD row it
-  // sits on `startRow + 1`; extend the worksheet ref so the row
-  // is included in any "print area" calculations.
-  const endRow =
-    quotation?.currency && quotation.currency !== "HKD" ? startRow + 1 : startRow;
+  // P2 multi-currency (2026-06-29): the worksheet may now have 0, 1,
+  // or 2 equivalent rows under Grand Total. Compute the actual end
+  // row from which blocks were emitted (HKD only when currency !==
+  // HKD, MOP only when currency !== MOP and total_price_mop > 0).
+  // RMB rows emit both, HKD rows emit only the MOP block, MOP rows
+  // emit only the HKD block, legacy rows emit neither.
+  let extraRows = 0;
+  if (quotation?.currency && quotation.currency !== "HKD") extraRows++;
+  if (quotation?.currency && quotation.currency !== "MOP" && Number(quotation?.total_price_mop ?? 0) > 0) extraRows++;
+  const endRow = startRow + extraRows;
   worksheet["!ref"] = `A1:K${endRow}`;
 
   return worksheet;

@@ -83,6 +83,36 @@ export function hkdRateFor(
 }
 
 /**
+ * Compute the multiplier to convert an amount in `currency` to MOP.
+ *
+ *   MOP → MOP: 1
+ *   RMB → MOP: cfg.rates['RMB->MOP']
+ *   HKD → MOP: cfg.rates['RMB->MOP'] / cfg.rates['RMB->HKD']
+ *             (1 HKD = (1/RMB->HKD) RMB, then × RMB->MOP)
+ *   anything else: null (caller should 400)
+ *
+ * 2026-06-29: added to mirror `hkdRateFor` so the Quotation row
+ * can snapshot both HKD and MOP equivalents in lock-step. Used by
+ * the Quotation POST/PATCH/revise/status routes and the AI
+ * draft_quotation tool. The display layer always reads the
+ * snapshot off the row — `mopRateFor` is only called on the save
+ * path, never on render.
+ */
+export function mopRateFor(
+  currency: string,
+  cfg: { rates: { 'RMB->HKD': number; 'RMB->MOP': number } },
+): number | null {
+  if (currency === 'MOP') return 1;
+  if (currency === 'RMB') return cfg.rates['RMB->MOP'];
+  if (currency === 'HKD') {
+    const h = cfg.rates['RMB->HKD'];
+    if (!Number.isFinite(h) || h <= 0) return null;
+    return cfg.rates['RMB->MOP'] / h;
+  }
+  return null;
+}
+
+/**
  * Resolve a billing currency + HKD snapshot in one call.
  *
  * Helper for save paths (Quotation create/update, AI draft_quotation)
