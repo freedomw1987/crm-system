@@ -7,6 +7,10 @@ import { toIdArray } from '../lib/query-helpers';
 // 2026-06-07 (US-A5): port 落 CRM 嘅 Excel 5-sheet generator + Prisma adapter
 import { adaptCrmQuotationForExcel } from '../lib/excel/crm-adapter';
 import { generateQuotationExcel } from '../lib/excel/quotation';
+// P2 multi-currency (2026-06-29): getCurrencyConfig / hkdRateFor live
+// in @crm/db so this route + the AI draft_quotation tool share one
+// source of truth (see packages/db/src/currency.ts).
+import { getCurrencyConfig, hkdRateFor } from '@crm/db';
 
 // Quotation number generator (Q-YYYY-NNNN)
 async function nextQuotationNumber(): Promise<string> {
@@ -318,6 +322,11 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
       // create a quote on behalf of someone else (e.g. an account
       // exec who doesn't have the time to log it themselves).
       salesRepId?: string;
+      // P2 multi-currency (2026-06-29): billing currency picked by
+      // the sales rep. One of 'RMB' | 'HKD' | 'MOP'. When omitted,
+      // we fall back to the system default (RMB by default; admin
+      // can change in /settings/currency).
+      currency?: string;
       title?: string;
       notes?: string;
       validUntil?: string;
@@ -334,6 +343,22 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
         manDaySnapshot?: unknown;
       }>;
     };
+    // P2 multi-currency: resolve the chosen currency up front so
+    // we can validate the rate lookup before we hit the DB. The
+    // chosen currency persists on the row along with a snapshot
+    // of the rate-to-HKD and the pre-computed totalHKD — see the
+    // update step after recalcQuotationAndItems below.
+    const currencyCfg = await getCurrencyConfig();
+    const chosenCurrency = (data.currency || currencyCfg.default) as 'RMB' | 'HKD' | 'MOP';
+    if (chosenCurrency !== 'RMB' && chosenCurrency !== 'HKD' && chosenCurrency !== 'MOP') {
+      set.status = 400;
+      return { error: `Unsupported currency "${chosenCurrency}". Use RMB, HKD, or MOP.` };
+    }
+    const rateToHKD = hkdRateFor(chosenCurrency, currencyCfg);
+    if (rateToHKD == null) {
+      set.status = 400;
+      return { error: `No exchange rate configured for ${chosenCurrency} → HKD. Set it in /settings/currency.` };
+    }
     const number = await nextQuotationNumber();
     let subtotal = 0;
     // First pass: pre-compute per-line costSnapshot + GP so we can
@@ -377,6 +402,9 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
         dealId: data.dealId ?? null,
         createdById: userId,
         salesRepId,
+        // P2 multi-currency: persist the chosen currency on the
+        // create so it's available before the recalc pass.
+        currency: chosenCurrency,
         title: data.title,
         notes: data.notes,
         validUntil: data.validUntil ? new Date(data.validUntil) : null,
@@ -387,8 +415,20 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
     });
     // DRAFT: refresh GP from live man-day role costs.
     await recalcQuotationAndItems(created.id, { liveCostRefresh: true });
-    const refreshed = await prisma.quotation.findUnique({
+    // P2 multi-currency: snapshot the HKD equivalent now that the
+    // `total` has been recomputed. We compute the HKD total from
+    // the persisted `total` field, then update the row with both
+    // the rate and the HKD-equivalent in a single UPDATE. The
+    // snapshot is immutable from here on — future rate changes
+    // will not rewrite this row's HKD figure.
+    const postRecalc = await prisma.quotation.findUnique({
       where: { id: created.id },
+      select: { total: true },
+    });
+    const totalHKD = Number(postRecalc?.total ?? 0) * rateToHKD;
+    const refreshed = await prisma.quotation.update({
+      where: { id: created.id },
+      data: { exchangeRateToHKD: rateToHKD, totalHKD },
       include: {
         items: true,
         company: true,
@@ -405,8 +445,22 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
       action: 'QUOTATION_CREATED',
       resourceType: 'quotation',
       resourceId: created.id,
-      description: `Created quotation ${created.number} for ${created.company?.name ?? data.companyId} (total ${refreshed?.total})`,
-      metadata: { number: created.number, total: Number(refreshed?.total ?? 0), itemCount: items.length, dealId: data.dealId ?? null, salesRepId },
+      description: `Created quotation ${created.number} for ${created.company?.name ?? data.companyId} (total ${refreshed?.total} ${chosenCurrency}, ≈ HKD ${totalHKD.toFixed(2)})`,
+      metadata: {
+        number: created.number,
+        total: Number(refreshed?.total ?? 0),
+        // P2 multi-currency (2026-06-29): include the chosen
+        // currency + the snapshotted HKD fields so the audit log
+        // is self-describing (a sales rep reading the log doesn't
+        // need to join to the quotation row to know what the
+        // customer was quoted in).
+        currency: chosenCurrency,
+        exchangeRateToHKD: rateToHKD,
+        totalHKD,
+        itemCount: items.length,
+        dealId: data.dealId ?? null,
+        salesRepId,
+      },
       request,
     });
     return refreshed;
@@ -418,6 +472,10 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
       // omitted, the route defaults to the authenticated userId
       // (see the route handler above).
       salesRepId: t.Optional(t.Union([t.String(), t.Null()])),
+      // P2 multi-currency (2026-06-29): billing currency. When
+      // omitted, the route defaults to the system default from
+      // /settings/currency (RMB by default).
+      currency: t.Optional(t.UnionEnum(['RMB', 'HKD', 'MOP'])),
       title: t.Optional(t.String()),
       notes: t.Optional(t.String()),
       validUntil: t.Optional(t.String()),
@@ -496,6 +554,14 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
         notes: source.notes,
         validUntil: source.validUntil,
         taxRate: source.taxRate,
+        // P2 multi-currency (2026-06-29): inherit the source's
+        // billing currency + HKD snapshot. The new draft opens
+        // with the same contractual numbers the customer saw on
+        // the previous version — sales reps edit the draft and
+        // can change the currency later if needed.
+        currency: source.currency,
+        exchangeRateToHKD: source.exchangeRateToHKD,
+        totalHKD: source.totalHKD,
         status: 'DRAFT',
         // 2026-06-26: standard-versioning links. Persisted on
         // the row so the detail page can render the chain
@@ -578,7 +644,7 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
     });
     return refreshed;
   })
-  // Update header (title, notes, validUntil, taxRate, status, dealId, salesRepId)
+  // Update header (title, notes, validUntil, taxRate, status, dealId, salesRepId, currency)
   .patch('/:id', async ({ params, body, set, userId, request }) => {
     const data = body as {
       title?: string;
@@ -600,6 +666,11 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
       // when a colleague leaves the company) regardless of where
       // the quotation is in its lifecycle.
       salesRepId?: string | null;
+      // P2 multi-currency (2026-06-29): billing currency picked by
+      // the sales rep. This IS covered by the SENT lock (below)
+      // because the printed quote shows the currency — changing it
+      // after SENT would be a contract rewrite.
+      currency?: string;
     };
     const before = await prisma.quotation.findUnique({ where: { id: params.id } });
     if (!before) { set.status = 404; return { error: 'Not found' }; }
@@ -611,7 +682,7 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
     //
     // What's in the lock (contractual — appears on the customer-
     // facing document):
-    //   title, notes, taxRate, validUntil
+    //   title, notes, taxRate, validUntil, currency
     //   plus the line items (handled separately by the items POST/
     //   PATCH/DELETE routes, all of which already 409 outside DRAFT)
     //
@@ -629,12 +700,18 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
     // is salesRepId / createdById, not dealId. Locking dealId broke
     // the legitimate use case of attaching a sent quotation to a deal
     // after the fact (user-reported 2026-06-26).
+    //
+    // 2026-06-29: `currency` joins the lock list (P2 multi-currency).
+    // Changing the billing currency after SENT would silently
+    // re-interpret the customer's contract; the only correct path is
+    // to create a revision.
     if (before.status !== 'DRAFT' && before.status !== undefined) {
       if (
         data.title !== undefined ||
         data.notes !== undefined ||
         data.validUntil !== undefined ||
-        data.taxRate !== undefined
+        data.taxRate !== undefined ||
+        data.currency !== undefined
       ) {
         set.status = 409;
         return { error: `Quotation is ${before.status} and cannot be edited. Create a revision instead.` };
@@ -658,6 +735,28 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
     // leaves unchanged. NOT covered by the SENT lock (see the
     // contract comment on the typecast above).
     if (data.salesRepId !== undefined) update.salesRepId = data.salesRepId || null;
+    // P2 multi-currency (2026-06-29): accept currency. We do the
+    // rate lookup BEFORE the update so we can fail with a 400 if
+    // the admin hasn't configured a rate for the chosen currency
+    // (the field already passed the SENT-lock check above, so we
+    // know we're in DRAFT). The chosen currency also flows into
+    // the recalc below so the new HKD total is consistent.
+    let rateToHKD: number | null = null;
+    let chosenCurrency: string | undefined;
+    if (data.currency !== undefined) {
+      if (data.currency !== 'RMB' && data.currency !== 'HKD' && data.currency !== 'MOP') {
+        set.status = 400;
+        return { error: `Unsupported currency "${data.currency}". Use RMB, HKD, or MOP.` };
+      }
+      const cfg = await getCurrencyConfig();
+      rateToHKD = hkdRateFor(data.currency, cfg);
+      if (rateToHKD == null) {
+        set.status = 400;
+        return { error: `No exchange rate configured for ${data.currency} → HKD. Set it in /settings/currency.` };
+      }
+      update.currency = data.currency;
+      chosenCurrency = data.currency;
+    }
     if (data.status !== undefined) {
       const valid = ['DRAFT', 'SENT', 'VIEWED', 'ACCEPTED', 'REJECTED', 'EXPIRED', 'INVOICED'];
       if (!valid.includes(data.status)) { set.status = 400; return { error: 'Invalid status' }; }
@@ -669,6 +768,35 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
     // Recalc totals if tax rate changed; for DRAFT also refresh GP.
     if (data.taxRate !== undefined || (data.status === undefined && before.status === 'DRAFT')) {
       await recalcQuotationAndItems(params.id, { liveCostRefresh: before.status === 'DRAFT' });
+    }
+    // P2 multi-currency: re-snapshot totalHKD whenever the
+    // currency was changed (we just stored the new currency) OR
+    // whenever the total itself could have moved (tax rate change,
+    // DRAFT line-item re-snapshot). The defensive recompute on
+    // every PATCH in DRAFT state means the HKD figure stays
+    // consistent with the persisted `total` without the frontend
+    // having to ask for it.
+    const effectiveCurrency = chosenCurrency ?? before.currency;
+    if (rateToHKD == null) {
+      // Currency wasn't changed in this PATCH — but the total may
+      // have moved (e.g. tax rate change). Re-derive the rate from
+      // the existing currency and recompute totalHKD so the
+      // snapshot stays in sync.
+      const cfg = await getCurrencyConfig();
+      rateToHKD = hkdRateFor(effectiveCurrency, cfg);
+    }
+    if (rateToHKD != null) {
+      const postRecalc = await prisma.quotation.findUnique({
+        where: { id: params.id },
+        select: { total: true },
+      });
+      await prisma.quotation.update({
+        where: { id: params.id },
+        data: {
+          exchangeRateToHKD: rateToHKD,
+          totalHKD: Number(postRecalc?.total ?? 0) * rateToHKD,
+        },
+      });
     }
     const refreshed = await prisma.quotation.findUnique({
       where: { id: params.id },
@@ -697,7 +825,17 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
         resourceType: 'quotation',
         resourceId: params.id,
         description: `Updated quotation ${q.number} (${q.company?.name ?? ''})`,
-        metadata: { number: q.number, fields: Object.keys(data) },
+        metadata: {
+          number: q.number,
+          fields: Object.keys(data),
+          // P2 multi-currency (2026-06-29): include the HKD
+          // fields in the audit metadata so a sales rep scanning
+          // the log can see what was actually persisted (e.g.
+          // "currency changed RMB→HKD, totalHKD reset to total").
+          currency: refreshed?.currency,
+          exchangeRateToHKD: refreshed ? Number(refreshed.exchangeRateToHKD) : undefined,
+          totalHKD: refreshed ? Number(refreshed.totalHKD) : undefined,
+        },
         request,
       });
     }
@@ -754,6 +892,25 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
     if (status === 'SENT') data.sentAt = new Date();
     if (status === 'ACCEPTED') data.acceptedAt = new Date();
     const updated = await prisma.quotation.update({ where: { id: params.id }, data: data as never });
+    // P2 multi-currency (2026-06-29): defensive recompute of
+    // totalHKD on the SENT transition. The recalc above
+    // (recalcQuotationAndItems) may have changed `total` (e.g.
+    // service-line cost snapshot update), and we want the HKD
+    // figure that prints on the customer's quote to reflect the
+    // final total, not a stale value from before the SENT lock.
+    if (status === 'SENT') {
+      const cfg = await getCurrencyConfig();
+      const rate = hkdRateFor(updated.currency, cfg);
+      if (rate != null) {
+        await prisma.quotation.update({
+          where: { id: params.id },
+          data: {
+            exchangeRateToHKD: rate,
+            totalHKD: Number(updated.total) * rate,
+          },
+        });
+      }
+    }
     await logEvent({
       actorId: userId ?? null,
       action: 'QUOTATION_STATUS_CHANGED',

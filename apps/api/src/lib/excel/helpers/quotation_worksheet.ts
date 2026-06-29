@@ -62,17 +62,17 @@ export const quotationWorkSheet = (
   });
 
   // 第 8 行：貨幣
+  // 2026-06-29 (P2 multi-currency): read the persisted billing
+  // currency from the Quotation row, NOT a region-derived guess.
+  // The old code always wrote "RMB" (which actually meant HKD
+  // before multi-currency, and now RMB by default) regardless of
+  // what the customer was quoted in. Carrying the persisted
+  // value here means the printed quote matches the system of
+  // record on every download.
   setCellValue(worksheet, "D8", "Currency", { border: borderStyle });
-  setCellValue(
-    worksheet,
-    "E8",
-    quotation.region[0]?.value === "MO 澳門"
-      ? "RMB"
-      : quotation.region[0]?.value === "HK 香港"
-        ? "RMB"
-        : "RMB",
-    { border: borderStyle },
-  );
+  setCellValue(worksheet, "E8", quotation?.currency ?? "RMB", {
+    border: borderStyle,
+  });
 
   // 第 10 行：表頭
   setCellValue(worksheet, "A10", "Item", {
@@ -180,11 +180,12 @@ export const quotationWorkSheet = (
       startRow,
       lang,
       version,
-      quotation.region[0]?.value === "MO 澳門"
-        ? "MOP"
-        : quotation.region[0]?.value === "HK 香港"
-          ? "HKD"
-          : "CNY",
+      // P2 multi-currency (2026-06-29): per-row supplier-cost
+      // label uses the persisted billing currency instead of a
+      // region-derived guess. Falls back to "RMB" for legacy
+      // rows that didn't have the field (should be rare — all
+      // new rows carry it).
+      quotation?.currency ?? "RMB",
     );
 
     if (quoItem?.sector === "") {
@@ -241,6 +242,40 @@ export const quotationWorkSheet = (
   );
   setCellValue(worksheet, `K${startRow}`, "", salesCostCellStyle);
 
+  // P2 multi-currency (2026-06-29): append an HKD-equivalent row
+  // immediately under the Grand Total so the printed quote shows
+  // the customer's HKD-management number alongside the native
+  // total. Only emitted when the chosen currency isn't HKD
+  // (showing HKD ↔ HKD on the same line is noise).
+  if (quotation?.currency && quotation.currency !== "HKD") {
+    const hkdRow = startRow + 1;
+    setCellValue(worksheet, `A${hkdRow}`, `≈ HKD (rate ${(Number(quotation?.exchangeRateToHKD ?? 0)).toFixed(4)}):`, {
+      ...tableCellStyle,
+      font: { sz: "11", italic: true, color: { rgb: "595959" } },
+      alignment: { horizontal: "right" },
+    });
+    setCellValue(worksheet, `B${hkdRow}`, "", tableCellStyle);
+    setCellValue(worksheet, `C${hkdRow}`, "", tableCellStyle);
+    setCellValue(worksheet, `D${hkdRow}`, "", tableCellStyle);
+    setCellValue(worksheet, `E${hkdRow}`, "", tableCellStyle);
+    setCellValue(
+      worksheet,
+      `F${hkdRow}`,
+      Number(quotation?.total_price_hkd ?? 0),
+      { ...tableCellStyle, font: { sz: "11", italic: true, color: { rgb: "595959" } } },
+      "$##,##0.00",
+    );
+    // Mirror the Grand-Total merges for visual continuity.
+    worksheet["!merges"].push({
+      s: { r: hkdRow - 1, c: 0 },
+      e: { r: hkdRow - 1, c: 4 },
+    });
+    worksheet["!merges"].push({
+      s: { r: hkdRow - 1, c: 6 },
+      e: { r: hkdRow - 1, c: 8 },
+    });
+  }
+
   worksheet["!merges"].push({
     s: { r: startRow - 1, c: 0 },
     e: { r: startRow - 1, c: 4 },
@@ -251,7 +286,12 @@ export const quotationWorkSheet = (
   });
 
   // // 設置工作表範圍
-  worksheet["!ref"] = `A1:K${startRow}`;
+  // P2 multi-currency (2026-06-29): if we appended an HKD row it
+  // sits on `startRow + 1`; extend the worksheet ref so the row
+  // is included in any "print area" calculations.
+  const endRow =
+    quotation?.currency && quotation.currency !== "HKD" ? startRow + 1 : startRow;
+  worksheet["!ref"] = `A1:K${endRow}`;
 
   return worksheet;
 };

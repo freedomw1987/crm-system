@@ -87,6 +87,36 @@ describe("adaptCrmQuotationForExcel", () => {
     expect(flat.revision).toBe("0"); // CRM 冇 revision, 預設 0
   });
 
+  test("P2 multi-currency (2026-06-29): thread currency + HKD snapshot", () => {
+    // Persisted currency + rate + totalHKD should pass through 1:1
+    // so the worksheet reads the customer's chosen currency, not
+    // a region-derived guess.
+    const q = makeBaseQuotation({
+      currency: "RMB",
+      exchangeRateToHKD: 1.08,
+      totalHKD: 162000, // 150000 * 1.08
+    });
+    const flat = adaptCrmQuotationForExcel(q);
+    expect(flat.currency).toBe("RMB");
+    expect(flat.exchangeRateToHKD).toBe(1.08);
+    expect(flat.total_price_hkd).toBe(162000);
+  });
+
+  test("P2 multi-currency: total_price_hkd falls back to total * rate when persisted totalHKD is missing (legacy rows)", () => {
+    // Pre-migration rows have totalHKD=0 (backfill coped with HKD-
+    // denominated rows where totalHKD == total, but if a row was
+    // somehow missed the fallback should re-derive it from the
+    // rate so the worksheet doesn't emit 0.00 HKD).
+    const q = makeBaseQuotation({
+      currency: "MOP",
+      exchangeRateToHKD: 0.931, // 1.08 / 1.16
+      totalHKD: 0,
+    });
+    const flat = adaptCrmQuotationForExcel(q);
+    // 150000 * 0.931 = 139650 (approx, re-derived from rate)
+    expect(flat.total_price_hkd).toBeCloseTo(150000 * 0.931, 2);
+  });
+
   test("region label: maps all 4 Region.code values to bc-quotation labels", () => {
     for (const [code, expected] of [
       ["HK", "HK 香港"],
