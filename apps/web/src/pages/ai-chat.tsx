@@ -102,9 +102,37 @@ export function AiChatPage() {
             );
             break;
           case 'done':
-            // Backend persisted the conversation + reply. Refresh.
+            // 2026-06-29: optimistically prepend the new conversation
+            // to the sidebar list, then invalidate to refetch the
+            // canonical row (real title from the first message, real
+            // message count). Without the optimistic update the
+            // sidebar waited for the refetch round-trip and the user
+            // reported "no new conversation in the sidebar until I
+            // refresh the page" — even though the data was committed
+            // server-side well before the `done` event was sent.
             setActiveId(ev.conversationId);
-            qc.invalidateQueries({ queryKey: ['conversations'] });
+            qc.setQueryData<ConversationSummary[]>(['conversations'], (prev) => {
+              if (!prev) return prev;
+              if (prev.some((c) => c.id === ev.conversationId)) return prev;
+              // Placeholder values — the refetch below will overwrite
+              // with the real title (from the first user message) and
+              // a real message count.
+              const now = new Date().toISOString();
+              const placeholder: ConversationSummary = {
+                id: ev.conversationId,
+                title: '新對話',
+                createdAt: now,
+                updatedAt: now,
+                _count: { messages: 0 },
+              };
+              return [placeholder, ...prev];
+            });
+            // refetchType: 'all' forces a refetch even if React Query
+            // thinks the conversations query is still fresh (the
+            // default staleTime is 30s in App.tsx). The optimistic
+            // entry above means the user sees the new conversation
+            // instantly regardless.
+            qc.invalidateQueries({ queryKey: ['conversations'], refetchType: 'all' });
             qc.invalidateQueries({ queryKey: ['conversation', ev.conversationId] });
             qc.invalidateQueries({ queryKey: ['quotations'] });
             break;
@@ -179,7 +207,7 @@ export function AiChatPage() {
       <Card className="flex flex-col overflow-hidden">
         {!activeId ? (
           <EmptyState
-            onPrompt={(p) => handleSend(p, null)}
+            onSend={(p) => handleSend(p, null)}
             disabled={submitInFlight}
           />
         ) : (
@@ -263,35 +291,74 @@ export function AiChatPage() {
   );
 }
 
-function EmptyState({ onPrompt, disabled }: { onPrompt: (p: string) => void; disabled: boolean }) {
+function EmptyState({ onSend, disabled }: { onSend: (msg: string) => void; disabled: boolean }) {
   const examples = [
     '邊 5 個客戶最大貢獻 revenue?',
     '搵下 "ABC" 呢間公司',
     '幫我開個 AC01 x 10 嘅報價俾第一個 customer',
     'Log 一個 call 俾 ABC Company,傾咗佢哋嘅 Q4 計劃',
   ];
+  // 2026-06-29: a free-text composer so the user can type their own
+  // prompt on a new conversation, not just pick from the example
+  // chips. Mirrors the active-conversation composer (Enter to send,
+  // Shift+Enter for newline) and submits with `activeId = null`,
+  // so the `done` event from the backend will swap this view out
+  // for the freshly-created conversation.
+  const [input, setInput] = useState('');
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    const trimmed = input.trim();
+    if (!trimmed || disabled) return;
+    setInput('');
+    onSend(trimmed);
+  }
   return (
-    <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
-      <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">
-        <Sparkles className="h-8 w-8 text-primary" />
+    <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col items-center justify-center p-8 text-center overflow-y-auto">
+        <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+          <Sparkles className="h-8 w-8 text-primary" />
+        </div>
+        <h2 className="text-xl font-semibold mb-2">CRM AI Assistant</h2>
+        <p className="text-muted-foreground mb-6 max-w-md">
+          用自然語言操作 CRM — 查客戶、生報價、log activity、睇 analytics。
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-2xl">
+          {examples.map((ex) => (
+            <button
+              key={ex}
+              type="button"
+              onClick={() => onSend(ex)}
+              disabled={disabled}
+              className="text-left p-3 rounded border bg-card hover:border-primary text-sm transition-colors disabled:opacity-50"
+            >
+              {ex}
+            </button>
+          ))}
+        </div>
       </div>
-      <h2 className="text-xl font-semibold mb-2">CRM AI Assistant</h2>
-      <p className="text-muted-foreground mb-6 max-w-md">
-        用自然語言操作 CRM — 查客戶、生報價、log activity、睇 analytics。
-      </p>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-2xl">
-        {examples.map((ex) => (
-          <button
-            key={ex}
-            type="button"
-            onClick={() => onPrompt(ex)}
-            disabled={disabled}
-            className="text-left p-3 rounded border bg-card hover:border-primary text-sm transition-colors disabled:opacity-50"
-          >
-            {ex}
-          </button>
-        ))}
-      </div>
+      <form
+        onSubmit={handleSubmit}
+        className="border-t p-3 flex items-end gap-2 bg-card"
+      >
+        <Textarea
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              handleSubmit(e as unknown as FormEvent);
+            }
+          }}
+          placeholder="問 AI 有關 CRM 嘅嘢..."
+          rows={2}
+          className="flex-1"
+          autoFocus
+          data-testid="empty-state-input"
+        />
+        <Button type="submit" disabled={!input.trim() || disabled}>
+          <Send className="h-4 w-4" />
+        </Button>
+      </form>
     </div>
   );
 }
