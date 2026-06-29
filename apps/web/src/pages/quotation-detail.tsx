@@ -123,7 +123,15 @@ export function QuotationDetailPage() {
         <div className="flex justify-between items-start border-b pb-4 mb-6">
           <div>
             <h1 className="text-3xl font-bold">報價單 / Quotation</h1>
-            <p className="font-mono text-sm text-gray-600 mt-1">{quotation.number}</p>
+            <p className="font-mono text-sm text-gray-600 mt-1">
+              {quotation.number}
+              {/* P2 multi-currency (2026-06-29): show the chosen
+                  currency on the printed quote header so the
+                  customer knows what they're being billed in
+                  before reading the totals block. */}
+              {' · 報價幣別 '}
+              <span className="font-semibold">{quotation.currency}</span>
+            </p>
           </div>
           <div className="text-right text-sm">
             <p><span className="text-gray-500">Issue date:</span> {formatDate(quotation.createdAt)}</p>
@@ -164,11 +172,11 @@ export function QuotationDetailPage() {
                   <LineItemSnapshotMeta item={item} print />
                 </td>
                 <td className="py-2 text-right tabular-nums">{item.quantity}</td>
-                <td className="py-2 text-right tabular-nums">{formatCurrency(item.unitPrice)}</td>
+                <td className="py-2 text-right tabular-nums">{formatCurrency(item.unitPrice, quotation.currency)}</td>
                 <td className="py-2 text-right tabular-nums">
                   {item.discount > 0 ? `${item.discount}%` : '—'}
                 </td>
-                <td className="py-2 text-right tabular-nums font-semibold">{formatCurrency(item.lineTotal)}</td>
+                <td className="py-2 text-right tabular-nums font-semibold">{formatCurrency(item.lineTotal, quotation.currency)}</td>
               </tr>
             ))}
           </tbody>
@@ -176,12 +184,24 @@ export function QuotationDetailPage() {
 
         <div className="flex justify-end">
           <div className="w-64 text-sm space-y-1">
-            <div className="flex justify-between"><span>Subtotal</span><span className="tabular-nums">{formatCurrency(quotation.subtotal)}</span></div>
-            <div className="flex justify-between"><span>Tax ({quotation.taxRate}%)</span><span className="tabular-nums">{formatCurrency(quotation.taxAmount)}</span></div>
+            <div className="flex justify-between"><span>Subtotal</span><span className="tabular-nums">{formatCurrency(quotation.subtotal, quotation.currency)}</span></div>
+            <div className="flex justify-between"><span>Tax ({quotation.taxRate}%)</span><span className="tabular-nums">{formatCurrency(quotation.taxAmount, quotation.currency)}</span></div>
             <div className="flex justify-between border-t pt-2 mt-2 text-base font-bold">
-              <span>Total</span>
-              <span className="tabular-nums">{formatCurrency(quotation.total)}</span>
+              <span>Total ({quotation.currency})</span>
+              <span className="tabular-nums">{formatCurrency(quotation.total, quotation.currency)}</span>
             </div>
+            {/* P2 multi-currency (2026-06-29): print the HKD
+                equivalent on the printed quote so management can
+                see the HK-denominated figure without flipping back
+                to the detail page. Hidden when the chosen currency
+                is HKD (redundant). The rate is also shown so the
+                reviewer can verify what was applied. */}
+            {quotation.currency !== 'HKD' && Number(quotation.totalHKD ?? 0) > 0 && (
+              <div className="flex justify-between text-xs text-gray-600 pt-1 mt-1 border-t border-dashed">
+                <span>≈ HKD (匯率 {Number(quotation.exchangeRateToHKD ?? 0).toFixed(4)})</span>
+                <span className="tabular-nums">{formatCurrency(quotation.totalHKD ?? 0, 'HKD')}</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -374,13 +394,13 @@ export function QuotationDetailPage() {
                       </td>
                       <td className="px-4 py-3 text-right tabular-nums">{item.quantity}</td>
                       <td className="px-4 py-3 text-right tabular-nums">
-                        {formatCurrency(item.unitPrice)}
+                        {formatCurrency(item.unitPrice, quotation.currency)}
                       </td>
                       <td className="px-4 py-3 text-right tabular-nums">
                         {item.discount > 0 ? `${item.discount}%` : '—'}
                       </td>
                       <td className="px-4 py-3 text-right font-semibold tabular-nums">
-                        {formatCurrency(item.lineTotal)}
+                        {formatCurrency(item.lineTotal, quotation.currency)}
                       </td>
                     </tr>
                   ))}
@@ -423,17 +443,30 @@ export function QuotationDetailPage() {
             </CardHeader>
             <CardContent className="space-y-2 text-sm">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Subtotal</span>
-                <span className="tabular-nums">{formatCurrency(quotation.subtotal)}</span>
+                <span className="text-muted-foreground">Subtotal ({quotation.currency})</span>
+                <span className="tabular-nums">{formatCurrency(quotation.subtotal, quotation.currency)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Tax ({quotation.taxRate}%)</span>
-                <span className="tabular-nums">{formatCurrency(quotation.taxAmount)}</span>
+                <span className="tabular-nums">{formatCurrency(quotation.taxAmount, quotation.currency)}</span>
               </div>
               <div className="flex justify-between border-t pt-2 font-bold text-base">
-                <span>Total</span>
-                <span className="tabular-nums">{formatCurrency(quotation.total)}</span>
+                <span>Total ({quotation.currency})</span>
+                <span className="tabular-nums">{formatCurrency(quotation.total, quotation.currency)}</span>
               </div>
+              {/* P2 multi-currency (2026-06-29): HKD equivalent under
+                  the native total. Reads `totalHKD` from the row's
+                  snapshot (not the live config), so a stale viewer
+                  still sees the figure that was on the printed quote.
+                  Hidden for HKD rows to avoid HKD-on-HKD noise. */}
+              {quotation.currency !== 'HKD' && Number(quotation.totalHKD ?? 0) > 0 && (
+                <div className="flex justify-between text-xs text-muted-foreground pt-1 mt-1 border-t border-dashed">
+                  <span title="喺儲存時 snapshot,改系統匯率唔會重寫">
+                    ≈ HKD (匯率 {Number(quotation.exchangeRateToHKD ?? 0).toFixed(4)})
+                  </span>
+                  <span className="tabular-nums">{formatCurrency(quotation.totalHKD ?? 0, 'HKD')}</span>
+                </div>
+              )}
             </CardContent>
           </Card>
 

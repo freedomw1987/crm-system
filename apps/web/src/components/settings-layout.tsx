@@ -38,6 +38,11 @@ const TABS = [
   { value: 'ai', label: 'AI' },
   { value: 'man-day', label: 'Man-day' },
   { value: 'tax', label: 'Tax' },
+  // P2 multi-currency (2026-06-29): currency tab sits next to Tax
+  // — both are numeric settings that drive the Quotation builder's
+  // pre-fill logic, so visually grouping them helps admins spot
+  // the relationship.
+  { value: 'currency', label: 'Currency' },
   { value: 'audit', label: 'Audit' },
 ] as const;
 
