@@ -694,6 +694,18 @@ export function DealDialog({
   // omitted, so the most common case (sales rep creates their own
   // deal) needs no client-side setting.
   const [ownerId, setOwnerId] = useState<string | null>(deal?.owner?.id ?? null);
+  // P2 multi-currency (2026-06-29): default to the admin-set system
+  // currency (typically RMB), not the legacy hardcoded 'HKD'. Edit mode
+  // keeps the deal's persisted currency. Same React Query key as the
+  // page-level fetch so the cache is shared.
+  const { data: currencyCfg } = useQuery({
+    queryKey: ['settings', 'currency'],
+    queryFn: () => settingsApi.getCurrency(),
+    staleTime: 60_000,
+  });
+  const [currency, setCurrency] = useState<string>(
+    deal?.currency ?? currencyCfg?.default ?? 'RMB'
+  );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -714,10 +726,13 @@ export function DealDialog({
         deal?.expectedCloseDate ? deal.expectedCloseDate.slice(0, 10) : defaultCloseDate
       );
       setOwnerId(deal?.owner?.id ?? null);
+      // P2 multi-currency (2026-06-29): re-seed currency from deal
+      // (edit mode) or from the live system default (create mode).
+      setCurrency(deal?.currency ?? currencyCfg?.default ?? 'RMB');
       setError(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, deal?.id, stages]);
+  }, [open, deal?.id, stages, currencyCfg?.default]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -745,6 +760,10 @@ export function DealDialog({
           value: Number(value) || 0,
           expectedCloseDate: expectedCloseDate || undefined,
           ownerId: ownerId === deal.owner?.id ? undefined : (ownerId || null),
+          // P2 multi-currency (2026-06-29): only send currency when it
+          // actually changed, to avoid no-op writes that would dirty
+          // the row's updatedAt.
+          currency: currency === deal.currency ? undefined : currency,
         });
         // 2) If the stage changed, route through the dedicated endpoint
         //    so the backend can set status + closedAt correctly.
@@ -766,6 +785,13 @@ export function DealDialog({
           stageId,
           expectedCloseDate: expectedCloseDate || undefined,
           ownerId: ownerId || undefined,
+          // P2 multi-currency (2026-06-29): always send currency so the
+          // backend uses the user's picker value (which defaults to
+          // the system currency but may have been overridden). The
+          // backend would default to the system currency if omitted —
+          // same result — but sending it explicitly avoids an extra
+          // config lookup on the hot path.
+          currency,
         });
         if (!isEdit) {
           setTitle(''); setValue(''); setExpectedCloseDate('');
@@ -821,10 +847,36 @@ export function DealDialog({
               </select>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <Label htmlFor="value">金額 (HKD)</Label>
+          <div className="grid grid-cols-4 gap-2">
+            <div className="col-span-2">
+              {/* P2 multi-currency (2026-06-29): label reflects the
+                  picked currency so the user can see at a glance which
+                  unit the amount is in. Defaults to the system
+                  currency on mount. */}
+              <Label htmlFor="value">金額 ({currency})</Label>
               <Input id="value" type="number" value={value} onChange={(e) => setValue(e.target.value)} />
+            </div>
+            <div>
+              <Label htmlFor="currency">貨幣</Label>
+              <select
+                id="currency"
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value)}
+                className="w-full h-9 rounded border bg-background px-2 text-sm"
+              >
+                {/* P2 multi-currency (2026-06-29): RMB/HKD/MOP are
+                    the three system currencies (admin-configurable
+                    default in /settings/currency). USD/EUR/GBP/legacy
+                    CNY left in as fallbacks for deals priced in a
+                    non-system currency. */}
+                <option value="RMB">人民幣 (RMB)</option>
+                <option value="HKD">港幣 (HKD)</option>
+                <option value="MOP">澳門幣 (MOP)</option>
+                <option value="USD">美元 (USD)</option>
+                <option value="CNY">CNY</option>
+                <option value="EUR">EUR</option>
+                <option value="GBP">GBP</option>
+              </select>
             </div>
             <div>
               <Label htmlFor="close">預計成交日</Label>

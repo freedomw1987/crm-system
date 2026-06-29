@@ -514,9 +514,9 @@ export const dealsApi = {
   /** Day 8: Move deal to a new stage (drag-drop endpoint). */
   moveStage: (id: string, stageId: string) =>
     request<Deal>(`/deals/${id}/stage`, { method: 'PATCH', body: JSON.stringify({ stageId }) }),
-  create: (data: { title: string; companyId: string; value: number; stageId: string; ownerId?: string; probability?: number; expectedCloseDate?: string; description?: string }) =>
+  create: (data: { title: string; companyId: string; value: number; stageId: string; ownerId?: string; probability?: number; expectedCloseDate?: string; description?: string; currency?: string }) =>
     request<Deal>('/deals', { method: 'POST', body: JSON.stringify(data) }),
-  update: (id: string, data: Partial<{ title: string; value: number; probability: number; expectedCloseDate: string; description: string; ownerId?: string | null }>) =>
+  update: (id: string, data: Partial<{ title: string; value: number; probability: number; expectedCloseDate: string; description: string; ownerId?: string | null; currency?: string }>) =>
     request<Deal>(`/deals/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   remove: (id: string) => request<{ success: boolean }>(`/deals/${id}`, { method: 'DELETE' }),
 };
