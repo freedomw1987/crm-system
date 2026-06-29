@@ -25,7 +25,8 @@ import {
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/input';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { activitiesApi, attachmentsApi } from '@/lib/api';
+import { activitiesApi, attachmentsApi, type ActivityType } from '@/lib/api';
+import { ACTIVITY_TYPE_META } from '@/components/activity-feed';
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -47,6 +48,13 @@ export function DealActivityDialog({
 }: DealActivityDialogProps) {
   const qc = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // 2026-06-30: let the sales rep pick the activity type (備註 / 電話
+  // / Email / 會議) up-front, matching the home-page edit dialog.
+  // Previously this dialog hard-coded `type: 'NOTE'` which meant
+  // calls and meetings had to be logged via the edit dialog after
+  // the fact — defeating the purpose of "新增 Activity" on the deal
+  // card. Default stays NOTE to preserve the common case.
+  const [type, setType] = useState<ActivityType>('NOTE');
   const [content, setContent] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -55,6 +63,7 @@ export function DealActivityDialog({
   // doesn't leak into the next deal.
   useEffect(() => {
     if (open) {
+      setType('NOTE');
       setContent('');
       setFiles([]);
       setError(null);
@@ -77,7 +86,7 @@ export function DealActivityDialog({
         throw new Error('請輸入內容或加入附件');
       }
       const act = await activitiesApi.create({
-        type: 'NOTE',
+        type,
         content: trimmed,
         dealId,
       });
@@ -112,6 +121,20 @@ export function DealActivityDialog({
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
+          <div>
+            <label className="text-xs text-muted-foreground" htmlFor="deal-activity-type">類型</label>
+            <select
+              id="deal-activity-type"
+              value={type}
+              onChange={(e) => setType(e.target.value as ActivityType)}
+              className="w-full h-9 rounded border bg-background px-2 text-sm mt-1"
+              data-testid="deal-activity-type"
+            >
+              {(['NOTE', 'CALL', 'EMAIL', 'MEETING'] as ActivityType[]).map((t) => (
+                <option key={t} value={t}>{ACTIVITY_TYPE_META[t].label}</option>
+              ))}
+            </select>
+          </div>
           <Textarea
             id="deal-activity-composer"
             placeholder="寫低 follow-up 進度、客戶 reply、打咗電話嘅 outcome…"

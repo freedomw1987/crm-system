@@ -40,6 +40,11 @@ const TYPE_META: Record<ActivityType, { icon: typeof StickyNote; label: string; 
   EMAIL:   { icon: Mail,       label: 'Email',   color: 'text-blue-500' },
   MEETING: { icon: Calendar,   label: '會議',     color: 'text-amber-500' },
 };
+// 2026-06-30: re-export the labels for sibling components (e.g.
+// DealActivityDialog) so the "新增 Activity" picker on deal cards
+// and the Companies detail composer stay in lock-step with the
+// edit dialog's dropdown — single source of truth for type labels.
+export const ACTIVITY_TYPE_META = TYPE_META;
 
 function relativeTime(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();
@@ -511,6 +516,12 @@ function Composer({
 }) {
   const qc = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // 2026-06-30: let the rep pick the activity type up-front instead
+  // of having to log everything as NOTE then change it via the edit
+  // dialog. Default NOTE preserves the common case. Labels come from
+  // the shared TYPE_META table above so this stays in lock-step with
+  // the edit dialog + DealActivityDialog.
+  const [type, setType] = useState<ActivityType>('NOTE');
   const [content, setContent] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -531,7 +542,7 @@ function Composer({
         throw new Error('請輸入內容或加入附件');
       }
       const act = await activitiesApi.create({
-        type: 'NOTE',
+        type,
         content: trimmed,
         ...(companyId ? { companyId } : {}),
         ...(dealId ? { dealId } : {}),
@@ -560,6 +571,20 @@ function Composer({
 
   return (
     <div className="space-y-2 border rounded-lg p-3 bg-muted/30">
+      <div>
+        <label className="text-xs text-muted-foreground" htmlFor="activity-composer-type">類型</label>
+        <select
+          id="activity-composer-type"
+          value={type}
+          onChange={(e) => setType(e.target.value as ActivityType)}
+          className="w-full h-9 rounded border bg-background px-2 text-sm mt-1"
+          data-testid="activity-composer-type"
+        >
+          {(['NOTE', 'CALL', 'EMAIL', 'MEETING'] as ActivityType[]).map((t) => (
+            <option key={t} value={t}>{TYPE_META[t].label}</option>
+          ))}
+        </select>
+      </div>
       <Textarea
         id="activity-composer"
         placeholder="寫低 follow-up 進度、客戶 reply、打咗電話嘅 outcome…"
