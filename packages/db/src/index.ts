@@ -26,3 +26,13 @@ export {
   DealStatus,
   ActivityType,
 } from '@prisma/client';
+
+// P2 multi-currency (2026-06-29): single source of truth for currency
+// config reads + HKD rate computation. See ./currency.ts for rationale.
+export {
+  getCurrencyConfig,
+  hkdRateFor,
+  resolveCurrencySnapshot,
+  type CurrencyCode,
+  type CurrencyConfig,
+} from './currency';

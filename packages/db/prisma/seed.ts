@@ -513,6 +513,29 @@ async function main() {
   });
   console.log('✅ Seeded system_config.default_tax_rate = 0%');
 
+  // P2 multi-currency (2026-06-29): default currency + RMB-anchored
+  // exchange rates. Seeded via upsert so re-running `bun run db:seed`
+  // doesn't clobber admin's in-flight edits.
+  //   - `default` — what new Quotation rows default to
+  //   - `rates`   — two multipliers relative to RMB (1 RMB = X foreign)
+  // The MOP→HKD rate is derived at save time as (RMB→HKD / RMB→MOP)
+  // so the admin only needs to set two rates. If a future customer
+  // needs to override the triangle (e.g. region-specific banking),
+  // add a third key here and update the helper.
+  await prisma.systemConfig.upsert({
+    where: { key: 'currency_config' },
+    update: {},
+    create: {
+      key: 'currency_config',
+      value: {
+        default: 'RMB',
+        rates: { 'RMB->HKD': 1.08, 'RMB->MOP': 1.16 },
+      },
+      description: 'Default currency + RMB-anchored exchange rates used by Quotation. RMB→HKD and RMB→MOP are required; non-RMB currencies derive their HKD rate as RMB→HKD / RMB→<that>.',
+    },
+  });
+  console.log('✅ Seeded system_config.currency_config = RMB (HKD 1.08, MOP 1.16)');
+
   console.log('\n🎉 Seed complete!');
   console.log('\n📝 Login credentials:');
   console.log('   Admin:  admin@crm.local / admin123');
