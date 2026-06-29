@@ -864,18 +864,17 @@ export function DealDialog({
                 onChange={(e) => setCurrency(e.target.value)}
                 className="w-full h-9 rounded border bg-background px-2 text-sm"
               >
-                {/* P2 multi-currency (2026-06-29): RMB/HKD/MOP are
-                    the three system currencies (admin-configurable
-                    default in /settings/currency). USD/EUR/GBP/legacy
-                    CNY left in as fallbacks for deals priced in a
-                    non-system currency. */}
+                {/* P2 multi-currency (2026-06-29): Deal is restricted
+                    to the three system currencies (admin-configurable
+                    default in /settings/currency). Unlike Product /
+                    Service, which accept USD/EUR/GBP/legacy CNY as
+                    fallbacks for non-system-priced items, Deal
+                    pricing lives in the sales pipeline and should
+                    always snap to one of the three currencies the
+                    admin maintains rates for. */}
                 <option value="RMB">人民幣 (RMB)</option>
                 <option value="HKD">港幣 (HKD)</option>
                 <option value="MOP">澳門幣 (MOP)</option>
-                <option value="USD">美元 (USD)</option>
-                <option value="CNY">CNY</option>
-                <option value="EUR">EUR</option>
-                <option value="GBP">GBP</option>
               </select>
             </div>
             <div>
