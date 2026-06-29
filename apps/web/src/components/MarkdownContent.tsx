@@ -1,11 +1,22 @@
 /**
  * MarkdownContent — renders an assistant message body as Markdown,
- * with first-class support for chart.js code fences.
+ * with first-class support for chart.js code fences and the
+ * `<think>...</think>` reasoning blocks that reasoning models
+ * (DeepSeek R1, Qwen QwQ, etc.) emit around their chain-of-thought.
  *
  * Why: previous version (2026-06-08) rendered message.content as
  * plain text via `{message.content}` + `whitespace-pre-wrap`. That
  * dropped all formatting (headings, lists, tables, links) and made
  * data-dense answers (top-customers, revenue trend) unreadable.
+ *
+ * 2026-06-29: when the configured LLM is a reasoning model the
+ * `content` arrives with `<think>...</think>` wrappers around the
+ * chain-of-thought. Rendering the raw text showed the literal
+ * `<think>` / `</think>` markers to the user, which looked like a
+ * bug. The fix is a pre-pass that splits the source into three
+ * segment kinds (markdown / chart / think) and renders `think`
+ * segments inside a collapsed <details>; the body markdown and any
+ * chart fences are unaffected.
  *
  * Chart trigger contract — the LLM is taught (in packages/ai/src/
  * prompts.ts) to emit a fenced code block of the form:
@@ -27,36 +38,50 @@
 import { useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { Brain } from 'lucide-react';
 import { ChartBlock } from './ChartBlock';
+import { cn } from '@/lib/utils';
 
 interface MarkdownContentProps {
   source: string;
   className?: string;
 }
 
-/**
- * Split source into a list of segments. Non-chart text segments are
- * rendered with react-markdown; chart segments are rendered with
- * <ChartBlock />. Order is preserved.
- *
- * Fence detection: standard Markdown ``` fences with language tag
- * "chart" (case-insensitive). We accept the JSON on a single line
- * or pretty-printed across multiple lines.
- */
 type Segment =
   | { kind: 'markdown'; text: string }
-  | { kind: 'chart'; json: string };
+  | { kind: 'chart'; json: string }
+  | { kind: 'think'; content: string };
 
-function splitOnChartFences(source: string): Segment[] {
+/**
+ * Split the source into an ordered list of segments. We do a single
+ * pass with a combined alternation regex so a think-block and a
+ * chart fence can't accidentally nest.
+ *
+ * Note: think-blocks can contain a chart fence (the LLM can decide
+ * to "think about" a chart before emitting it), so the regex uses
+ * alternation and consumes whichever comes first from the current
+ * cursor.
+ */
+function splitOnMarkers(source: string): Segment[] {
   const out: Segment[] = [];
-  const re = /```chart\s*\n([\s\S]*?)\n```/gi;
+  // Match in this order of priority at any cursor position:
+  //   1. ```chart ... ```   (a complete chart fence)
+  //   2. <think> ... </think>   (a complete reasoning block)
+  // The `g` flag iterates through all matches in the string.
+  const re = /```chart\s*\n([\s\S]*?)\n```|<think>([\s\S]*?)<\/think>/gi;
   let lastIdx = 0;
   let m: RegExpExecArray | null;
   while ((m = re.exec(source)) !== null) {
     if (m.index > lastIdx) {
       out.push({ kind: 'markdown', text: source.slice(lastIdx, m.index) });
     }
-    out.push({ kind: 'chart', json: m[1].trim() });
+    if (m[1] !== undefined) {
+      // Chart fence
+      out.push({ kind: 'chart', json: m[1].trim() });
+    } else {
+      // Think block
+      out.push({ kind: 'think', content: (m[2] ?? '').trim() });
+    }
     lastIdx = re.lastIndex;
   }
   if (lastIdx < source.length) {
@@ -66,17 +91,50 @@ function splitOnChartFences(source: string): Segment[] {
 }
 
 export function MarkdownContent({ source, className }: MarkdownContentProps) {
-  const segments = useMemo(() => splitOnChartFences(source), [source]);
+  const segments = useMemo(() => splitOnMarkers(source), [source]);
   return (
     <div className={className}>
-      {segments.map((seg, i) =>
-        seg.kind === 'markdown' ? (
-          <MarkdownSegment key={i} text={seg.text} />
-        ) : (
-          <ChartBlock key={i} json={seg.json} />
-        ),
-      )}
+      {segments.map((seg, i) => {
+        if (seg.kind === 'chart') return <ChartBlock key={i} json={seg.json} />;
+        if (seg.kind === 'think') return <ThinkBlock key={i} content={seg.content} />;
+        return <MarkdownSegment key={i} text={seg.text} />;
+      })}
     </div>
+  );
+}
+
+/**
+ * Reasoning / chain-of-thought block from a thinking model.
+ * Rendered as a collapsible disclosure — hidden by default because
+ * sales reps want the final answer, not the LLM's scratch work, but
+ * available if they want to verify why the assistant said what it
+ * said. Inner content is rendered as markdown so reasoning that
+ * mentions lists, code, etc. still reads cleanly.
+ */
+function ThinkBlock({ content }: { content: string }) {
+  if (!content) return null;
+  return (
+    <details
+      className={cn(
+        'group my-2 rounded border border-dashed bg-muted/30 text-xs',
+        'open:bg-muted/50'
+      )}
+    >
+      <summary
+        className={cn(
+          'flex items-center gap-1.5 cursor-pointer select-none',
+          'px-2 py-1.5 text-muted-foreground hover:text-foreground',
+          'list-none [&::-webkit-details-marker]:hidden'
+        )}
+      >
+        <Brain className="h-3 w-3" />
+        <span className="font-medium">推理過程</span>
+        <span aria-hidden="true" className="text-[10px] group-open:rotate-90 transition-transform">▸</span>
+      </summary>
+      <div className="px-2 pb-2 pt-1 border-t border-dashed">
+        <MarkdownSegment text={content} />
+      </div>
+    </details>
   );
 }
 
@@ -97,20 +155,17 @@ function MarkdownSegment({ text }: { text: string }) {
 
 /**
  * Helper for the streaming reply path — the reply text is being
- * appended token-by-token, so a partial ```chart fence may arrive
- * one character at a time. We only render the Markdown if the
- * current text doesn't end mid-fence, otherwise we leave the
- * unfinished fence in the raw reply string and let the next
- * token arrive.
+ * appended token-by-token, so a partial ```chart fence (or
+ * unclosed <think>) may arrive one character at a time. We only
+ * render the Markdown if the current text doesn't end mid-marker;
+ * otherwise we leave the unfinished portion in the raw reply string
+ * and let the next token arrive.
  */
 export function StreamingMarkdown({ source }: { source: string }) {
-  // If the source ends with an unclosed ```chart or any ``` fence,
-  // don't try to render Markdown yet — return plain text and a
-  // cursor.
+  // Detect an unclosed chart fence (the legacy behavior).
   const lastTripleBacktick = source.lastIndexOf('```');
   if (lastTripleBacktick !== -1) {
     const after = source.slice(lastTripleBacktick + 3);
-    // Unclosed fence if there's no closing ``` after the opening one.
     if (!after.includes('```')) {
       return (
         <>
@@ -119,6 +174,21 @@ export function StreamingMarkdown({ source }: { source: string }) {
         </>
       );
     }
+  }
+  // Detect an unclosed <think> block. If the last occurrence of
+  // `<think>` is later than the last occurrence of `</think>`, the
+  // reasoning block is still being streamed — show the source as
+  // plain text until the close tag arrives, so we don't render a
+  // half-open details element.
+  const lastOpen = source.lastIndexOf('<think>');
+  const lastClose = source.lastIndexOf('</think>');
+  if (lastOpen !== -1 && lastOpen > lastClose) {
+    return (
+      <>
+        {source}
+        <span className="inline-block w-1.5 h-4 bg-primary ml-0.5 align-middle animate-pulse" />
+      </>
+    );
   }
   return (
     <>

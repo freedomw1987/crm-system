@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, useIsFetching } from '@tanstack/react-query';
 import { Send, Sparkles, Trash2, Plus, Loader2, User, Bot, Wrench } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/input';
@@ -76,6 +76,29 @@ export function AiChatPage() {
    * token arrives.
    */
   const [submitInFlight, setSubmitInFlight] = useState(false);
+  /**
+   * 2026-06-29: id of the conversation we just created (or just
+   * received the first reply for). Set on the `done` event; the
+   * sidebar shows a small spinner next to this row while the
+   * canonical refetch is in flight (the placeholder we
+   * `setQueryData`'d in has title="新對話" / messages=0; the
+   * refetch swaps that for the real title + count).
+   */
+  const [pendingConvId, setPendingConvId] = useState<string | null>(null);
+  // `useIsFetching` is the reactive signal — when it returns 0 the
+  // refetch is done and the spinner should hide. We also clear
+  // `pendingConvId` defensively on the same effect so the state
+  // doesn't dangle if the user navigates away mid-refetch.
+  const isFetchingConvs = useIsFetching({ queryKey: ['conversations'] }) > 0;
+  useEffect(() => {
+    if (pendingConvId && !isFetchingConvs) {
+      // Give the cache a tick to settle before clearing so the
+      // placeholder row doesn't briefly lose the spinner while the
+      // new query data is being written.
+      const t = setTimeout(() => setPendingConvId(null), 250);
+      return () => clearTimeout(t);
+    }
+  }, [pendingConvId, isFetchingConvs]);
 
   async function handleSend(messageText: string, conversationId: string | null) {
     if (!messageText.trim() || submitInFlight) return;
@@ -111,6 +134,7 @@ export function AiChatPage() {
             // refresh the page" — even though the data was committed
             // server-side well before the `done` event was sent.
             setActiveId(ev.conversationId);
+            setPendingConvId(ev.conversationId);
             qc.setQueryData<ConversationSummary[]>(['conversations'], (prev) => {
               if (!prev) return prev;
               if (prev.some((c) => c.id === ev.conversationId)) return prev;
@@ -195,6 +219,7 @@ export function AiChatPage() {
                 key={c.id}
                 conv={c}
                 active={c.id === activeId}
+                pending={c.id === pendingConvId && isFetchingConvs}
                 onClick={() => setActiveId(c.id)}
                 onDelete={() => deleteMutation.mutate(c.id)}
               />
@@ -366,11 +391,17 @@ function EmptyState({ onSend, disabled }: { onSend: (msg: string) => void; disab
 function ConversationItem({
   conv,
   active,
+  pending,
   onClick,
   onDelete,
 }: {
   conv: ConversationSummary;
   active: boolean;
+  /** 2026-06-29: this row is the freshly-created conversation and
+   *  the canonical refetch is still in flight. Show a small spinner
+   *  next to the title so the user knows the placeholder is being
+   *  upgraded to the real (title + message count) row. */
+  pending?: boolean;
   onClick: () => void;
   onDelete: () => void;
 }) {
@@ -383,7 +414,18 @@ function ConversationItem({
       onClick={onClick}
     >
       <div className="flex-1 min-w-0">
-        <div className="font-medium truncate">{conv.title}</div>
+        <div className="font-medium truncate flex items-center gap-1.5">
+          <span className="truncate">{conv.title}</span>
+          {pending && (
+            <Loader2
+              className={cn(
+                'h-3 w-3 animate-spin shrink-0',
+                active ? 'text-primary-foreground/80' : 'text-muted-foreground'
+              )}
+              aria-label="載入中"
+            />
+          )}
+        </div>
         <div className={cn('text-xs', active ? 'text-primary-foreground/70' : 'text-muted-foreground')}>
           {conv._count.messages} messages · {formatDateTime(conv.updatedAt)}
         </div>
