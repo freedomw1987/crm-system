@@ -6,6 +6,11 @@
  */
 
 import { prisma } from '@crm/db';
+// P2 multi-currency (2026-06-29): resolve the chosen currency +
+// its HKD rate before persisting the draft, so the snapshot we
+// write matches what the Quotation route does on manual create.
+// See packages/db/src/currency.ts for the rationale + edge cases.
+import { resolveCurrencySnapshot, mopRateFor, getCurrencyConfig } from '@crm/db';
 
 export interface ToolContext {
   userId: string;
@@ -229,7 +234,7 @@ const listDeals: Tool = {
 // ============================================================
 const draftQuotation: Tool = {
   name: 'draft_quotation',
-  description: 'Create a draft quotation for a company. Returns the new quotation ID. The quotation is saved as DRAFT status.',
+  description: 'Create a draft quotation for a company. Returns the new quotation ID. The quotation is saved as DRAFT status. Supports billing currency (RMB/HKD/MOP); HKD equivalent is snapshotted at save time.',
   // US-C5: the LLM is explicitly NOT trusted to make this call
   // without a human-in-the-loop sign-off. Even though the quotation
   // is created in DRAFT status (so it's not yet sent to the
@@ -261,6 +266,16 @@ const draftQuotation: Tool = {
       title: { type: 'string', description: 'Quotation title' },
       notes: { type: 'string', description: 'Internal notes' },
       taxRate: { type: 'number', description: 'Tax rate percentage (default 0)' },
+      // P2 multi-currency (2026-06-29): billing currency. If the
+      // user did not specify one, fall back to the system default
+      // (RMB by default; admin can change in /settings/currency).
+      // The HKD equivalent is snapshotted on the row so future
+      // rate changes do not rewrite the customer's contract.
+      currency: {
+        type: 'string',
+        enum: ['RMB', 'HKD', 'MOP'],
+        description: 'Billing currency for the quotation. Defaults to the system default (RMB). HKD equivalent is snapshotted.',
+      },
       prompt: { type: 'string', description: 'The original user prompt that led to this draft (for AI audit trail)' },
     },
     required: ['companyId', 'items'],
@@ -298,6 +313,65 @@ const draftQuotation: Tool = {
     const taxAmount = subtotal * (taxRate / 100);
     const total = subtotal + taxAmount;
 
+    // P2 multi-currency (2026-06-29): resolve the chosen currency +
+    // its HKD rate up-front. We call the same helper the Quotation
+    // POST route uses so the snapshot logic stays identical.
+    //
+    // Fall-back policy for the AI tool is intentionally permissive:
+    //   - explicit pick of RMB/HKD/MOP   → trust the LLM, fail loud
+    //     if the admin hasn't configured a rate (return the rate-
+    //     missing error so the user knows to fix the config)
+    //   - explicit pick of something else → silent fall back to
+    //     system default (the LLM hallucinated a currency; the
+    //     confirmation dialog will surface the actual pick)
+    //   - omitted                         → system default
+    // Without the fall-back for the "garbage string" case, a single
+    // bad model call would block the user from drafting a quote.
+    const requested = (args.currency as string | undefined) ?? null;
+    const isKnownPick = requested === 'RMB' || requested === 'HKD' || requested === 'MOP';
+    let currency: 'RMB' | 'HKD' | 'MOP' = 'RMB';
+    let rate = 1;
+    // 2026-06-29: MOP snapshot mirrors the HKD path. We resolve
+    // both rates from the same `currencyCfg` so the two snapshots
+    // can never disagree about which currency the row is in. The
+    // MOP default of 1 + totalMOP default of `total` covers the
+    // "fall-back to RMB" code path below (same as the HKD block).
+    let mopRate = 1;
+    let totalMOP = total * mopRate;
+    // totalHKD is the HKD equivalent that gets persisted on the row.
+    // Computed here so the snapshot is consistent with whatever
+    // (currency, rate) pair we resolved above.
+    let totalHKD = total * rate;
+    if (isKnownPick || requested === null) {
+      const snapshot = await resolveCurrencySnapshot(requested);
+      if (snapshot) {
+        currency = snapshot.currency;
+        rate = snapshot.rate;
+        totalHKD = total * rate;
+        // Derive mopRate from the same config the HKD helper used.
+        // Reading the config again here is one extra DB call but
+        // keeps the two helpers independent; if this becomes a
+        // hot-path concern, extend resolveCurrencySnapshot to also
+        // return mopRate (see packages/db/src/currency.ts).
+        const cfg = await getCurrencyConfig();
+        const mRate = mopRateFor(currency, cfg);
+        if (mRate != null) {
+          mopRate = mRate;
+          totalMOP = total * mopRate;
+        }
+      } else if (isKnownPick) {
+        // Known currency, no rate configured — surface the error so
+        // the confirmation dialog can tell the user what to fix.
+        throw new Error(
+          `No exchange rate configured for ${requested} → HKD. Set it in /settings/currency before drafting this quote, or omit the currency parameter to use the system default.`,
+        );
+      }
+      // requested === null and snapshot null → config is missing;
+      // fall back to RMB with rate=1 so we never block on a config
+      // gap (the currency picker in the editor will let the user
+      // pick a real one before sending).
+    }
+
     const created = await prisma.quotation.create({
       data: {
         number,
@@ -309,6 +383,11 @@ const draftQuotation: Tool = {
         taxRate,
         taxAmount,
         total,
+        currency,
+        exchangeRateToHKD: rate,
+        totalHKD,
+        exchangeRateToMOP: mopRate,
+        totalMOP,
         generatedByAi: true,
         aiPrompt: args.prompt,
         items: { create: items },
@@ -320,6 +399,12 @@ const draftQuotation: Tool = {
       number: created.number,
       company: created.company.name,
       total,
+      // P2 multi-currency (2026-06-29): surface both numbers in
+      // the tool response so the assistant can render "RMB X
+      // (≈ HKD Y, ≈ MOP Z)" without having to re-fetch.
+      currency,
+      totalHKD,
+      totalMOP,
       itemCount: created.items.length,
     };
   },

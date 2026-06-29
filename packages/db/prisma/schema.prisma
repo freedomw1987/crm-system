@@ -286,7 +286,7 @@ model Product {
   // Pricing
   unitPrice         Decimal       @db.Decimal(12, 2)
   costPrice         Decimal?      @db.Decimal(12, 2)
-  currency          String        @default("HKD")
+  currency          String        @default("RMB")
   // Inventory (optional, can be null for services)
   trackInventory    Boolean       @default(false)
   stockQuantity     Int? // null = service / not tracked
@@ -331,7 +331,7 @@ model Service {
   category    String? // e.g., "Consulting", "Implementation", "Training"
   // Pricing — locked-in total for the service; not derived from manDayLines
   unitPrice   Decimal       @db.Decimal(12, 2)
-  currency    String        @default("HKD")
+  currency    String        @default("RMB")
   // Status
   status      ServiceStatus @default(ACTIVE)
   sortOrder   Int           @default(0)
@@ -441,7 +441,25 @@ model Quotation {
   taxAmount          Decimal         @default(0) @db.Decimal(12, 2)
   discount           Decimal         @default(0) @db.Decimal(12, 2)
   total              Decimal         @default(0) @db.Decimal(12, 2)
-  currency           String          @default("HKD")
+  // Billing currency chosen by the sales rep at create/edit time.
+  // Default = RMB (the system default; admin can change in
+  // /settings/currency). The four snapshot fields below capture
+  // the HKD + MOP equivalents at save time so historical reports
+  // stay stable when the admin later changes the exchange rates.
+  //   exchangeRateToHKD — the rate that was applied (1 native unit
+  //                      → X HKD, derived for non-RMB currencies).
+  //   totalHKD          — pre-computed HKD total at save time.
+  //   exchangeRateToMOP — same, native → MOP.
+  //   totalMOP          — pre-computed MOP total at save time.
+  // Read path uses these directly; do NOT recompute on the fly, or
+  // rate changes would silently rewrite history.
+  // Legacy rows (pre-MOP-snapshot migration) leave totalMOP=0 and
+  // the display layer hides the MOP row when totalMOP==0.
+  currency           String          @default("RMB")
+  exchangeRateToHKD  Decimal         @default(1) @db.Decimal(10, 6)
+  totalHKD           Decimal         @default(0) @db.Decimal(12, 2)
+  exchangeRateToMOP  Decimal         @default(0) @db.Decimal(10, 6)
+  totalMOP           Decimal         @default(0) @db.Decimal(12, 2)
   // Content
   title              String?
   notes              String?         @db.Text
@@ -608,7 +626,7 @@ model Deal {
   status            DealStatus @default(OPEN)
   // Financial
   value             Decimal    @db.Decimal(12, 2)
-  currency          String     @default("HKD")
+  currency          String     @default("RMB")
   // Dates
   expectedCloseDate DateTime?
   closedAt          DateTime?

@@ -22,8 +22,13 @@
  *   Reads are open to any logged-in user (similar to /companies).
  *   Writes (create) are open — sales reps are expected to log their
  *   own follow-ups. Edits and deletes (PATCH/DELETE on /:id) are
- *   author-only: only the activity's `authorId` may modify it. A
- *   future perms cleanup can grant admin override via the
+ *   author-only: only the activity's `authorId` may modify it.
+ *   Attachment CRUD inherits the same author-only rule (2026-06-29):
+ *     - POST   /activities/:id/attachments  → 403 if not author
+ *     - DELETE /attachments/:id             → 403 if not author of
+ *       the parent activity (not the uploader — keeps ownership
+ *       rule consistent with activity edit/delete).
+ *   A future perms cleanup can grant admin override via the
  *   `activity:update` / `activity:delete` permissions; for now the
  *   ownership rule matches what the user requested (2026-06-27)
  *   and aligns with how Quotation edits work.
@@ -166,7 +171,7 @@ export const activityRoutes = new Elysia({ prefix: '', tags: ['activities', 'att
   .get('/activities/recent', async ({ query, set, request }) => {
     const userId = await getUserIdFromRequest(request);
     if (!userId) { set.status = 401; return { error: 'Unauthorized' }; }
-    const { limit: limitRaw, authorId, since } = query as {
+    const { limit: limitRaw, authorId, since, until } = query as {
       limit?: string;
       /** Day N+1: filter to a single sales rep (used by the Deal Kanban
        *  pipeline-meeting view). Empty/undefined = no filter. */
@@ -175,13 +180,25 @@ export const activityRoutes = new Elysia({ prefix: '', tags: ['activities', 'att
        *  instant. Lets the Kanban view limit the list to "this week" /
        *  "this month" without paging through old notes. */
       since?: string;
+      /** 2026-06-29: ISO timestamp; only return activities at-or-before
+       *  this instant. Combined with `since` this gives the Kanban view
+       *  a "last week" / custom date-range filter (the previous version
+       *  only had a lower bound, so "last week" had to be faked as a
+       *  14-day window from today). */
+      until?: string;
     };
     const limit = Math.min(Number(limitRaw ?? '10'), 50);
     // Build the where clause incrementally so undefined filters don't
-    // accidentally match everything.
+    // accidentally match everything. createdAt is an object only when
+    // at least one bound is present — passing `{ gte: undefined }` to
+    // Prisma would still emit a `createdAt > NULL` clause.
     const where: Record<string, unknown> = {};
     if (authorId) where.authorId = authorId;
-    if (since) where.createdAt = { gte: new Date(since) };
+    if (since || until) {
+      where.createdAt = {};
+      if (since) (where.createdAt as Record<string, Date>).gte = new Date(since);
+      if (until) (where.createdAt as Record<string, Date>).lte = new Date(until);
+    }
     const items = await prisma.activity.findMany({
       where,
       take: limit,
@@ -374,6 +391,14 @@ export const activityRoutes = new Elysia({ prefix: '', tags: ['activities', 'att
     if (!userId) { set.status = 401; return { error: 'Unauthorized' }; }
     const activity = await prisma.activity.findUnique({ where: { id: params.id } });
     if (!activity) { set.status = 404; return { error: 'Activity not found' }; }
+    // 2026-06-29: author-only attachment upload. Mirrors the
+    // PATCH/DELETE author check on the activity itself — the
+    // user is now editing attachments from the activity edit
+    // dialog, so the ownership rule must hold for them too.
+    if (activity.authorId !== userId) {
+      set.status = 403;
+      return { error: 'Only the author can upload attachments to this activity.' };
+    }
     const ctype = request.headers.get('content-type') ?? '';
     const m = ctype.match(/^multipart\/form-data;\s*boundary=(.+)$/i);
     if (!m) {
@@ -448,8 +473,19 @@ export const activityRoutes = new Elysia({ prefix: '', tags: ['activities', 'att
   .delete('/attachments/:id', async ({ params, set, request }) => {
     const userId = await getUserIdFromRequest(request);
     if (!userId) { set.status = 401; return { error: 'Unauthorized' }; }
-    const before = await prisma.attachment.findUnique({ where: { id: params.id } });
+    const before = await prisma.attachment.findUnique({
+      where: { id: params.id },
+      include: { activity: { select: { authorId: true } } },
+    });
     if (!before) { set.status = 404; return { error: 'Attachment not found' }; }
+    // 2026-06-29: author-only attachment delete. We check the parent
+    // activity's authorId (not the uploader) so the ownership rule
+    // stays consistent with PATCH/DELETE on /activities/:id — the
+    // activity author owns the whole record, including attachments.
+    if (before.activity.authorId !== userId) {
+      set.status = 403;
+      return { error: 'Only the activity author can delete this attachment.' };
+    }
     await prisma.attachment.delete({ where: { id: params.id } });
     const path = join(DATA_DIR, before.storageKey);
     try { await unlink(path); } catch { /* missing file is fine */ }

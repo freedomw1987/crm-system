@@ -25,6 +25,7 @@ import { AiConfigPage } from '@/pages/ai-config';
 import SettingsPage from '@/pages/settings';
 import { SettingsLayout } from '@/components/settings-layout';
 import { SettingsTaxPage } from '@/pages/settings-tax';
+import { SettingsCurrencyPage } from '@/pages/settings-currency';
 import { APP_BASENAME } from '@/lib/runtime-paths';
 // Day 14.7 Step 8 — the 5 admin pages that were at top-level routes are
 // now mounted as children of <SettingsLayout /> (below). Top-level direct
@@ -96,6 +97,7 @@ export function App() {
               <Route path="ai" element={<AiConfigPage />} />
               <Route path="man-day" element={<ManDayRolesPage />} />
               <Route path="tax" element={<SettingsTaxPage />} />
+              <Route path="currency" element={<SettingsCurrencyPage />} />
               <Route path="audit" element={<AuditPage />} />
             </Route>
           </Route>

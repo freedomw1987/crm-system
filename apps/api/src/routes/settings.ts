@@ -1,7 +1,40 @@
 import { Elysia, t } from 'elysia';
 import { prisma } from '@crm/db';
+import { getCurrencyConfig } from '@crm/db';
 import { getUserIdFromRequest, requirePermission } from '../middleware/rbac';
 import { logEvent } from '../middleware/audit';
+
+// ===================================================================
+// P2 multi-currency (2026-06-29): Default currency + exchange rates
+// ===================================================================
+// Mirrors the /settings/tax pattern. The system_config row holds a
+// JSON object:
+//
+//   { default: 'RMB' | 'HKD' | 'MOP',
+//     rates:   { 'RMB->HKD': number, 'RMB->MOP': number } }
+//
+// The two rates are multipliers (1 RMB = X foreign). MOP→HKD is
+// derived at save time as (RMB->HKD / RMB->MOP) so the admin only
+// sets two rates. See packages/db/prisma/seed.ts for the seeded
+// defaults.
+//
+// Helpers `getCurrencyConfig` / `hkdRateFor` / `resolveCurrencySnapshot`
+// live in @crm/db (see packages/db/src/currency.ts) so the Quotation
+// route + the AI agent's draft_quotation tool share one source of
+// truth. We re-export them here for any older import sites that
+// already pull from this module.
+// v1 reads from the DB on every call (saves are not hot-path). If
+// rate lookups ever become hot, swap the body of `getCurrencyConfig`
+// for a process-level cache with TTL + bust-on-write — callers don't
+// need to change.
+
+export {
+  getCurrencyConfig,
+  hkdRateFor,
+  resolveCurrencySnapshot,
+  type CurrencyCode,
+  type CurrencyConfig,
+} from '@crm/db';
 
 /**
  * Settings — Day 11
@@ -15,6 +48,10 @@ import { logEvent } from '../middleware/audit';
  *   DELETE /settings/pipelines/stages/:id — delete stage (settings:update, admin) — blocked if any active deal
  *
  * Phase 2 (deferred): /settings/system-configs for global tax rate etc.
+ *
+ * P2 multi-currency (2026-06-29) added:
+ *   GET    /settings/currency          — any authed user (mirrors /tax)
+ *   PUT    /settings/currency          — admin (settings:update)
  */
 
 export const settingsRoutes = new Elysia({ prefix: '/settings', tags: ['settings'] })
@@ -330,6 +367,124 @@ export const settingsRoutes = new Elysia({ prefix: '/settings', tags: ['settings
     {
       body: t.Object({
         rate: t.Number({ minimum: 0, maximum: 100 }),
+      }),
+    }
+  )
+
+  // ===================================================================
+  // P2 multi-currency: GET /settings/currency
+  // ===================================================================
+  // Any authed user (no permission gate), mirrors getTax so the
+  // quotation builder can pre-fill without a separate permission
+  // roundtrip. Returns the full SystemConfig row (default, rates,
+  // description, updatedAt, updatedBy) so the UI can show the
+  // "last updated by" footer like the tax page does.
+  .get(
+    '/currency',
+    async ({ set }) => {
+      const row = await prisma.systemConfig.findUnique({
+        where: { key: 'currency_config' },
+        include: { updatedBy: { select: { id: true, name: true, email: true } } },
+      });
+      const cfg = await getCurrencyConfig();
+      if (!row) {
+        // Seed should have created it. Graceful degrade: return
+        // the hard-coded defaults so the UI doesn't blow up.
+        return {
+          key: 'currency_config',
+          default: cfg.default,
+          rates: cfg.rates,
+          description: null,
+          updatedAt: null,
+          updatedBy: null,
+        };
+      }
+      return {
+        key: row.key,
+        default: cfg.default,
+        rates: cfg.rates,
+        description: row.description,
+        updatedAt: row.updatedAt,
+        updatedBy: row.updatedBy,
+      };
+    },
+    { detail: { summary: 'Get default currency + exchange rates' } }
+  )
+
+  // ===================================================================
+  // P2 multi-currency: PUT /settings/currency
+  // ===================================================================
+  // Admin only. Mirrors putTax. Audit row includes the before/after
+  // diff in metadata so the audit-log page can show what changed.
+  // The currency config is a single object, so we store both old
+  // and new as the whole JSON payload (matches the default_tax_rate
+  // pattern of { key, oldValue, newValue }).
+  .use(requirePermission('settings:update'))
+  .put(
+    '/currency',
+    async ({ body, set, request }) => {
+      const userId = await getUserIdFromRequest(request);
+      if (!userId) {
+        set.status = 401;
+        return { error: 'Unauthorized' };
+      }
+
+      const { default: newDefault, rates: newRates } = body as {
+        default: 'RMB' | 'HKD' | 'MOP';
+        rates: { 'RMB->HKD': number; 'RMB->MOP': number };
+      };
+
+      const oldCfg = await getCurrencyConfig();
+
+      const updated = await prisma.systemConfig.upsert({
+        where: { key: 'currency_config' },
+        update: {
+          // Store as a plain JSON object — Prisma's Json column
+          // serializes native objects.
+          value: { default: newDefault, rates: newRates },
+          updatedById: userId,
+        },
+        create: {
+          key: 'currency_config',
+          value: { default: newDefault, rates: newRates },
+          updatedById: userId,
+          description: 'Default currency + RMB-anchored exchange rates used by Quotation. RMB→HKD and RMB→MOP are required; non-RMB currencies derive their HKD rate as RMB→HKD / RMB→<that>.',
+        },
+        include: { updatedBy: { select: { id: true, name: true, email: true } } },
+      });
+
+      await logEvent({
+        actorId: userId,
+        action: 'SYSTEM_CONFIG_UPDATED',
+        resourceType: 'system_config',
+        resourceId: 'currency_config',
+        description: `Updated currency config: default ${oldCfg.default} → ${newDefault}; rates RMB→HKD ${oldCfg.rates['RMB->HKD']} → ${newRates['RMB->HKD']}, RMB→MOP ${oldCfg.rates['RMB->MOP']} → ${newRates['RMB->MOP']}`,
+        metadata: {
+          key: 'currency_config',
+          oldValue: { default: oldCfg.default, rates: oldCfg.rates },
+          newValue: { default: newDefault, rates: newRates },
+        },
+        request,
+      });
+
+      return {
+        key: updated.key,
+        default: newDefault,
+        rates: newRates,
+        description: updated.description,
+        updatedAt: updated.updatedAt,
+        updatedBy: updated.updatedBy,
+      };
+    },
+    {
+      body: t.Object({
+        default: t.UnionEnum(['RMB', 'HKD', 'MOP']),
+        rates: t.Object({
+          // exclusiveMinimum: 0 = "value must be > 0" (TypeBox
+          // treats it as a numeric bound, not a boolean).
+          'RMB->HKD': t.Number({ minimum: 0, exclusiveMinimum: 0 }),
+          'RMB->MOP': t.Number({ minimum: 0, exclusiveMinimum: 0 }),
+        }),
       }),
     }
   );

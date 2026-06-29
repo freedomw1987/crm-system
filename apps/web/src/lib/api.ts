@@ -310,6 +310,19 @@ export interface Quotation {
   taxRate: number;
   taxAmount: number;
   total: number;
+  // P2 multi-currency (2026-06-29): billing currency chosen by the
+  // sales rep, plus the HKD + MOP snapshots that were persisted at
+  // save time. The detail page renders the native total in this
+  // currency AND a `≈ HKD {totalHKD} @ {rate}` line AND a
+  // `≈ MOP {totalMOP} @ {rate}` line below it. The snapshots are
+  // immutable on the row — future rate changes do not rewrite
+  // historical quotations. Legacy rows (pre-MOP-snapshot migration)
+  // have totalMOP=0 and the display layer hides the MOP row.
+  currency: string;
+  exchangeRateToHKD?: number | string;
+  totalHKD?: number | string;
+  exchangeRateToMOP?: number | string;
+  totalMOP?: number | string;
   notes?: string | null;
   generatedByAi: boolean;
   aiPrompt?: string | null;
@@ -381,10 +394,15 @@ export const quotationsApi = {
     title?: string;
     notes?: string;
     taxRate?: number;
+    // P2 multi-currency (2026-06-29): billing currency. When
+    // omitted, the route defaults to the system default (RMB).
+    // SENT quotations lock `currency` — the server returns 409 if
+    // a stale UI tries to change it.
+    currency?: 'RMB' | 'HKD' | 'MOP';
     validUntil?: string;
     items: QuotationItemInput[];
   }) => request<Quotation>('/quotations', { method: 'POST', body: JSON.stringify(data) }),
-  update: (id: string, data: Partial<Pick<Quotation, 'title' | 'notes' | 'taxRate' | 'status' | 'validUntil' | 'dealId' | 'salesRepId'>>) =>
+  update: (id: string, data: Partial<Pick<Quotation, 'title' | 'notes' | 'taxRate' | 'status' | 'validUntil' | 'dealId' | 'salesRepId' | 'currency'>>) =>
     request<Quotation>(`/quotations/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   remove: (id: string) => request<{ success: boolean }>(`/quotations/${id}`, { method: 'DELETE' }),
   // 2026-06-26: quick-hack revise flow. Clones the source as a
@@ -500,9 +518,9 @@ export const dealsApi = {
   /** Day 8: Move deal to a new stage (drag-drop endpoint). */
   moveStage: (id: string, stageId: string) =>
     request<Deal>(`/deals/${id}/stage`, { method: 'PATCH', body: JSON.stringify({ stageId }) }),
-  create: (data: { title: string; companyId: string; value: number; stageId: string; ownerId?: string; probability?: number; expectedCloseDate?: string; description?: string }) =>
+  create: (data: { title: string; companyId: string; value: number; stageId: string; ownerId?: string; probability?: number; expectedCloseDate?: string; description?: string; currency?: string }) =>
     request<Deal>('/deals', { method: 'POST', body: JSON.stringify(data) }),
-  update: (id: string, data: Partial<{ title: string; value: number; probability: number; expectedCloseDate: string; description: string; ownerId?: string | null }>) =>
+  update: (id: string, data: Partial<{ title: string; value: number; probability: number; expectedCloseDate: string; description: string; ownerId?: string | null; currency?: string }>) =>
     request<Deal>(`/deals/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   remove: (id: string) => request<{ success: boolean }>(`/deals/${id}`, { method: 'DELETE' }),
 };
@@ -902,11 +920,14 @@ export const activitiesApi = {
     Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') qs.set(k, String(v)); });
     return request<{ items: Activity[]; total: number }>(`/activities${qs.toString() ? `?${qs}` : ''}`);
   },
-  recent: (params: { limit?: number; authorId?: string; since?: string } = {}) => {
+  recent: (params: { limit?: number; authorId?: string; since?: string; until?: string } = {}) => {
     const qs = new URLSearchParams();
     if (params.limit !== undefined) qs.set('limit', String(Math.min(params.limit, 50)));
     if (params.authorId) qs.set('authorId', params.authorId);
     if (params.since) qs.set('since', params.since);
+    // 2026-06-29: optional upper bound for the Kanban view's
+    // "last week" / custom date-range filters.
+    if (params.until) qs.set('until', params.until);
     return request<{ items: Activity[]; total: number }>(`/activities/recent${qs.toString() ? `?${qs}` : ''}`);
   },
   create: (data: { companyId?: string; dealId?: string; type?: ActivityType; content: string }) =>
@@ -1021,11 +1042,38 @@ export interface TaxConfig {
   updatedBy?: { id: string; name: string; email: string } | null;
 }
 
+// P2 multi-currency (2026-06-29): mirrors TaxConfig for the new
+// currency settings endpoint. The `default` is what new Quotation
+// rows default to (RMB / HKD / MOP); `rates` is the two RMB-anchored
+// exchange rates the admin sets, and the MOP→HKD rate is derived
+// at save time as (RMB->HKD / RMB->MOP). The Quotation builder
+// fetches this at open time so the currency picker can pre-fill.
+export interface CurrencyConfig {
+  key: string;
+  default: 'RMB' | 'HKD' | 'MOP';
+  rates: { 'RMB->HKD': number; 'RMB->MOP': number };
+  description?: string | null;
+  updatedAt?: string | null;
+  updatedBy?: { id: string; name: string; email: string } | null;
+}
+
 export const settingsApi = {
   // Tax Rate (global default; per-quotation override still allowed in builder)
   getTax: () => request<TaxConfig>('/settings/tax'),
   putTax: (data: { rate: number }) =>
     request<TaxConfig>('/settings/tax', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  // P2 multi-currency (2026-06-29): default currency + exchange
+  // rates. Read mirrors getTax (any authed user — Quotation
+  // builder needs to read it without an extra permission round
+  // trip). Write is admin-only; the server enforces it via the
+  // settings:update permission.
+  getCurrency: () => request<CurrencyConfig>('/settings/currency'),
+  putCurrency: (data: { default: 'RMB' | 'HKD' | 'MOP'; rates: { 'RMB->HKD': number; 'RMB->MOP': number } }) =>
+    request<CurrencyConfig>('/settings/currency', {
       method: 'PUT',
       body: JSON.stringify(data),
     }),

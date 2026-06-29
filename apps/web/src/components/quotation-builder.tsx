@@ -15,7 +15,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, Plus, Trash2, X, Package, Briefcase, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input, Textarea } from '@/components/ui/input';
-import { Label } from '@/components/ui/select';
+import { Label, Select } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -121,6 +121,55 @@ function lineTotal(line: DraftLine): number {
   return qty * price * (1 - disc / 100);
 }
 
+/**
+ * Compute the rate-to-HKD multiplier for a chosen currency.
+ *
+ *   HKD → HKD: 1
+ *   RMB → HKD: cfg.rates['RMB->HKD']
+ *   MOP → HKD: cfg.rates['RMB->HKD'] / cfg.rates['RMB->MOP']
+ *
+ * Mirrors the server-side `hkdRateFor` helper in
+ * apps/api/src/routes/settings.ts so the builder's preview matches
+ * the value that will be persisted. Returns 0 if config is missing
+ * (the HKD preview line is hidden in that case — the user will
+ * see the real number after save+reload).
+ */
+function hkdRateFromConfig(
+  picked: 'RMB' | 'HKD' | 'MOP',
+  cfg: { rates: { 'RMB->HKD': number; 'RMB->MOP': number } } | null,
+): number {
+  if (!cfg) return 0;
+  if (picked === 'HKD') return 1;
+  if (picked === 'RMB') return cfg.rates['RMB->HKD'];
+  const m = cfg.rates['RMB->MOP'];
+  if (!Number.isFinite(m) || m <= 0) return 0;
+  return cfg.rates['RMB->HKD'] / m;
+}
+
+/**
+ * 2026-06-29: mirror of `hkdRateFromConfig` for the MOP equivalent
+ * row. Math:
+ *   MOP → MOP: 1
+ *   RMB → MOP: cfg.rates['RMB->MOP']
+ *   HKD → MOP: cfg.rates['RMB->MOP'] / cfg.rates['RMB->HKD']
+ * Returns 0 when the config is missing or the divisor is
+ * non-positive — same defensive pattern as `hkdRateFromConfig`.
+ * Used only for the live preview row in the Totals card; the
+ * saved snapshot on the Quotation row is the source of truth
+ * after save+reload (see apps/api/src/routes/quotation.ts).
+ */
+function mopRateFromConfig(
+  picked: 'RMB' | 'HKD' | 'MOP',
+  cfg: { rates: { 'RMB->HKD': number; 'RMB->MOP': number } } | null,
+): number {
+  if (!cfg) return 0;
+  if (picked === 'MOP') return 1;
+  if (picked === 'RMB') return cfg.rates['RMB->MOP'];
+  const h = cfg.rates['RMB->HKD'];
+  if (!Number.isFinite(h) || h <= 0) return 0;
+  return cfg.rates['RMB->MOP'] / h;
+}
+
 export function QuotationBuilder({
   existing, initialDealId, initialCompanyId, defaultCompanyId, defaultDealId, onSaved, onCancel,
 }: QuotationBuilderProps) {
@@ -149,6 +198,21 @@ export function QuotationBuilder({
   // the tax-rate input. If they have, the auto-prefill effect below won't
   // overwrite their value when getTax() resolves.
   const [userTouchedTax, setUserTouchedTax] = useState<boolean>(false);
+  // P2 multi-currency (2026-06-29): billing currency + chosen-flag.
+  // Same pre-fill pattern as the tax rate (system default in CREATE
+  // mode, existing value in EDIT mode). The `userTouchedCurrency`
+  // guard means a slow getCurrency() fetch can't clobber a value
+  // the user already picked.
+  const [currency, setCurrency] = useState<'RMB' | 'HKD' | 'MOP'>(
+    (existing?.currency as 'RMB' | 'HKD' | 'MOP' | undefined) ?? 'RMB',
+  );
+  const [userTouchedCurrency, setUserTouchedCurrency] = useState<boolean>(false);
+  // Cache of the latest system config (default + rates). The rate
+  // lets us show `≈ HKD X @ rate` in the Totals card before save.
+  const [currencyConfig, setCurrencyConfig] = useState<{
+    default: 'RMB' | 'HKD' | 'MOP';
+    rates: { 'RMB->HKD': number; 'RMB->MOP': number };
+  } | null>(null);
   const [validUntil, setValidUntil] = useState<string>(
     existing?.validUntil ? existing.validUntil.slice(0, 10) : ''
   );
@@ -228,6 +292,31 @@ export function QuotationBuilder({
     // not on taxRate changes (to avoid re-fetches after the prefill).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [existing, userTouchedTax]);
+
+  // P2 multi-currency (2026-06-29): prefill the currency picker on
+  // mount from /api/settings/currency. Cache the config (default +
+  // rates) so the Totals card can show the live HKD-equivalent
+  // preview without re-fetching. Mirrors the tax prefill above —
+  // the `userTouchedCurrency` guard means a slow fetch can't
+  // overwrite a value the user already picked (e.g. for a quote
+  // already in flight when admin changes the system default).
+  useEffect(() => {
+    let alive = true;
+    settingsApi.getCurrency()
+      .then((cfg) => {
+        if (!alive) return;
+        setCurrencyConfig(cfg);
+        if (!existing && !userTouchedCurrency) {
+          setCurrency(cfg.default);
+        }
+      })
+      .catch(() => {
+        // Non-fatal: if /settings/currency fails, the user can still
+        // pick a currency manually. Don't block the form.
+      });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [existing, userTouchedCurrency]);
 
   // Live totals
   const subtotal = useMemo(() => lines.reduce((s, l) => s + lineTotal(l), 0), [lines]);
@@ -353,6 +442,15 @@ export function QuotationBuilder({
           taxRate,
           validUntil: validUntil || undefined,
           dealId: dealId || null,
+          // P2 multi-currency (2026-06-29): only send `currency`
+          // when the user actually changed it, mirroring the
+          // salesRepId pattern below. The server treats an omitted
+          // field as "leave unchanged" (see apps/api/src/routes/
+          // quotation.ts:735). Sending the current value verbatim
+          // on every save would also work but it would churn the
+          // SENT-lock audit log with no-op diffs.
+          currency:
+            currency === existing.currency ? undefined : currency,
           // 2026-06-26: only send salesRepId when it changed so the
           // backend doesn't touch the FK on no-op saves (undefined
           // means "leave unchanged"). If the user explicitly cleared
@@ -406,6 +504,11 @@ export function QuotationBuilder({
           title: title || undefined,
           notes: notes || undefined,
           taxRate,
+          // P2 multi-currency (2026-06-29): billing currency. Always
+          // send (the state is initialised to existing.currency on
+          // EDIT and to the system default on CREATE so it's never
+          // undefined here).
+          currency,
           validUntil: validUntil || undefined,
           items: validLines.map((l) => ({
             itemType: l.itemType,
@@ -489,6 +592,32 @@ export function QuotationBuilder({
             }}
           />
         </div>
+        {/* P2 multi-currency (2026-06-29): 出單貨幣 picker. Sits in
+            its own 2-col cell so the label + dropdown have room to
+            breathe. The system default (loaded from /settings/currency)
+            pre-fills CREATE mode; EDIT mode pre-fills from the existing
+            row. The SENT lock means edits to a SENT quote's currency
+            return 409 — the server enforces that path. */}
+        <div className="space-y-1.5 md:col-span-2">
+          <Label htmlFor="currency">出單貨幣</Label>
+          <Select
+            id="currency"
+            className="max-w-xs"
+            value={currency}
+            onChange={(e) => {
+              setUserTouchedCurrency(true);
+              setCurrency(e.target.value as 'RMB' | 'HKD' | 'MOP');
+            }}
+          >
+            <option value="RMB">人民幣 (RMB)</option>
+            <option value="HKD">港幣 (HKD)</option>
+            <option value="MOP">澳門幣 (MOP)</option>
+          </Select>
+          <p className="text-[11px] text-muted-foreground">
+            新建報價預設跟 <a href="/settings/currency" className="underline">系統設定</a>;
+            HKD 等值會喺儲存時 snapshot。
+          </p>
+        </div>
         {/* 2026-06-26: 銷售員 picker. Pre-fills from existing.salesRepId
             in edit mode; null in create mode (the backend defaults to
             the authenticated user). The user can override either way.
@@ -555,17 +684,57 @@ export function QuotationBuilder({
       <Card>
         <CardContent className="p-4 space-y-1 text-sm">
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Subtotal</span>
-            <span className="tabular-nums">{formatCurrency(subtotal)}</span>
+            <span className="text-muted-foreground">Subtotal ({currency})</span>
+            <span className="tabular-nums">{formatCurrency(subtotal, currency)}</span>
           </div>
           <div className="flex justify-between">
             <span className="text-muted-foreground">Tax ({taxRate}%)</span>
-            <span className="tabular-nums">{formatCurrency(taxAmount)}</span>
+            <span className="tabular-nums">{formatCurrency(taxAmount, currency)}</span>
           </div>
           <div className="flex justify-between border-t pt-2 mt-2 text-base font-bold">
-            <span>Total</span>
-            <span className="tabular-nums">{formatCurrency(total)}</span>
+            <span>Total ({currency})</span>
+            <span className="tabular-nums">{formatCurrency(total, currency)}</span>
           </div>
+          {/* P2 multi-currency (2026-06-29): HKD equivalent preview.
+              Mirrors the detail-page row that prints under the Total.
+              Hidden when the chosen currency is HKD (redundant). The
+              rate is sourced from /settings/currency so it reflects
+              any admin edits since the page loaded. */}
+          {currency !== 'HKD' && (() => {
+            const rate = hkdRateFromConfig(currency, currencyConfig);
+            if (rate <= 0) return null;
+            const totalHKD = total * rate;
+            return (
+              <div
+                className="flex justify-between text-xs text-muted-foreground pt-1"
+                title="用 /settings/currency 嘅當前匯率計算。儲存後呢個數字會用嗰個時候嘅匯率 snapshot 落 row,改系統匯率唔會再重寫。"
+              >
+                <span>≈ HKD (匯率 {rate.toFixed(4)})</span>
+                <span className="tabular-nums">{formatCurrency(totalHKD, 'HKD')}</span>
+              </div>
+            );
+          })()}
+          {/* P2 multi-currency (2026-06-30): MOP equivalent preview.
+              Mirror of the HKD row above; hidden when the chosen
+              currency is MOP (redundant). Rate is sourced from
+              /settings/currency so it reflects admin edits since the
+              page loaded. After save+reload the snapshot value on
+              the Quotation row is the source of truth (replacing
+              this live preview). */}
+          {currency !== 'MOP' && (() => {
+            const rate = mopRateFromConfig(currency, currencyConfig);
+            if (rate <= 0) return null;
+            const totalMOP = total * rate;
+            return (
+              <div
+                className="flex justify-between text-xs text-muted-foreground pt-1"
+                title="用 /settings/currency 嘅當前匯率計算。儲存後呢個數字會用嗰個時候嘅匯率 snapshot 落 row,改系統匯率唔會再重寫。"
+              >
+                <span>≈ MOP (匯率 {rate.toFixed(4)})</span>
+                <span className="tabular-nums">{formatCurrency(totalMOP, 'MOP')}</span>
+              </div>
+            );
+          })()}
           {/* Total GP summary — emerald so it stands out from cost rows.
               Service lines in CREATE mode don't contribute (costRate is
               server-side only), so the % is a partial best-effort
@@ -583,7 +752,7 @@ export function QuotationBuilder({
               )}
             </span>
             <span className="tabular-nums text-emerald-700 dark:text-emerald-400 font-medium">
-              {formatCurrency(totalGp)} ({totalGpPct.toFixed(0)}%)
+              {formatCurrency(totalGp, currency)} ({totalGpPct.toFixed(0)}%)
             </span>
           </div>
         </CardContent>

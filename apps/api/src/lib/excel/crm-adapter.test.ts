@@ -87,6 +87,69 @@ describe("adaptCrmQuotationForExcel", () => {
     expect(flat.revision).toBe("0"); // CRM 冇 revision, 預設 0
   });
 
+  test("P2 multi-currency (2026-06-29): thread currency + HKD snapshot", () => {
+    // Persisted currency + rate + totalHKD should pass through 1:1
+    // so the worksheet reads the customer's chosen currency, not
+    // a region-derived guess.
+    const q = makeBaseQuotation({
+      currency: "RMB",
+      exchangeRateToHKD: 1.08,
+      totalHKD: 162000, // 150000 * 1.08
+    });
+    const flat = adaptCrmQuotationForExcel(q);
+    expect(flat.currency).toBe("RMB");
+    expect(flat.exchangeRateToHKD).toBe(1.08);
+    expect(flat.total_price_hkd).toBe(162000);
+  });
+
+  test("P2 multi-currency: total_price_hkd falls back to total * rate when persisted totalHKD is missing (legacy rows)", () => {
+    // Pre-migration rows have totalHKD=0 (backfill coped with HKD-
+    // denominated rows where totalHKD == total, but if a row was
+    // somehow missed the fallback should re-derive it from the
+    // rate so the worksheet doesn't emit 0.00 HKD).
+    const q = makeBaseQuotation({
+      currency: "MOP",
+      exchangeRateToHKD: 0.931, // 1.08 / 1.16
+      totalHKD: 0,
+    });
+    const flat = adaptCrmQuotationForExcel(q);
+    // 150000 * 0.931 = 139650 (approx, re-derived from rate)
+    expect(flat.total_price_hkd).toBeCloseTo(150000 * 0.931, 2);
+  });
+
+  test("P2 multi-currency (2026-06-29): thread currency + MOP snapshot", () => {
+    // Mirrors the HKD test above. Persisted MOP rate + totalMOP
+    // should pass through 1:1 so the worksheet renders the MOP-
+    // equivalent row using the persisted snapshot, not a live
+    // recompute (which would silently rewrite history when the
+    // admin later edits the rates in /settings/currency).
+    const q = makeBaseQuotation({
+      currency: "RMB",
+      exchangeRateToMOP: 1.16,
+      totalMOP: 174000, // 150000 * 1.16
+    });
+    const flat = adaptCrmQuotationForExcel(q);
+    expect(flat.currency).toBe("RMB");
+    expect(flat.exchangeRateToMOP).toBe(1.16);
+    expect(flat.total_price_mop).toBe(174000);
+  });
+
+  test("P2 multi-currency: total_price_mop falls back to total * rate when persisted totalMOP is missing (pre-MOP-snapshot legacy rows)", () => {
+    // Pre-MOP-snapshot rows have totalMOP = 0 and exchangeRateToMOP = 0.
+    // The fallback `total * rate` won't help (rate is also 0), so the
+    // worksheet should emit 0 MOP — and the worksheet helper hides the
+    // MOP row when total_price_mop == 0. This test just locks in the
+    // adapter's behavior so a future refactor doesn't accidentally
+    // invent a fake MOP value for legacy rows.
+    const q = makeBaseQuotation({
+      currency: "HKD",
+      exchangeRateToMOP: 0,
+      totalMOP: 0,
+    });
+    const flat = adaptCrmQuotationForExcel(q);
+    expect(flat.total_price_mop).toBe(0);
+  });
+
   test("region label: maps all 4 Region.code values to bc-quotation labels", () => {
     for (const [code, expected] of [
       ["HK", "HK 香港"],

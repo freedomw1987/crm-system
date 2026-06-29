@@ -1,6 +1,7 @@
 import { Elysia, t } from 'elysia';
 import { Prisma } from '@crm/db';
 import { prisma } from '@crm/db';
+import { getCurrencyConfig } from '@crm/db';
 import { logEvent } from '../middleware/audit';
 import { authContext } from '../lib/context';
 import { requirePermission, getUserIdFromRequest } from '../middleware/rbac';
@@ -221,6 +222,10 @@ export const dealRoutes = new Elysia({ prefix: '/deals', tags: ['deals'] })
       description?: string;
       probability?: number | string;
       status?: 'OPEN' | 'WON' | 'LOST';
+      // P2 multi-currency (2026-06-29): frontend may pass an explicit
+      // currency (the picker default). Omitted → server falls back
+      // to the admin-set system default via getCurrencyConfig().
+      currency?: string;
     };
     // Resolve pipelineId from the stage if not supplied
     let pipelineId = incoming.pipelineId;
@@ -242,6 +247,15 @@ export const dealRoutes = new Elysia({ prefix: '/deals', tags: ['deals'] })
     // so the ownerId default works in this route specifically.
     const ownerId = incoming.ownerId ?? userId ?? await getUserIdFromRequest(request);
     if (!ownerId) { set.status = 400; return { error: 'ownerId is required (no user in context)' }; }
+    // P2 multi-currency (2026-06-29): default the deal's currency to
+    // the admin-configured system default rather than the hardcoded
+    // Prisma default. The frontend may also pass an explicit `currency`
+    // (e.g. when the sales rep picked a non-default one); honour that
+    // when present. We deliberately do NOT snapshot an exchange rate
+    // here — Deal doesn't carry one (only Quotation does). Display
+    // paths that sum across deals handle the mixed-currency caveat.
+    const currencyCfg = await getCurrencyConfig();
+    const dealCurrency = incoming.currency ?? currencyCfg.default;
     // RG-2026-06-07-DEAL-AUTOCOMPLETE: use the UncheckedCreateInput
     // shape (flat FK columns) so we can specify companyId / stageId /
     // pipelineId / ownerId as plain strings. The "checked" input type
@@ -253,6 +267,7 @@ export const dealRoutes = new Elysia({ prefix: '/deals', tags: ['deals'] })
         title: incoming.title,
         value: new Prisma.Decimal(Number(incoming.value)),
         status: incoming.status ?? 'OPEN',
+        currency: dealCurrency,
         ...(incoming.expectedCloseDate ? { expectedCloseDate: incoming.expectedCloseDate } : {}),
         ...(incoming.description ? { description: incoming.description } : {}),
         ...(incoming.probability != null ? { probability: new Prisma.Decimal(Number(incoming.probability)) } : {}),
@@ -285,15 +300,18 @@ export const dealRoutes = new Elysia({ prefix: '/deals', tags: ['deals'] })
       value: t.Numeric(), // accepts number OR numeric string ("0", "1234.56")
       // Optional fields commonly filled in by the QuotationBuilder's
       // Quick-Create dialog. Anything else (description, status,
-      // probability, lostReason, aiInsights, closedAt, currency) is
+      // probability, lostReason, aiInsights, closedAt) is
       // server-side defaulted so the Quick-Create flow doesn't have to
-      // care about them.
+      // care about them. `currency` is now exposed (2026-06-29):
+      // defaults to the admin's system currency at request time
+      // when omitted, rather than the hardcoded Prisma default.
       expectedCloseDate: t.Optional(t.Date()),
       pipelineId: t.Optional(t.String()),
       ownerId: t.Optional(t.String()),
       description: t.Optional(t.String({ maxLength: 5000 })),
       probability: t.Optional(t.Numeric()),
       status: t.Optional(t.Union([t.Literal('OPEN'), t.Literal('WON'), t.Literal('LOST')])),
+      currency: t.Optional(t.String({ minLength: 3, maxLength: 3 })),
     }),
   })
   .use(requirePermission('deal:update'))
@@ -329,6 +347,13 @@ export const dealRoutes = new Elysia({ prefix: '/deals', tags: ['deals'] })
       // contractual-state concept — owner reassignment is always
       // permitted (e.g. when a sales rep leaves the company).
       ownerId: t.Optional(t.Union([t.String(), t.Null()])),
+      // P2 multi-currency (2026-06-29): sales rep can change a deal's
+      // billing currency post-creation. The frontend picker only offers
+      // RMB/HKD/MOP (the three system currencies); backend trusts
+      // whatever string the client sends. Free-form `string` instead of
+      // an enum keeps the schema in sync with Product / Service, which
+      // also accept legacy USD/EUR/GBP entries.
+      currency: t.Optional(t.String({ minLength: 3, maxLength: 3 })),
       // Stage is intentionally NOT in PATCH body: stage changes go
       // through the dedicated /:id/stage endpoint so the backend can
       // set status + closedAt correctly.

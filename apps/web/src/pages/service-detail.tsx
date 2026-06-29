@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input, Textarea } from '@/components/ui/input';
 import { Select, Label } from '@/components/ui/select';
-import { servicesApi, type ServiceManDay } from '@/lib/api';
+import { servicesApi, settingsApi, type ServiceManDay } from '@/lib/api';
 import { ManDayEditor, type ManDayRow, toWireRows } from '@/components/man-day-editor';
 import { formatCurrency } from '@/lib/utils';
 
@@ -24,7 +24,18 @@ export function ServiceDetailPage() {
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [currency, setCurrency] = useState('HKD');
+  // P2 multi-currency (2026-06-29): default to the system-set
+  // default currency (e.g. RMB) instead of hard-coded HKD, so when
+  // editing a legacy service that was created before the schema
+  // default flipped, the picker shows the right starting point.
+  // Falls back to 'RMB' if the API call hasn't resolved yet — matches
+  // the schema default and the seeded currency_config.
+  const { data: currencyCfg } = useQuery({
+    queryKey: ['settings', 'currency'],
+    queryFn: () => settingsApi.getCurrency(),
+    staleTime: 60_000,
+  });
+  const [currency, setCurrency] = useState<string>(currencyCfg?.default ?? 'RMB');
   const [status, setStatus] = useState<'ACTIVE' | 'ARCHIVED' | 'DRAFT'>('ACTIVE');
   const [manDays, setManDays] = useState<ManDayRow[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -136,11 +147,18 @@ export function ServiceDetailPage() {
             <div className="space-y-1.5">
               <Label htmlFor="currency">貨幣</Label>
               <Select id="currency" value={currency} onChange={(e) => setCurrency(e.target.value)}>
-                <option>HKD</option>
-                <option>USD</option>
-                <option>CNY</option>
-                <option>EUR</option>
-                <option>GBP</option>
+                {/* P2 multi-currency (2026-06-29): RMB/HKD/MOP are the
+                    three system-currencies (admin-configurable in
+                    /settings/currency). USD/EUR/GBP left in as legacy
+                    fallbacks for any service priced in a non-system
+                    currency. */}
+                <option value="RMB">人民幣 (RMB)</option>
+                <option value="HKD">港幣 (HKD)</option>
+                <option value="MOP">澳門幣 (MOP)</option>
+                <option value="USD">美元 (USD)</option>
+                <option value="CNY">CNY</option>
+                <option value="EUR">EUR</option>
+                <option value="GBP">GBP</option>
               </Select>
             </div>
             <div className="space-y-1.5">

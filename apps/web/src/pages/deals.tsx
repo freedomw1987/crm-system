@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { dealsApi, companiesApi, type KanbanData, type Deal, type Company } from '@/lib/api';
+import { dealsApi, companiesApi, settingsApi, type KanbanData, type Deal, type Company } from '@/lib/api';
 import { formatCurrency } from '@/lib/utils';
 import { CompanyAutocomplete } from '@/components/company-autocomplete';
 import { MultiCompanyAutocomplete } from '@/components/multi-company-autocomplete';
@@ -128,8 +128,9 @@ export function DealsPage() {
   });
 
   // Day N+1 (P1-X): delete a deal from the Kanban card. The Trash icon
-  // sits next to the Edit2 icon (group-hover) on the top-right of each
-  // card. We invalidate every kanban variant (regardless of active
+  // sits at the visual right edge of the card's top-right hover group
+  // (per 2026-06-29 user request — destructive action furthest from
+  // the eye). We invalidate every kanban variant (regardless of active
   // filter) so any cached view stays in sync.
   const deleteDeal = useMutation({
     mutationFn: (dealId: string) => dealsApi.remove(dealId),
@@ -159,6 +160,22 @@ export function DealsPage() {
     return { totalValue, weightedValue, openCount };
   }, [kanban]);
 
+  // P2 multi-currency (2026-06-29): stats display amounts in the
+  // admin-configured system default (typically RMB). Falls back to
+  // 'RMB' until the API call resolves, matching the schema default.
+  // Caveat: this sums deals across mixed currencies (since Deal
+  // doesn't snapshot exchangeRateToHKD — only Quotation does). For
+  // v1 we accept that the sum is unitless; converting each deal to
+  // HKD-equivalent would require a Deal.currency rate, which is a
+  // bigger schema change. Sales teams reading the stat should
+  // interpret it as "rough magnitude" not "exact total".
+  const { data: currencyCfg } = useQuery({
+    queryKey: ['settings', 'currency'],
+    queryFn: () => settingsApi.getCurrency(),
+    staleTime: 60_000,
+  });
+  const systemCurrency = currencyCfg?.default ?? 'RMB';
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
@@ -171,7 +188,7 @@ export function DealsPage() {
         <div className="flex items-center gap-3">
           <div className="text-right text-sm hidden md:block">
             <div className="text-muted-foreground text-xs">Open / Total</div>
-            <div className="font-semibold">{stats.openCount} deals · {formatCurrency(stats.totalValue)}</div>
+            <div className="font-semibold">{stats.openCount} deals · {formatCurrency(stats.totalValue, systemCurrency)}</div>
           </div>
           <Button onClick={() => setCreateOpen(true)}>
             <Plus className="h-4 w-4 mr-1" /> 新增 Deal
@@ -222,8 +239,8 @@ export function DealsPage() {
       {/* Stats row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatCard label="Open Deals" value={`${stats.openCount}`} />
-        <StatCard label="Total Value" value={formatCurrency(stats.totalValue)} />
-        <StatCard label="Weighted (by prob.)" value={formatCurrency(stats.weightedValue)} highlight />
+        <StatCard label="Total Value" value={formatCurrency(stats.totalValue, systemCurrency)} />
+        <StatCard label="Weighted (by prob.)" value={formatCurrency(stats.weightedValue, systemCurrency)} highlight />
         <StatCard label="Stages" value={`${kanban?.buckets.length ?? 0}`} />
       </div>
 
@@ -246,6 +263,7 @@ export function DealsPage() {
                   deals={bucket.deals}
                   onDrop={(dealId) => moveStage.mutate({ dealId, stageId: bucket.stage.id })}
                   isMoving={moveStage.isPending}
+                  systemCurrency={systemCurrency}
                   onEdit={(deal) => setEditing(deal)}
                   onDelete={(deal) => {
                     if (confirm(`確定刪除 deal「${deal.title}」?此操作無法復原,相關 activities / quotations 會一齊 cascade。`)) {
@@ -337,6 +355,7 @@ function KanbanColumn({
   deals,
   onDrop,
   isMoving,
+  systemCurrency,
   onEdit,
   onDelete,
   onNewQuotation,
@@ -346,6 +365,9 @@ function KanbanColumn({
   deals: Deal[];
   onDrop: (dealId: string) => void;
   isMoving: boolean;
+  /** P2 multi-currency (2026-06-29): admin-set system default currency
+   *  (RMB/HKD/MOP) — used to format the per-stage value subtotal. */
+  systemCurrency: string;
   onEdit: (deal: Deal) => void;
   /** Day N+1 (P1-X): confirm-then-delete this deal from the card.
    *  Cascades to activities / quotations via Prisma onDelete: Cascade. */
@@ -390,7 +412,7 @@ function KanbanColumn({
           <Badge variant="secondary" className="text-xs">{deals.length}</Badge>
         </div>
         <div className="text-xs text-muted-foreground tabular-nums font-medium">
-          {formatCurrency(total)}
+          {formatCurrency(total, systemCurrency)}
         </div>
       </div>
 
@@ -560,6 +582,19 @@ function DealCard({
           )}
         </div>
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          {/* 2026-06-29: per user request, the destructive action
+              (delete) sits at the visual right edge of the card —
+              furthest from where the user's eye lands first. Order
+              is now [Edit] [Delete] so the Trash icon is the
+              rightmost control. */}
+          <button
+            type="button"
+            aria-label="編輯 deal"
+            onClick={(e) => { e.stopPropagation(); onEdit(deal); }}
+            className="text-muted-foreground hover:text-foreground transition-colors p-0.5 -m-0.5"
+          >
+            <Edit2 className="h-3.5 w-3.5" />
+          </button>
           {onDelete && (
             <button
               type="button"
@@ -571,14 +606,6 @@ function DealCard({
               <Trash2 className="h-3.5 w-3.5" />
             </button>
           )}
-          <button
-            type="button"
-            aria-label="編輯 deal"
-            onClick={(e) => { e.stopPropagation(); onEdit(deal); }}
-            className="text-muted-foreground hover:text-foreground transition-colors p-0.5 -m-0.5"
-          >
-            <Edit2 className="h-3.5 w-3.5" />
-          </button>
         </div>
       </div>
     </div>
@@ -667,6 +694,18 @@ export function DealDialog({
   // omitted, so the most common case (sales rep creates their own
   // deal) needs no client-side setting.
   const [ownerId, setOwnerId] = useState<string | null>(deal?.owner?.id ?? null);
+  // P2 multi-currency (2026-06-29): default to the admin-set system
+  // currency (typically RMB), not the legacy hardcoded 'HKD'. Edit mode
+  // keeps the deal's persisted currency. Same React Query key as the
+  // page-level fetch so the cache is shared.
+  const { data: currencyCfg } = useQuery({
+    queryKey: ['settings', 'currency'],
+    queryFn: () => settingsApi.getCurrency(),
+    staleTime: 60_000,
+  });
+  const [currency, setCurrency] = useState<string>(
+    deal?.currency ?? currencyCfg?.default ?? 'RMB'
+  );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -687,10 +726,13 @@ export function DealDialog({
         deal?.expectedCloseDate ? deal.expectedCloseDate.slice(0, 10) : defaultCloseDate
       );
       setOwnerId(deal?.owner?.id ?? null);
+      // P2 multi-currency (2026-06-29): re-seed currency from deal
+      // (edit mode) or from the live system default (create mode).
+      setCurrency(deal?.currency ?? currencyCfg?.default ?? 'RMB');
       setError(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, deal?.id, stages]);
+  }, [open, deal?.id, stages, currencyCfg?.default]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -718,6 +760,10 @@ export function DealDialog({
           value: Number(value) || 0,
           expectedCloseDate: expectedCloseDate || undefined,
           ownerId: ownerId === deal.owner?.id ? undefined : (ownerId || null),
+          // P2 multi-currency (2026-06-29): only send currency when it
+          // actually changed, to avoid no-op writes that would dirty
+          // the row's updatedAt.
+          currency: currency === deal.currency ? undefined : currency,
         });
         // 2) If the stage changed, route through the dedicated endpoint
         //    so the backend can set status + closedAt correctly.
@@ -739,6 +785,13 @@ export function DealDialog({
           stageId,
           expectedCloseDate: expectedCloseDate || undefined,
           ownerId: ownerId || undefined,
+          // P2 multi-currency (2026-06-29): always send currency so the
+          // backend uses the user's picker value (which defaults to
+          // the system currency but may have been overridden). The
+          // backend would default to the system currency if omitted —
+          // same result — but sending it explicitly avoids an extra
+          // config lookup on the hot path.
+          currency,
         });
         if (!isEdit) {
           setTitle(''); setValue(''); setExpectedCloseDate('');
@@ -794,10 +847,35 @@ export function DealDialog({
               </select>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <Label htmlFor="value">金額 (HKD)</Label>
+          <div className="grid grid-cols-4 gap-2">
+            <div className="col-span-2">
+              {/* P2 multi-currency (2026-06-29): label reflects the
+                  picked currency so the user can see at a glance which
+                  unit the amount is in. Defaults to the system
+                  currency on mount. */}
+              <Label htmlFor="value">金額 ({currency})</Label>
               <Input id="value" type="number" value={value} onChange={(e) => setValue(e.target.value)} />
+            </div>
+            <div>
+              <Label htmlFor="currency">貨幣</Label>
+              <select
+                id="currency"
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value)}
+                className="w-full h-9 rounded border bg-background px-2 text-sm"
+              >
+                {/* P2 multi-currency (2026-06-29): Deal is restricted
+                    to the three system currencies (admin-configurable
+                    default in /settings/currency). Unlike Product /
+                    Service, which accept USD/EUR/GBP/legacy CNY as
+                    fallbacks for non-system-priced items, Deal
+                    pricing lives in the sales pipeline and should
+                    always snap to one of the three currencies the
+                    admin maintains rates for. */}
+                <option value="RMB">人民幣 (RMB)</option>
+                <option value="HKD">港幣 (HKD)</option>
+                <option value="MOP">澳門幣 (MOP)</option>
+              </select>
             </div>
             <div>
               <Label htmlFor="close">預計成交日</Label>

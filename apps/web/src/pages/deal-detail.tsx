@@ -10,10 +10,11 @@ import { Badge } from '@/components/ui/badge';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
-import { dealsApi, quotationsApi, type Quotation, type QuotationStatus, type Company } from '@/lib/api';
-import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils';
+import { dealsApi, quotationsApi, type Quotation, type QuotationStatus, type Company, type Activity } from '@/lib/api';
+import { formatCurrency, formatDate } from '@/lib/utils';
 import { QuotationBuilder } from '@/components/quotation-builder';
 import { DealActivityDialog } from '@/components/deal-activity-dialog';
+import { ActivityItem } from '@/components/activity-feed';
 import { DealDialog } from '@/pages/deals';
 
 type Tab = 'quotations' | 'activity';
@@ -42,8 +43,14 @@ export function DealDetailPage() {
   // the Activity tab wants more, so we re-fetch from the activity list
   // endpoint when the user switches to that tab. Lazy: don't fire the
   // query until the tab is actually opened.
-  const { data: dealActivities = [] } = useQuery({
-    queryKey: ['deal-activities', id],
+  //
+  // 2026-06-29: query key now starts with `['activities', ...]` (was
+  // `['deal-activities', id]`) so the shared <ActivityItem> mutation
+  // hooks (which call `qc.invalidateQueries({ queryKey: ['activities'] })`)
+  // also refetch this view when the user edits / deletes / uploads from
+  // inside the activity row.
+  const { data: dealActivities = [] } = useQuery<Activity[]>({
+    queryKey: ['activities', { dealId: id, list: 'deal-detail' }],
     queryFn: async () => {
       const r = await fetch(`/api/activities?dealId=${id}&limit=50`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('crm:token') ?? ''}` },
@@ -207,8 +214,6 @@ export function DealDetailPage() {
       {tab === 'activity' && (
         <ActivityTab
           activities={dealActivities}
-          dealId={id!}
-          dealTitle={deal.title}
           onAdd={() => setActivityOpen(true)}
         />
       )}
@@ -397,11 +402,9 @@ function QuotationsTab({ dealId, dealCompanyId }: { dealId: string; dealCompanyI
 }
 
 function ActivityTab({
-  activities, dealId, dealTitle, onAdd,
+  activities, onAdd,
 }: {
-  activities: Array<{ id: string; type: string; content: string; createdAt: string; author?: { name: string } }>;
-  dealId: string;
-  dealTitle: string;
+  activities: Activity[];
   onAdd: () => void;
 }) {
   if (activities.length === 0) {
@@ -417,6 +420,11 @@ function ActivityTab({
       </Card>
     );
   }
+  // 2026-06-29: render each row via the shared <ActivityItem> so the
+  // author-only edit / delete / attachment-CRUD affordances match the
+  // company feed and the deals-page pipeline panel. The deal context
+  // is implicit here (we're on /deals/:id), so we use the default
+  // 'card' variant — each row reads as a distinct card.
   return (
     <div className="space-y-3">
       <div className="flex justify-end">
@@ -425,17 +433,7 @@ function ActivityTab({
         </Button>
       </div>
       {activities.map((a) => (
-        <Card key={a.id}>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
-              <Badge variant="outline" className="text-[10px] py-0">{a.type}</Badge>
-              {a.author?.name && <span>{a.author.name}</span>}
-              <span>·</span>
-              <span>{formatDateTime(a.createdAt)}</span>
-            </div>
-            <p className="text-sm whitespace-pre-wrap">{a.content}</p>
-          </CardContent>
-        </Card>
+        <ActivityItem key={a.id} activity={a} />
       ))}
     </div>
   );

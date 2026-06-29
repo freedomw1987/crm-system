@@ -32,6 +32,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input, Textarea } from '@/components/ui/input';
@@ -39,7 +40,7 @@ import { Select, Label } from '@/components/ui/select';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
-import { servicesApi, type Service } from '@/lib/api';
+import { servicesApi, settingsApi, type Service } from '@/lib/api';
 import { ManDayEditor, type ManDayRow, toWireRows } from './man-day-editor';
 
 interface QuickCreateServiceDialogProps {
@@ -58,7 +59,17 @@ export function QuickCreateServiceDialog({
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('');
   const [status, setStatus] = useState<ServiceStatus>('ACTIVE');
-  const [currency, setCurrency] = useState('HKD');
+  // P2 multi-currency (2026-06-29): pre-fill with the admin-set
+  // default (typically RMB) instead of hard-coded HKD. Same React
+  // Query key as /settings/currency so the cache is shared with the
+  // Quotation Builder + the Currency settings page.
+  const { data: currencyCfg } = useQuery({
+    queryKey: ['settings', 'currency'],
+    queryFn: () => settingsApi.getCurrency(),
+    staleTime: 60_000,
+  });
+  const [userTouchedCurrency, setUserTouchedCurrency] = useState(false);
+  const [currency, setCurrency] = useState<string>(currencyCfg?.default ?? 'RMB');
   const [manDays, setManDays] = useState<ManDayRow[]>([
     { role: '', dayRate: 0, days: 0 },
   ]);
@@ -71,11 +82,21 @@ export function QuickCreateServiceDialog({
       setDescription('');
       setCategory('');
       setStatus('ACTIVE');
-      setCurrency('HKD');
+      setCurrency(currencyCfg?.default ?? 'RMB');
+      setUserTouchedCurrency(false);
       setManDays([{ role: '', dayRate: 0, days: 0 }]);
       setError(null);
     }
-  }, [open, defaultName]);
+  }, [open, defaultName, currencyCfg?.default]);
+
+  // If the user hasn't touched the picker AND the currency config
+  // resolves after the dialog opens, sync the picker to the live
+  // default. Mirrors userTouchedTax in QuotationBuilder.
+  useEffect(() => {
+    if (open && !userTouchedCurrency && currencyCfg?.default) {
+      setCurrency(currencyCfg.default);
+    }
+  }, [open, userTouchedCurrency, currencyCfg?.default]);
 
   const total = manDays.reduce((sum, m) => sum + (Number(m.dayRate) || 0) * (Number(m.days) || 0), 0);
 
@@ -166,13 +187,23 @@ export function QuickCreateServiceDialog({
               <Select
                 id="qcs-currency"
                 value={currency}
-                onChange={(e) => setCurrency(e.target.value)}
+                onChange={(e) => {
+                  setCurrency(e.target.value);
+                  setUserTouchedCurrency(true);
+                }}
               >
-                <option>HKD</option>
-                <option>USD</option>
-                <option>CNY</option>
-                <option>EUR</option>
-                <option>GBP</option>
+                {/* P2 multi-currency (2026-06-29): RMB/HKD/MOP are the
+                    three system currencies (admin-configurable default
+                    in /settings/currency). USD/EUR/GBP/legacy CNY left
+                    in as fallbacks for services priced in a non-system
+                    currency. */}
+                <option value="RMB">人民幣 (RMB)</option>
+                <option value="HKD">港幣 (HKD)</option>
+                <option value="MOP">澳門幣 (MOP)</option>
+                <option value="USD">美元 (USD)</option>
+                <option value="CNY">CNY</option>
+                <option value="EUR">EUR</option>
+                <option value="GBP">GBP</option>
               </Select>
             </div>
           </div>

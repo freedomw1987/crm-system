@@ -34,6 +34,15 @@ export interface FlatQuotationForExcel {
   sales_cost_total: number;
   sales_cost_total_v1: number;
   barco_sales_total: number; // 同 sales_cost_total
+  // P2 multi-currency (2026-06-29): the chosen billing currency +
+  // HKD + MOP snapshots. Carried on so the worksheet renders the
+  // persisted currency in E8 (was hard-coded) and can append both
+  // HKD- and MOP-equivalent rows to the totals block.
+  currency: 'RMB' | 'HKD' | 'MOP' | string;
+  exchangeRateToHKD: number;
+  total_price_hkd: number; // total * rate, snapshotted on the row
+  exchangeRateToMOP: number;
+  total_price_mop: number; // total * rate, snapshotted on the row
   QuotationItem: Array<FlatQuotationItemForExcel>;
 }
 
@@ -167,6 +176,34 @@ export function adaptCrmQuotationForExcel(
       prismaQuotation.title ?? prismaQuotation.deal?.title ?? "",
     total_price: Number(prismaQuotation.total),
     total_price_v1: Number(prismaQuotation.total),
+    // P2 multi-currency (2026-06-29): thread the persisted
+    // billing currency + HKD snapshot into the adapted shape
+    // so the worksheet reads the chosen currency instead of
+    // guessing from region (the old heuristic chose
+    // "CNY"/"HKD"/"MOP" — wrong default for the new
+    // RMB-default scheme). `total_price_hkd` is the row-level
+    // HKD-equivalent that was persisted on the Quotation at
+    // save time — we re-derive it from `total *
+    // exchangeRateToHKD` as a belt-and-braces fallback for
+    // legacy rows where the column is missing or 0.
+    currency: prismaQuotation.currency ?? 'RMB',
+    exchangeRateToHKD: Number(prismaQuotation.exchangeRateToHKD ?? 1),
+    total_price_hkd:
+      Number(prismaQuotation.totalHKD ?? 0) ||
+      Number(prismaQuotation.total ?? 0) * Number(prismaQuotation.exchangeRateToHKD ?? 1),
+    // 2026-06-29: MOP snapshot — same belt-and-braces fallback
+    // pattern as HKD. Legacy rows (pre-MOP-snapshot migration)
+    // have totalMOP = 0 and exchangeRateToMOP = 0; the
+    // `total * rate` re-derive kicks in when totalMOP is 0 so
+    // the worksheet never emits 0.00 MOP for a row that has a
+    // known currency. Note: the re-derive uses the persisted
+    // exchangeRateToMOP, which on legacy rows is also 0, so
+    // legacy rows will emit 0.00 MOP — that's intentional, the
+    // worksheet hides the MOP row when total_price_mop is 0.
+    exchangeRateToMOP: Number(prismaQuotation.exchangeRateToMOP ?? 0),
+    total_price_mop:
+      Number(prismaQuotation.totalMOP ?? 0) ||
+      Number(prismaQuotation.total ?? 0) * Number(prismaQuotation.exchangeRateToMOP ?? 0),
     sales_cost_total: flatItems.reduce(
       (s, i) => s + Number(i.sales_cost_subtotal),
       0,
