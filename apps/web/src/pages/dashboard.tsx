@@ -33,8 +33,18 @@ export function DashboardPage() {
     queryFn: () => dealsApi.list({ limit: STATS_LIMIT }),
   });
 
-  const totalQuotationValue = quotations.reduce((s, q) => s + Number(q.total), 0);
+  // P2 multi-currency (2026-06-30): sum in HKD using each Quotation's
+  // totalHKD snapshot (pre-computed at save time) so cross-currency
+  // sums are mathematically valid. Total MOP is not summed here.
+  const totalQuotationValue = quotations.reduce(
+    (s, q) => s + Number(q.totalHKD ?? 0),
+    0,
+  );
   const openDeals = deals.filter((d) => d.status === 'OPEN');
+  // TODO(2026-Q3, P2-multi-currency follow-up): Deal has no totalHKD
+  // snapshot, so this sum mixes currencies arithmetically. Properly
+  // fix by adding `totalHKD Decimal @default(0)` to the Deal model
+  // and backfilling on PATCH/POST (mirror the Quotation pattern).
   const pipelineValue = openDeals.reduce((s, d) => s + Number(d.value), 0);
   const wonDeals = deals.filter((d) => d.status === 'WON');
 
@@ -57,14 +67,14 @@ export function DashboardPage() {
           icon={FileText}
           label="Quotations"
           value={quotations.length}
-          hint={formatCurrency(totalQuotationValue)}
+          hint={formatCurrency(totalQuotationValue, 'HKD')}
           to="/quotations"
         />
         <KpiCard
           icon={KanbanSquare}
           label="Open Deals"
           value={openDeals.length}
-          hint={formatCurrency(pipelineValue) + ' pipeline'}
+          hint={formatCurrency(pipelineValue, 'HKD') + ' pipeline'}
           to="/deals"
         />
         <KpiCard
@@ -105,7 +115,7 @@ export function DashboardPage() {
                     <div className="flex items-center gap-2">
                       <StatusBadge status={q.status} />
                       <span className="font-semibold tabular-nums">
-                        {formatCurrency(q.total)}
+                        {formatCurrency(q.total, q.currency)}
                       </span>
                     </div>
                   </li>
