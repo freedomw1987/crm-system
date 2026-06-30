@@ -7,7 +7,7 @@
     "dev": "bun --env-file=../../.env --watch src/index.ts",
     "build": "bun build src/index.ts --target=bun --outdir=dist --minify",
     "start": "bun --env-file=../../.env dist/index.js",
-    "typecheck": "tsc --noEmit --skipLibCheck --noResolve",
+    "typecheck": "tsc --noEmit --skipLibCheck",
     "lint": "echo 'lint: not configured yet'",
     "test": "bun test",
     "test:watch": "bun test --watch"

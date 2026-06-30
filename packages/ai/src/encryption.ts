@@ -20,6 +20,7 @@
  *   column stays a single TEXT field and round-trips through Prisma
  *   without JSON wrapping.
  */
+/// <reference types="node" />
 
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 

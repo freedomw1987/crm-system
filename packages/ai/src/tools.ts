@@ -426,12 +426,14 @@ const logActivity: Tool = {
     type: 'object',
     properties: {
       type: { type: 'string', enum: ['CALL', 'EMAIL', 'MEETING', 'NOTE', 'TASK'] },
+      // Day 30: subject is folded into `content` (Activity
+      // model has no `subject` column). `body` / `contactId` /
+      // `dueAt` were latent typecheck errors (not in v1 schema);
+      // they are also aspirational — future US may add
+      // `subject` / `contactId` / `dueAt` columns to Activity.
       subject: { type: 'string' },
-      body: { type: 'string' },
       companyId: { type: 'string' },
-      contactId: { type: 'string' },
       dealId: { type: 'string' },
-      dueAt: { type: 'string', description: 'ISO datetime for tasks' },
     },
     required: ['type', 'subject'],
   },
@@ -442,14 +444,31 @@ const logActivity: Tool = {
     // have produced a 500 the first time the AI tool was invoked.
     return prisma.activity.create({
       data: {
+        // Day 30: the schema declares a `subject` field (the AI
+        // caller's surface), but `prisma.activity` only has
+        // `type` + `content` + FK columns. The subject is folded
+        // into `content` here. Future US may add a dedicated
+        // `subject` column to Activity (Day 19+) — for now the
+        // AI's "subject" is a leading line in the content.
         type: args.type,
-        subject: args.subject,
-        body: args.body,
+        content: args.subject
+          ? `[${args.subject}]\n\n${(args as { content?: string }).content ?? ''}`
+          : ((args as { content?: string }).content ?? ''),
         companyId: args.companyId,
-        contactId: args.contactId,
+        // Day 30: contactId, dueAt, body were latent typecheck
+        // errors (Activity model has none of these fields — v1
+        // schema is `companyId / dealId / type / content` plus
+        // author / assigned / timestamps). The tool's richer
+        // surface is aspirational; we fold subject into content
+        // for now and drop the rest. Future US can re-add
+        // contactId / dueAt columns to Activity.
         dealId: args.dealId,
+        // `authorId` is required by the schema. Set from the
+        // authenticated user (the AI acts on the user's behalf,
+        // so the activity is attributed to the user — same as
+        // Quotation.createdById).
+        authorId: ctx.userId,
         assignedToId: ctx.userId,
-        dueAt: args.dueAt ? new Date(args.dueAt) : null,
       },
     });
   },

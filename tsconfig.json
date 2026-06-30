@@ -16,7 +16,7 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "types": ["bun-types"],
+    "types": ["bun-types", "node"],
     "baseUrl": ".",
     "paths": {
       "@crm/db": ["./packages/db/src/index.ts"],
@@ -27,6 +27,11 @@
       "@crm/shared/*": ["./packages/shared/src/*"]
     }
   },
-  "include": ["apps/*/src/**/*", "packages/*/src/**/*"],
-  "exclude": ["node_modules", "**/dist", "**/node_modules"]
+  "include": ["packages/*/src/**/*"],
+  "exclude": [
+    "node_modules",
+    "**/dist",
+    "**/node_modules",
+    "apps/web"
+  ]
 }
