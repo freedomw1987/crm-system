@@ -1,5 +1,23 @@
+// @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest';
 import { getToken, setToken, ApiError } from '../api';
+
+// Day 30: the suite runs in two environments — vitest with
+// jsdom (per `bunx vitest run` in apps/web) and bun's test
+// runner (per `bun test` from root). localStorage is jsdom-only;
+// bun's runner has no DOM globals. Stub the global before the
+// SUT's first call. The SUT reads localStorage lazily (in
+// getToken() / setToken() bodies, not at module load), so a
+// top-of-module assignment is fine.
+if (typeof (globalThis as { localStorage?: unknown }).localStorage === 'undefined') {
+  const _store = new Map<string, string>();
+  (globalThis as { localStorage: unknown }).localStorage = {
+    getItem: (k: string) => (_store.has(k) ? _store.get(k)! : null),
+    setItem: (k: string, v: string) => { _store.set(k, String(v)); },
+    removeItem: (k: string) => { _store.delete(k); },
+    clear: () => { _store.clear(); },
+  };
+}
 
 describe('api auth token helpers', () => {
   beforeEach(() => {
