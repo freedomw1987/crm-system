@@ -373,7 +373,7 @@ export function QuotationsPage() {
                         <QuotationStatusBadge status={q.status} />
                       </td>
                       <td className="px-4 py-3 text-right font-semibold tabular-nums">
-                        {formatCurrency(q.total)}
+                        {formatCurrency(q.total, q.currency)}
                       </td>
                       <td className="px-4 py-3 text-xs">
                         {q.salesRep?.name ?? q.createdBy?.name ?? <span className="text-muted-foreground">—</span>}

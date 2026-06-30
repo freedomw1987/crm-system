@@ -169,7 +169,7 @@ export function QuotationDetailPage() {
                 <td className="py-2">
                   <div className="font-medium">{item.name}</div>
                   {item.sku && <div className="text-xs text-gray-500">SKU: {item.sku}</div>}
-                  <LineItemSnapshotMeta item={item} print />
+                  <LineItemSnapshotMeta item={item} currency={quotation.currency} print />
                 </td>
                 <td className="py-2 text-right tabular-nums">{item.quantity}</td>
                 <td className="py-2 text-right tabular-nums">{formatCurrency(item.unitPrice, quotation.currency)}</td>
@@ -400,7 +400,7 @@ export function QuotationDetailPage() {
                         {item.sku && (
                           <div className="text-xs text-muted-foreground">SKU: {item.sku}</div>
                         )}
-                        <LineItemSnapshotMeta item={item} />
+                        <LineItemSnapshotMeta item={item} currency={quotation.currency} />
                       </td>
                       <td className="px-4 py-3 text-right tabular-nums">{item.quantity}</td>
                       <td className="px-4 py-3 text-right tabular-nums">

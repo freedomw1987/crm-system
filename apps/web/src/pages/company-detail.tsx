@@ -216,8 +216,8 @@ export function CompanyDetailPage() {
 // card can be reasoned about (and tested) on its own. The "+ 新增"
 // entry points stay in their card headers so they're reachable from
 // anywhere in the company page.
-type DealRow = { id: string; title: string; value: number; status: string; stage?: { name: string; color: string } };
-type QuoteRow = { id: string; number: string; total: number; status: string; createdAt: string };
+type DealRow = { id: string; title: string; value: number; currency: string; status: string; stage?: { name: string; color: string } };
+type QuoteRow = { id: string; number: string; total: number; currency: string; status: string; createdAt: string };
 
 /** Contacts card — primary contact list with add/delete affordances. */
 function ContactsCard({
@@ -321,7 +321,7 @@ function QuotationsCard({
                     </div>
                   </div>
                   <div className="font-semibold tabular-nums">
-                    {formatCurrency(q.total)}
+                    {formatCurrency(q.total, q.currency)}
                   </div>
                 </Link>
               </li>
@@ -376,7 +376,7 @@ function DealsCard({
                     )}
                   </div>
                   <div className="font-semibold tabular-nums">
-                    {formatCurrency(d.value)}
+                    {formatCurrency(d.value, d.currency)}
                   </div>
                 </Link>
               </li>

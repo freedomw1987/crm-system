@@ -110,9 +110,14 @@ export function resolveLineItemDescription(
  */
 export function LineItemSnapshotMeta({
   item,
+  currency,
   print = false,
 }: {
   item: QuotationItemWithRelations;
+  /** Quotation-level billing currency. Needed so the man-day breakdown
+      (SOW) line items can be formatted in the right currency instead
+      of silently falling back to HKD. */
+  currency: string;
   /** Tighter spacing for print layout. */
   print?: boolean;
 }) {
@@ -164,9 +169,9 @@ export function LineItemSnapshotMeta({
                 className={print ? 'flex justify-between text-gray-700' : 'flex justify-between text-muted-foreground'}
               >
                 <span>
-                  {m.role} · {m.days}d × {formatCurrency(m.dayRate)}
+                  {m.role} · {m.days}d × {formatCurrency(m.dayRate, currency)}
                 </span>
-                <span className="tabular-nums">{formatCurrency(m.subtotal)}</span>
+                <span className="tabular-nums">{formatCurrency(m.subtotal, currency)}</span>
               </div>
             ))}
           </div>

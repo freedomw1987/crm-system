@@ -663,6 +663,7 @@ export function QuotationBuilder({
               onCreateService={(s) => {
                 setServices((prev) => [s, ...prev]);
               }}
+              currency={currency}
             />
           ))}
         </CardContent>
@@ -799,6 +800,7 @@ function LineItemRow({
   canRemove,
   onCreateProduct,
   onCreateService,
+  currency,
 }: {
   line: DraftLine;
   products: Product[];
@@ -811,6 +813,7 @@ function LineItemRow({
   canRemove: boolean;
   onCreateProduct: (p: Product) => void;
   onCreateService: (s: Service) => void;
+  currency: 'RMB' | 'HKD' | 'MOP';
 }) {
   const isProduct = line.itemType === 'PRODUCT';
   return (
@@ -917,7 +920,7 @@ function LineItemRow({
         </div>
         <div className="col-span-1 flex flex-col items-end justify-end h-full pt-5">
           <span className="text-xs font-semibold tabular-nums">
-            {formatCurrency(lineTotal(line))}
+            {formatCurrency(lineTotal(line), currency)}
           </span>
           {(() => {
             // Per-line GP$ / GP% display. In edit mode the server already
@@ -936,7 +939,7 @@ function LineItemRow({
             }
             return (
               <span className="text-[10px] text-emerald-600 dark:text-emerald-400 tabular-nums mt-0.5">
-                GP: {formatCurrency(gp)} ({gpPct.toFixed(0)}%)
+                GP: {formatCurrency(gp, currency)} ({gpPct.toFixed(0)}%)
               </span>
             );
           })()}
@@ -952,8 +955,8 @@ function LineItemRow({
           <div className="mt-1.5 space-y-0.5 pl-3 border-l-2 border-primary/30">
             {line.manDaySnapshot.map((m, i) => (
               <div key={i} className="flex justify-between text-muted-foreground">
-                <span>{m.role} · {m.days}d × {formatCurrency(m.dayRate)}</span>
-                <span className="tabular-nums">{formatCurrency(m.subtotal)}</span>
+                <span>{m.role} · {m.days}d × {formatCurrency(m.dayRate, currency)}</span>
+                <span className="tabular-nums">{formatCurrency(m.subtotal, currency)}</span>
               </div>
             ))}
           </div>
@@ -1104,7 +1107,7 @@ function ProductAutocomplete({
                     <div className="font-medium truncate">{p.name}</div>
                     <div className="text-xs text-muted-foreground font-mono">{p.sku} · {p.category ?? '—'}</div>
                   </div>
-                  <span className="text-xs tabular-nums shrink-0 ml-2">{formatCurrency(Number(p.unitPrice))}</span>
+                  <span className="text-xs tabular-nums shrink-0 ml-2">{formatCurrency(Number(p.unitPrice), p.currency)}</span>
                 </button>
               ))
             )}
@@ -1231,7 +1234,7 @@ function ServiceAutocomplete({
                       {(s as Service & { category?: string }).category ?? '—'} · {s.manDays?.length ?? 0} roles
                     </div>
                   </div>
-                  <span className="text-xs tabular-nums shrink-0 ml-2">{formatCurrency(Number(s.unitPrice))}</span>
+                  <span className="text-xs tabular-nums shrink-0 ml-2">{formatCurrency(Number(s.unitPrice), s.currency)}</span>
                 </button>
               ))
             )}
