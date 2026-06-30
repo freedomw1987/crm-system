@@ -1,4 +1,5 @@
-// @ts-nocheck — see rbac.ts for the Elysia 1.2 + TS 5.x d.ts trade-off
+// (Previously had @ts-nocheck — see rbac.ts for the Elysia 1.2 + TS 5.x d.ts
+//  trade-off. Removed 2026/06/30; see git blame for context.)
 /**
  * Activity + Attachment routes (Day N)
  *
@@ -50,7 +51,7 @@ import { randomUUID } from 'crypto';
 import { prisma } from '@crm/db';
 import { authContext } from '../lib/context';
 import { logEvent } from '../middleware/audit';
-import { getUserIdFromRequest } from '../middleware/rbac';
+import { requirePermission, getUserIdFromRequest } from '../middleware/rbac';
 
 const DATA_DIR = process.env.DATA_DIR ?? '/app/data/uploads';
 const MAX_FILE_BYTES = 50 * 1024 * 1024; // 50 MB

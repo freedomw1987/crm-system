@@ -1,4 +1,3 @@
-// @ts-nocheck — see rbac.ts for the Elysia 1.2 + TS 5.x d.ts trade-off
 /**
  * Man-day Role routes (Day N)
  *
@@ -20,7 +19,7 @@ import { Elysia, t } from 'elysia';
 import { prisma } from '@crm/db';
 import { authContext } from '../lib/context';
 import { logEvent } from '../middleware/audit';
-import { getUserIdFromRequest } from '../middleware/rbac';
+import { requirePermission, getUserIdFromRequest } from '../middleware/rbac';
 
 export const manDayRoleRoutes = new Elysia({ prefix: '/man-day-roles', tags: ['man-day-roles'] })
   .use(authContext)
