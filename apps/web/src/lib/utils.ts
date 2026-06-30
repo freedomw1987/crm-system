@@ -5,7 +5,7 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function formatCurrency(amount: number | string, currency = 'HKD'): string {
+export function formatCurrency(amount: number | string, currency: string): string {
   // The Prisma client returns Decimal columns as strings. Coerce so the
   // Intl formatter doesn't see a string and produce HK$NaN or HK$0
   // (Day 8 bug: a single un-coerced card value displayed "HK$NaN" in the
