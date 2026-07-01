@@ -186,9 +186,12 @@ describe("adaptCrmQuotationForExcel", () => {
     const q = makeBaseQuotation({ items: [serviceItem()] });
     const flat = adaptCrmQuotationForExcel(q);
     const item = flat.QuotationItem[0];
-    // 2026-06-07: services have no SKU in CRM, so we leave it blank
-    // (avoids emitting fake "SVC-xxx" data into the Excel).
-    expect(item.sku).toBe("");
+    // 2026-07-01 (US-IMPORT-SKU): legacy "services have no SKU"
+    // rule was relaxed so the Excel column always carries a
+    // value (matching the Barco template convention). For a
+    // SERVICE line without a snapshot SKU, the fallback is
+    // "Barco-PS" (the default for non-maintenance services).
+    expect(item.sku).toBe("Barco-PS");
     // costSnapshot=3000, qty=10 → salesCost (per-man-day) = 300
     expect(Number(item.sales_cost)).toBe(300);
     // sales_cost_subtotal (whole-line cost) = costSnapshot = 3000
@@ -233,7 +236,9 @@ describe("adaptCrmQuotationForExcel", () => {
     const flat = adaptCrmQuotationForExcel(q);
     expect(flat.QuotationItem.map((i) => i.index)).toEqual(["1", "2", "3"]);
     // After sorting by position: b (svc, pos=0) → c (prod, pos=1) → a (prod, pos=2)
-    expect(flat.QuotationItem[0].sku).toBe(""); // b: service → blank
+    // 2026-07-01 (US-IMPORT-SKU): SERVICE line b has no snapshot
+    // and no maintenance-fee name → fallback is "Barco-PS".
+    expect(flat.QuotationItem[0].sku).toBe("Barco-PS"); // b: service → Barco-PS
     expect(flat.QuotationItem[1].sku).toBe("Barco-CX-50"); // c
     expect(flat.QuotationItem[2].sku).toBe("Barco-CX-50"); // a
   });
@@ -378,12 +383,16 @@ describe("adaptCrmQuotationForExcel", () => {
     expect(flat.QuotationItem[0].sku).toBe("Barco-MA");
   });
 
-  test("SERVICE line: empty sku snapshot stays empty (legacy data)", () => {
-    // services with no snapshot should NOT get a synthesised
-    // catalogue SKU — see crm-adapter.ts:97 comment.
+  test("SERVICE line: empty sku snapshot falls back to heuristic (replaces old empty behaviour)", () => {
+    // 2026-07-01: the original test asserted that services
+    // with no snapshot stayed empty to "avoid synthesising fake
+    // data". That trade-off broke round-trip — a re-import saw
+    // no SKU and couldn't classify the line. The fallback now
+    // picks "Barco-PS" / "Barco-MA" so legacy data exports
+    // round-trip cleanly.
     const q = makeBaseQuotation({ items: [serviceItem()] });
     const flat = adaptCrmQuotationForExcel(q);
-    expect(flat.QuotationItem[0].sku).toBe("");
+    expect(flat.QuotationItem[0].sku).toBe("Barco-PS");
   });
 
   test("PRODUCT line: item.sku snapshot wins over product.sku", () => {
@@ -400,5 +409,41 @@ describe("adaptCrmQuotationForExcel", () => {
     });
     const flat = adaptCrmQuotationForExcel(q);
     expect(flat.QuotationItem[0].sku).toBe("Barco-CX-50");
+  });
+
+  // 2026-07-01 (US-IMPORT-SKU): legacy data fallback. Quotations
+  // imported/built before the SKU snapshot convention was added
+  // have empty `item.sku`; the export still needs to produce a
+  // useful SKU column for round-tripping. The fallback uses
+  // service.sku first, then a name heuristic.
+  test("SERVICE line: empty snapshot falls back to 'Barco-PS' by name heuristic", () => {
+    const q = makeBaseQuotation({
+      items: [serviceItem({ sku: undefined })],
+    });
+    const flat = adaptCrmQuotationForExcel(q);
+    expect(flat.QuotationItem[0].sku).toBe("Barco-PS");
+  });
+
+  test("SERVICE line: empty snapshot + maintenance-fee name → 'Barco-MA'", () => {
+    const q = makeBaseQuotation({
+      items: [serviceItem({
+        name: "維護費用 / Maintenance Service",
+        sku: undefined,
+        quantity: 1,
+        unitPrice: 20000,
+        lineTotal: 20000,
+      })],
+    });
+    const flat = adaptCrmQuotationForExcel(q);
+    expect(flat.QuotationItem[0].sku).toBe("Barco-MA");
+  });
+
+  test("SERVICE line: whitespace-only snapshot is treated as empty", () => {
+    const q = makeBaseQuotation({
+      items: [serviceItem({ sku: "   " })],
+    });
+    const flat = adaptCrmQuotationForExcel(q);
+    // Whitespace falls through to the heuristic → Barco-PS.
+    expect(flat.QuotationItem[0].sku).toBe("Barco-PS");
   });
 });

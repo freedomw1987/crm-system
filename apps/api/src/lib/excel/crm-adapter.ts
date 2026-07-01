@@ -93,15 +93,32 @@ export function adaptCrmQuotationForExcel(
     const isProduct = item.itemType === "PRODUCT";
     const name = isProduct ? (product?.name ?? item.name) : (service?.name ?? item.name);
     // 2026-07-01 (US-IMPORT-SKU): SKU precedence for the Excel
-    // export — prefer the per-line snapshot (set by the
-    // Quotation builder's "+ Service" / "+ 維護費用" buttons
-    // or by an Excel re-import), fall back to the catalogued
-    // product SKU, and finally empty for legacy SERVICE rows
-    // that have no snapshot. This makes the round-trip
-    // (build → export → re-import) preserve the Barco
-    // convention: "Barco-MA" for maintenance fees,
-    // "Barco-PS" for services, product.sku for products.
-    const sku = item.sku ?? (isProduct ? (product?.sku ?? "") : "");
+    // export, in order:
+    //   1. The per-line snapshot (`item.sku`) — set by the
+    //      Quotation builder's "+ Service" / "+ 維護費用"
+    //      buttons, and written back by the AI Excel re-import
+    //      when the LLM extracts the source SKU. Admin can also
+    //      override the snapshot inline.
+    //   2. For PRODUCT lines: the catalogued `product.sku`.
+    //   3. For SERVICE lines with an empty / whitespace
+    //      snapshot: hardcoded Barco convention —
+    //        - maintenance-fee line (by name) → "Barco-MA"
+    //        - every other SERVICE line           → "Barco-PS"
+    //      Tier 3 handles legacy data imported/built before the
+    //      snapshot convention existed + AI imports where the
+    //      LLM returned an empty sku string. The Barco SKU
+    //      convention is permanent (the export round-trips
+    //      faithfully with the bc-quotation template); no need
+    //      to consult service.sku or admin-curated fields here.
+    const deriveServiceSkuFallback = (): string => {
+      if (/維護費用|維修費用|Maintenance\s+(Fee|Service)/i.test(item.name)) {
+        return "Barco-MA";
+      }
+      return "Barco-PS";
+    };
+    const sku =
+      (item.sku && item.sku.trim() !== "" ? item.sku : null) ??
+      (isProduct ? (product?.sku ?? "") : deriveServiceSkuFallback());
     const unitPrice = Number(item.unitPrice);
     const qty = Number(item.quantity);
     const subtotal = Number(item.lineTotal);
