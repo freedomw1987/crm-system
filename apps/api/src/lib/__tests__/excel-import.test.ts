@@ -676,6 +676,75 @@ describe('repairTruncatedJson', () => {
 });
 
 // ---------------------------------------------------------------------------
+// 2026-07-01: ImportPlanSchema string→number coercion.
+// MiniMax-M3 (and other non-OpenAI providers) sometimes emit
+// numeric values as JSON strings, e.g. `"dayRate": "5000"` instead
+// of `"dayRate": 5000`. The naive `z.number()` rejects these. With
+// `z.coerce.number()` the schema now accepts both shapes, so
+// /quotations/import/commit no longer returns 422 "Expected
+// number, received string" when the LLM output mixes numerics +
+// string-numerics in the same payload.
+// ---------------------------------------------------------------------------
+describe('ImportPlanSchema coerces strings to numbers (2026-07-01)', () => {
+  it('accepts quantity / unitPrice / discount as JSON strings', () => {
+    const result = ImportPlanSchema.parse(basePlan({
+      lineItems: [
+        {
+          type: 'PRODUCT',
+          name: 'Widget',
+          quantity: '2' as unknown as number,
+          unitPrice: '12000' as unknown as number,
+          discount: '5' as unknown as number,
+        },
+      ],
+    }));
+    expect(result.lineItems[0]?.quantity).toBe(2);
+    expect(result.lineItems[0]?.unitPrice).toBe(12000);
+    expect(result.lineItems[0]?.discount).toBe(5);
+  });
+
+  it('accepts manDaySnapshot dayRate / days / costRate as JSON strings', () => {
+    const result = ImportPlanSchema.parse(basePlan({
+      lineItems: [
+        {
+          type: 'SERVICE',
+          name: 'Senior Engineer Implementation',
+          quantity: 1,
+          unitPrice: 50000,
+          manDaySnapshot: [
+            { role: 'Senior Engineer', dayRate: '5000' as unknown as number, days: '10' as unknown as number, costRate: '3000' as unknown as number },
+          ],
+        },
+      ],
+    }));
+    const row = result.lineItems[0]?.manDaySnapshot?.[0];
+    expect(row?.dayRate).toBe(5000);
+    expect(row?.days).toBe(10);
+    expect(row?.costRate).toBe(3000);
+  });
+
+  it('accepts deal.value as JSON string', () => {
+    const result = ImportPlanSchema.parse(basePlan({
+      deal: { title: 'Big Deal', value: '304000' as unknown as number, ownerName: 'L Mai' },
+    }));
+    expect(result.deal?.value).toBe(304000);
+  });
+
+  it('rejects a non-numeric string (e.g. "abc")', () => {
+    expect(() =>
+      ImportPlanSchema.parse(basePlan({
+        lineItems: [{
+          type: 'PRODUCT',
+          name: 'Widget',
+          quantity: 'abc' as unknown as number,
+          unitPrice: 100,
+        }],
+      })),
+    ).toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Test-only wrapper
 // ---------------------------------------------------------------------------
 

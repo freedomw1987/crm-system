@@ -156,7 +156,23 @@ export function QuotationImportDialog({ open, onOpenChange, onSuccess }: Props) 
     setStep('submitting');
     setError(null);
     try {
-      const { newQuotationId } = await quotationImportApi.commit(plan);
+      // 2026-07-01 (US-IMPORT-NOMD): before commit, strip any
+      // manDaySnapshot rows from lines that the "no man-day"
+      // heuristic flagged (Barco-MA, Barco-LIC, or maintenance
+      // fee by name). Even though we hide the toggle button in
+      // the preview, the LLM may have pre-populated empty /
+      // malformed rows when it processed the source Excel, and
+      // the backend's zod schema rejects non-numeric dayRate /
+      // costRate with "Expected number, received string".
+      // Stripping here makes the commit robust even when the LLM
+      // emits garbage for these SKU classes.
+      const sanitisedPlan: ImportPlan = {
+        ...plan,
+        lineItems: plan.lineItems.map((li) =>
+          isNoManDayLine(li) ? { ...li, manDaySnapshot: null } : li,
+        ),
+      };
+      const { newQuotationId } = await quotationImportApi.commit(sanitisedPlan);
       onOpenChange(false);
       onSuccess?.(newQuotationId);
     } catch (e) {
@@ -508,7 +524,7 @@ export function QuotationImportDialog({ open, onOpenChange, onSuccess }: Props) 
                             {lineTotal.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                           </td>
                           <td className="px-3 py-2 align-top">
-                            {li.type === 'SERVICE' ? (
+                            {li.type === 'SERVICE' && !isNoManDayLine(li) ? (
                               <button
                                 type="button"
                                 onClick={() => setExpandedManDay((e) => ({ ...e, [idx]: !e[idx] }))}
@@ -518,11 +534,17 @@ export function QuotationImportDialog({ open, onOpenChange, onSuccess }: Props) 
                                 {mdCount === 0 ? '設定' : `${mdCount} 行`}
                               </button>
                             ) : (
-                              <span className="text-xs text-muted-foreground/50">—</span>
+                              <span className="text-xs text-muted-foreground/50" title={
+                                li.type === 'SERVICE'
+                                  ? '此行不需要設定人天 (維護費用 / Licence)'
+                                  : undefined
+                              }>
+                                {li.type === 'SERVICE' ? '不需要' : '—'}
+                              </span>
                             )}
                           </td>
                         </tr>
-                        {li.type === 'SERVICE' && isOpen && (
+                        {li.type === 'SERVICE' && !isNoManDayLine(li) && isOpen && (
                           <tr className="border-t bg-muted/20">
                             <td colSpan={8} className="px-3 py-3">
                               <ImportManDayEditor
@@ -654,6 +676,31 @@ export function QuotationImportDialog({ open, onOpenChange, onSuccess }: Props) 
     const next = [...plan.lineItems];
     next[idx] = { ...next[idx]!, ...patch };
     setPlan({ ...plan, lineItems: next });
+  }
+
+  // 2026-07-01 (US-IMPORT-NOMD): identify SERVICE line items
+  // whose SKU / name indicates they don't carry a man-day
+  // breakdown. In the Barco Excel template:
+  //   - `Barco-MA*` SKU → maintenance service fee (already
+  //     priced as a flat unit price; no 人天 breakdown)
+  //   - `Barco-LIC*` SKU → software licence (a product-grade
+  //     line that happens to be tagged SERVICE in the source
+  //     Excel; cost = unit price, no 人天 breakdown)
+  //   - `維護費用` / `維修費用` / `Maintenance Fee` / `Maintenance
+  //     Service` lines → flat-rate maintenance line items that
+  //     were created by the Quotation builder's "+ 維護費用"
+  //     button (admin-set percentage of subtotal × qty 1).
+  // For these lines we hide the inline Man-day editor entirely
+  // — the user wouldn't fill in any man-day rows, and if the
+  // LLM extracted empty / malformed values we'd silently keep
+  // them around (which is what triggered the "Expected number,
+  // received string" zod failure on commit).
+  function isNoManDayLine(li: ImportPlan['lineItems'][number]): boolean {
+    const sku = (li.sku ?? '').trim().toUpperCase();
+    const name = (li.name ?? '').trim();
+    if (sku.startsWith('BARCO-MA') || sku.startsWith('BARCO-LIC')) return true;
+    if (/(維護費用|維修費用|Maintenance\s+(Fee|Service))/i.test(name)) return true;
+    return false;
   }
 
   // ----- footer / submit ----------------------------------------

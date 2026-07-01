@@ -121,7 +121,10 @@ export const ImportPlanSchema = z.object({
     .object({
       title: z.string().min(1),
       stage: z.string().nullable().optional(),
-      value: z.number().nullable().optional(),
+      // 2026-07-01: coerce strings to numbers (MiniMax-M3
+      // sometimes emits numerics as JSON strings; see note
+      // above on lineItems.quantity).
+      value: z.coerce.number().nullable().optional(),
       ownerName: z.string().nullable().optional(),
     })
     .nullable()
@@ -140,18 +143,26 @@ export const ImportPlanSchema = z.object({
         type: z.enum(['PRODUCT', 'SERVICE']),
         name: z.string().min(1),
         description: z.string().nullable().optional(),
-        quantity: z.number().positive(),
-        unitPrice: z.number().nonnegative(),
-        discount: z.number().nullable().optional(),
+        // 2026-07-01: coerce strings to numbers (MiniMax-M3
+        // sometimes emits numeric values as JSON strings like
+        // `"dayRate": "5000"`. Without this coerce the zod
+        // validation in /quotations/import/commit returns 422
+        // "Expected number, received string" even though the
+        // preview step succeeded. We accept strings here AND
+        // normalise them to numbers; the executor reads them
+        // as numbers downstream).
+        quantity: z.coerce.number().positive(),
+        unitPrice: z.coerce.number().nonnegative(),
+        discount: z.coerce.number().nullable().optional(),
         sku: z.string().nullable().optional(),
         // For SERVICE items: the SOW / man-day breakdown.
         manDaySnapshot: z
           .array(
             z.object({
               role: z.string(),
-              dayRate: z.number(),
-              days: z.number(),
-              costRate: z.number().nullable().optional(),
+              dayRate: z.coerce.number(),
+              days: z.coerce.number(),
+              costRate: z.coerce.number().nullable().optional(),
               // 2026-07-01 (US-IMPORT-MD): catalogue FK. When set,
               // the backend uses ManDayRole from this id to
               // snapshot the latest name/price/cost onto the
