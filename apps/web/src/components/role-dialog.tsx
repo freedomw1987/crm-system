@@ -43,18 +43,36 @@ import { rolesApi, type Role } from '@/lib/api';
 
 /** Group all permissions by resource prefix for the matrix editor.
  *  Kept in sync with apps/web/src/pages/roles.tsx — if you add a
- *  permission group here, mirror it there. */
+ *  permission group here, mirror it there.
+ *
+ *  2026-07-01 (US-PERM-GROUPS): added 7 missing groups that the
+ *  PERMISSIONS matrix in @crm/shared exposes but the matrix UI
+ *  was silently hiding. `settings:*` (system settings — tax /
+ *  currency / maintenance fee / pipelines), `ai-config:*` (AI
+ *  endpoint / model config), `man-day-role:*` (人天角色 catalogue),
+ *  `region:*` (地區目錄), `activity:*` (Activity timeline), and
+ *  `attachment:*` (file attachments). Without these, admins
+ *  couldn't grant "settings:read" to a SALES-equivalent role
+ *  (e.g. a "Settings Manager") because the row wasn't shown
+ *  in the matrix — they'd hit 403 on settings pages with no
+ *  way to grant the perm through the UI. */
 const PERMISSION_GROUPS: Array<{ prefix: string; label: string; description: string }> = [
-  { prefix: 'user',    label: '用戶管理',  description: '管理系統用戶、角色、權限' },
-  { prefix: 'audit',   label: '審計日誌',  description: '查看系統操作記錄' },
-  { prefix: 'company', label: '公司',      description: '客戶/公司資料' },
-  { prefix: 'contact', label: '聯絡人',    description: '客戶聯絡人' },
-  { prefix: 'product', label: '產品',      description: '產品目錄' },
-  { prefix: 'service', label: '服務',      description: '服務目錄 (SOW + 人天)' },
-  { prefix: 'quotation', label: '報價單', description: '報價單管理' },
-  { prefix: 'deal',    label: 'Deal',      description: '銷售 deal pipeline' },
-  { prefix: 'role',    label: '角色',      description: '管理角色 + 權限矩陣' },
-  { prefix: 'chat',    label: 'AI',        description: '使用 AI 助手' },
+  { prefix: 'user',         label: '用戶管理',  description: '管理系統用戶、角色、權限' },
+  { prefix: 'role',         label: '角色',      description: '管理角色 + 權限矩陣' },
+  { prefix: 'audit',        label: '審計日誌',  description: '查看系統操作記錄' },
+  { prefix: 'settings',     label: '系統設置',  description: '稅率、貨幣、維護費用、Pipeline 等全域設定' },
+  { prefix: 'ai-config',    label: 'AI 配置',  description: '管理 LLM 連接 (endpoint、API key、model)' },
+  { prefix: 'man-day-role', label: '人天角色',  description: '人天角色 catalogue(Senior Engineer 等)' },
+  { prefix: 'region',       label: '地區',      description: '地區目錄 (HK / MO / CN / OTHER)' },
+  { prefix: 'company',      label: '公司',      description: '客戶/公司資料' },
+  { prefix: 'contact',      label: '聯絡人',    description: '客戶聯絡人' },
+  { prefix: 'product',      label: '產品',      description: '產品目錄' },
+  { prefix: 'service',      label: '服務',      description: '服務目錄 (SOW + 人天)' },
+  { prefix: 'quotation',    label: '報價單',    description: '報價單管理' },
+  { prefix: 'deal',         label: 'Deal',      description: '銷售 deal pipeline' },
+  { prefix: 'activity',     label: '活動記錄',  description: 'Activity timeline (call/email/meeting/note)' },
+  { prefix: 'attachment',   label: '附件',      description: '檔案附件' },
+  { prefix: 'chat',         label: 'AI 助手',   description: '使用 AI 助手' },
 ];
 
 export interface RoleDialogProps {
