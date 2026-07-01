@@ -41,7 +41,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   FileUp, FileSpreadsheet, Loader2, X, Sparkles, Info,
   AlertCircle, Pencil, Save, ChevronDown, ChevronRight,
-  Plus, Trash2,
+  Plus, Trash2, Maximize2, Minimize2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input, Textarea } from '@/components/ui/input';
@@ -83,6 +83,19 @@ export function QuotationImportDialog({ open, onOpenChange, onSuccess }: Props) 
   // Default closed so the Preview table doesn't feel noisy until
   // the user actively opens a row.
   const [expandedManDay, setExpandedManDay] = useState<Record<number, boolean>>({});
+
+  // 2026-07-01 (US-PREVIEW-FS): user-toggleable fullscreen mode for the
+  // preview dialog. Quotation Excel previews can span hundreds of
+  // line items + multi-paragraph SOW descriptions and quickly
+  // overflow a 3xl-width dialog. The fullscreen state stretches the
+  // DialogContent to the viewport edges (no max-width, no rounded
+  // corners, no max-height). State resets to `false` whenever the
+  // dialog opens so a previous fullscreen session doesn't leak
+  // into the next open.
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  useEffect(() => {
+    if (open) setIsFullscreen(false);
+  }, [open]);
 
   // Fetch the ManDayRole catalogue (active rows only) for the
   // editor's role dropdown. 5-min stale time matches the existing
@@ -649,12 +662,43 @@ export function QuotationImportDialog({ open, onOpenChange, onSuccess }: Props) 
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!submitting) onOpenChange(o); }}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+      {/* 2026-07-01 (US-PREVIEW-FS): fullscreen toggle. In normal mode
+          we keep the original 3xl / 90vh framing; in fullscreen mode
+          we stretch to the viewport, drop the rounded corners, and
+          bump the padding so the dense preview tables get more
+          breathing room. The switch is purely cosmetic — the inner
+          section renderers (cards, tables, inputs) don't care. */}
+      <DialogContent
+        className={
+          isFullscreen
+            ? 'w-screen h-screen max-w-none rounded-none p-6 sm:p-8 overflow-y-auto'
+            : 'max-w-3xl max-h-[90vh] overflow-y-auto'
+        }
+      >
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
+          <DialogTitle className="flex items-center gap-2 pr-12">
             <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
             Import Quotation from Excel
           </DialogTitle>
+          {/* Fullscreen toggle positioned to the LEFT of the
+              built-in Radix close button so both are reachable.
+              Wrapped in a relative-positioned container so the
+              absolute positioning doesn't reflow the title row. */}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="absolute right-12 top-4 h-7 w-7"
+            onClick={() => setIsFullscreen((f) => !f)}
+            aria-label={isFullscreen ? '退出全屏幕' : '切換到全屏幕'}
+            title={isFullscreen ? '退出全屏幕' : '切換到全屏幕'}
+          >
+            {isFullscreen ? (
+              <Minimize2 className="h-4 w-4" />
+            ) : (
+              <Maximize2 className="h-4 w-4" />
+            )}
+          </Button>
         </DialogHeader>
 
         {step === 'submitting' ? (
