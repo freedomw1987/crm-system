@@ -444,8 +444,24 @@ export function QuotationBuilder({
     });
   }
 
+  // 2026-07-01 (US-IMPORT-SKU): the SKU convention used by the
+// Barco Excel template and surfaced by the export adapter:
+//   - "Barco-MA"  → maintenance service line (no man-day)
+//   - "Barco-PS"  → regular professional-service line (with man-day)
+//   - product.sku → snapshot the catalogued value for PRODUCT lines
+// Setting these at create-time means the round-trip
+// (build → export → re-import) preserves the line classification
+// — the AI import heuristic (`isNoManDayLine`) keys off the
+// snapshot SKU.
+const MAINTENANCE_SKU = 'Barco-MA';
+const SERVICE_SKU = 'Barco-PS';
+
   function addLine(type: 'PRODUCT' | 'SERVICE' = 'PRODUCT') {
-    setLines((prev) => [...prev, { ...emptyLine(), itemType: type }]);
+    // Pre-fill the SKU with the Barco convention so the line
+    // exports + re-imports as the right kind. The user can
+    // overwrite the SKU inline before save.
+    const sku = type === 'SERVICE' ? SERVICE_SKU : undefined;
+    setLines((prev) => [...prev, { ...emptyLine(), itemType: type, sku }]);
   }
 
   // 2026-07-01 (US-MAINT-1): push a pre-filled Maintenance Service
@@ -477,6 +493,11 @@ export function QuotationBuilder({
       {
         ...emptyLine(),
         itemType: 'SERVICE',
+        // 2026-07-01 (US-IMPORT-SKU): the maintenance-fee
+        // line carries the Barco-MA SKU so the export writes
+        // "Barco-MA" to Excel and a subsequent re-import
+        // recognises it via the `isNoManDayLine` heuristic.
+        sku: MAINTENANCE_SKU,
         name: MAINTENANCE_FEE_NAME,
         quantity: 1,
         unitPrice: feeAmount,

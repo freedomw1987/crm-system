@@ -349,4 +349,56 @@ describe("adaptCrmQuotationForExcel", () => {
       expect(item.is_included).toBe("0");
     }
   });
+
+  // 2026-07-01 (US-IMPORT-SKU): SKU precedence for the Barco
+  // round-trip. The Quotation builder sets `item.sku` when
+  // creating SERVICE / "+ 維護費用" lines (snapshot SKU),
+  // and the export must honour that snapshot. Legacy SERVICE
+  // lines without a snapshot still emit "" so we don't
+  // synthesise fake data.
+  test("SERVICE line: uses item.sku snapshot over the catalogue", () => {
+    const q = makeBaseQuotation({
+      items: [serviceItem({ sku: "Barco-PS" })],
+    });
+    const flat = adaptCrmQuotationForExcel(q);
+    expect(flat.QuotationItem[0].sku).toBe("Barco-PS");
+  });
+
+  test("SERVICE line: maintenance fee SKU (Barco-MA) round-trips", () => {
+    const q = makeBaseQuotation({
+      items: [serviceItem({
+        name: "維護費用 / Maintenance Service",
+        sku: "Barco-MA",
+        quantity: 1,
+        unitPrice: 20000,
+        lineTotal: 20000,
+      })],
+    });
+    const flat = adaptCrmQuotationForExcel(q);
+    expect(flat.QuotationItem[0].sku).toBe("Barco-MA");
+  });
+
+  test("SERVICE line: empty sku snapshot stays empty (legacy data)", () => {
+    // services with no snapshot should NOT get a synthesised
+    // catalogue SKU — see crm-adapter.ts:97 comment.
+    const q = makeBaseQuotation({ items: [serviceItem()] });
+    const flat = adaptCrmQuotationForExcel(q);
+    expect(flat.QuotationItem[0].sku).toBe("");
+  });
+
+  test("PRODUCT line: item.sku snapshot wins over product.sku", () => {
+    const q = makeBaseQuotation({
+      items: [productItem({ sku: "CUSTOM-SKU-FROM-SNAPSHOT" })],
+    });
+    const flat = adaptCrmQuotationForExcel(q);
+    expect(flat.QuotationItem[0].sku).toBe("CUSTOM-SKU-FROM-SNAPSHOT");
+  });
+
+  test("PRODUCT line: falls back to product.sku when snapshot missing", () => {
+    const q = makeBaseQuotation({
+      items: [productItem({ sku: undefined })],
+    });
+    const flat = adaptCrmQuotationForExcel(q);
+    expect(flat.QuotationItem[0].sku).toBe("Barco-CX-50");
+  });
 });

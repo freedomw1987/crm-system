@@ -92,9 +92,16 @@ export function adaptCrmQuotationForExcel(
     const service = item.service;
     const isProduct = item.itemType === "PRODUCT";
     const name = isProduct ? (product?.name ?? item.name) : (service?.name ?? item.name);
-    // 2026-06-07: service items 喺 CRM 冇 SKU concept (Product 才有), 留空字串,
-    //   避免 bc-quotation 嘅 "SVC-xxx" 假 data 出 Excel。
-    const sku = isProduct ? (product?.sku ?? "") : "";
+    // 2026-07-01 (US-IMPORT-SKU): SKU precedence for the Excel
+    // export — prefer the per-line snapshot (set by the
+    // Quotation builder's "+ Service" / "+ 維護費用" buttons
+    // or by an Excel re-import), fall back to the catalogued
+    // product SKU, and finally empty for legacy SERVICE rows
+    // that have no snapshot. This makes the round-trip
+    // (build → export → re-import) preserve the Barco
+    // convention: "Barco-MA" for maintenance fees,
+    // "Barco-PS" for services, product.sku for products.
+    const sku = item.sku ?? (isProduct ? (product?.sku ?? "") : "");
     const unitPrice = Number(item.unitPrice);
     const qty = Number(item.quantity);
     const subtotal = Number(item.lineTotal);
