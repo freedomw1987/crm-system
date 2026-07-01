@@ -62,7 +62,7 @@ export function CompanyDetailPage() {
   });
 
   if (isLoading) return <p>載入中...</p>;
-  if (!company) return <p>搵唔到呢間公司</p>;
+  if (!company) return <p>找不到這間公司</p>;
 
   // Day 9: company.region is now a Region object (FK include). Fall back
   // to a hard-coded label for the four base regions when the object is
@@ -171,7 +171,7 @@ export function CompanyDetailPage() {
               company={company}
               onAdd={() => setContactDialogOpen(true)}
               onDelete={(cid) => {
-                if (confirm('刪除呢個聯絡人?')) deleteContact.mutate(cid);
+                if (confirm('刪除這個聯絡人?')) deleteContact.mutate(cid);
               }}
             />
           )}
@@ -240,7 +240,7 @@ function ContactsCard({
       </CardHeader>
       <CardContent className="p-0">
         {contacts.length === 0 ? (
-          <p className="text-sm text-muted-foreground p-6 text-center">仲未有聯絡人</p>
+          <p className="text-sm text-muted-foreground p-6 text-center">仍未有聯絡人</p>
         ) : (
           <ul className="divide-y">
             {contacts.map((contact) => (
@@ -304,7 +304,7 @@ function QuotationsCard({
       <CardContent className="p-0">
         {quotations.length === 0 ? (
           <p className="text-sm text-muted-foreground p-6 text-center">
-            仲未有報價單 · 撳右上「新增 Quotation」開第一份
+            仍未有報價單 · 按右上「新增 Quotation」開第一份
           </p>
         ) : (
           <ul className="divide-y">
@@ -355,7 +355,7 @@ function DealsCard({
       <CardContent className="p-0">
         {deals.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-8">
-            暫未有 deal · 撳右上「新增 Deal」開第一個
+            暫未有 deal · 按右上「新增 Deal」開第一個
           </p>
         ) : (
           <ul className="divide-y">

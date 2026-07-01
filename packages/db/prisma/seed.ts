@@ -536,6 +536,30 @@ async function main() {
   });
   console.log('✅ Seeded system_config.currency_config = RMB (HKD 1.08, MOP 1.16)');
 
+  // 2026-07-01 (US-MAINT-1): default Maintenance Service rate.
+  // The Quotation builder's "＋維護費用" button creates a
+  // SERVICE-typed line item priced at `project_subtotal × rate /
+  // 100`. Stored as a JSON number 0..100 (percentage form) so the
+  // admin input is intuitive — "20" means 20%, same convention as
+  // the existing `default_tax_rate` row. Re-runs of `bun run
+  // db:seed` are safe: upsert + `update: {}` means existing
+  // admin edits are NOT clobbered.
+  //
+  // 2026-07-01 rename: 維修費用 → 維護費用 + "Maintenance Fee" →
+  // "Maintenance Service" (per user request). The SystemConfig
+  // key `maintenance_fee_rate` keeps its legacy identifier to
+  // avoid breaking the stored DB row.
+  await prisma.systemConfig.upsert({
+    where: { key: 'maintenance_fee_rate' },
+    update: {},
+    create: {
+      key: 'maintenance_fee_rate',
+      value: 20,
+      description: 'Maintenance Service rate as a percentage (project subtotal × rate / 100). Default 20 = 20%. Configurable in /settings/maintenance-fee.',
+    },
+  });
+  console.log('✅ Seeded system_config.maintenance_fee_rate = 20% (Maintenance Service)');
+
   console.log('\n🎉 Seed complete!');
   console.log('\n📝 Login credentials:');
   console.log('   Admin:  admin@crm.local / admin123');

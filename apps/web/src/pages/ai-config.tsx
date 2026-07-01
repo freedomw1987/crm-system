@@ -123,7 +123,7 @@ export function AiConfigPage() {
           <Sparkles className="h-7 w-7" /> AI 設定
         </h1>
         <p className="text-muted-foreground">
-          配置 AI 助理連接嘅 LLM 提供者。Endpoint、API key 同 model name 全部由管理員設定,唔使用 server env。
+          配置 AI 助理連接的 LLM 提供者。Endpoint、API key 和 model name 全部由管理員設定,不用用 server env。
         </p>
       </div>
 
@@ -131,8 +131,8 @@ export function AiConfigPage() {
         <CardHeader>
           <CardTitle>LLM Provider</CardTitle>
           <CardDescription>
-            用 OpenAI-compatible 嘅 endpoint — 適用於 OpenAI、OpenRouter、Together、自建 vLLM / Ollama 等。
-            API key 會用 AES-256-GCM 加密儲存,GET 請求只返遮罩版本。
+            用 OpenAI-compatible 的 endpoint — 適用於 OpenAI、OpenRouter、Together、自建 vLLM / Ollama 等。
+            API key 會用 AES-256-GCM 加密儲存,GET 請求只回遮罩版本。
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
@@ -197,7 +197,7 @@ export function AiConfigPage() {
               </div>
             </div>
             <p className="text-xs text-muted-foreground">
-              每次儲存都要重新輸入 — 唔會預填,亦唔會喺 client 持久化。
+              每次儲存都要重新輸入 — 不會預填,也不會在 client 持久化。
             </p>
           </div>
 
@@ -212,7 +212,7 @@ export function AiConfigPage() {
               autoComplete="off"
             />
             <p className="text-xs text-muted-foreground">
-              Provider 支援嘅 model identifier。常見:gpt-4o、gpt-4o-mini、claude-3-5-sonnet-20241022、llama-3.1-70b。
+              Provider 支援的 model identifier。常見:gpt-4o、gpt-4o-mini、claude-3-5-sonnet-20241022、llama-3.1-70b。
             </p>
           </div>
 
@@ -223,7 +223,7 @@ export function AiConfigPage() {
               id="systemPrompt"
               value={systemPrompt}
               onChange={(e) => setSystemPrompt(e.target.value)}
-              placeholder="留空使用 packages/ai/src/prompts.ts 嘅 default prompt。"
+              placeholder="留空使用 packages/ai/src/prompts.ts 的 default prompt。"
               rows={6}
             />
             <p className="text-xs text-muted-foreground">

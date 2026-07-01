@@ -8,6 +8,36 @@ import { SENT_LOCKED_FIELDS, type QuotationPatchBody } from '../lib/quotation-pa
 // 2026-06-07 (US-A5): port 落 CRM 嘅 Excel 5-sheet generator + Prisma adapter
 import { adaptCrmQuotationForExcel } from '../lib/excel/crm-adapter';
 import { generateQuotationExcel } from '../lib/excel/quotation';
+// 2026-06-30: AI Excel import routes (`/import/preview`, `/import/commit`).
+// Without these imports the preview route throws `extractBoundary is not
+// defined` at runtime — this is a pre-existing bug from Day 30 that
+// survived because the file has a `// @ts-nocheck` at line 1 (which
+// hides the missing import from the typecheck pass). The route was
+// wired up by the original author but the import line was forgotten
+// — it was never exercised end-to-end until the UI was wired up today.
+import {
+  parseMultipart,
+  extractBoundary,
+  MultipartError,
+} from '../lib/multipart';
+// Same root cause as the multipart imports above: the import/preview +
+// import/commit handlers reference `extractImportPlan` /
+// `executeImportPlan` / `ImportPlanSchema` / `ImportContext` but the
+// import line was never written. Without these, preview returns 422
+// (`extractImportPlan is not defined`) and commit returns 500. Caught
+// when the UI dialog was wired up on 2026-06-30.
+import {
+  extractImportPlan,
+  executeImportPlan,
+  ImportPlanSchema,
+  type ImportContext,
+} from '../lib/excel-import';
+// Same Day-30 oversight: the preview + commit handlers pass a
+// `getAiConfig` lambda into the ImportContext, but the import line
+// was missing. Without it the LLM-backed extraction throws
+// `getAiConfig is not defined` at runtime (422 because the route
+// wraps the error in `Failed to extract import plan: ...`).
+import { getAiConfig } from '@crm/ai';
 // P2 multi-currency (2026-06-29): getCurrencyConfig / hkdRateFor live
 // in @crm/db so this route + the AI draft_quotation tool share one
 // source of truth (see packages/db/src/currency.ts).
@@ -1047,4 +1077,125 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
     await prisma.quotationItem.delete({ where: { id: params.itemId } });
     await recalcQuotationAndItems(params.id, { liveCostRefresh: true });
     return { success: true };
+  })
+  // ===================================================================
+  // 2026-06-30: AI Excel import routes (Day-30 user request)
+  // Two-step flow:
+  //   POST /import/preview — accept xlsx (multipart), run LLM
+  //     extraction, return the validated plan + context-resolved
+  //     match list. The user reviews and confirms.
+  //   POST /import/commit  — accept the same plan (JSON), re-run
+  //     validation server-side, then execute find-or-create for
+  //     the company/deal/contact/lineItems. Re-resolution on the
+  //     commit step protects against a concurrent admin edit
+  //     between the two requests.
+  // Both routes are gated by `quotation:create` permission since
+  // the side-effect creates (Companies / Contacts / Deals /
+  // Products / Services) are scoped under the same operation
+  // (consistent with the existing AI draft_quotation tool).
+  // ===================================================================
+  .post('/import/preview', async ({ request, set, userId }) => {
+    if (!userId) { set.status = 401; return { error: 'Unauthorized' }; }
+    const contentType = request.headers.get('content-type') ?? '';
+    const boundary = extractBoundary(contentType);
+    if (!boundary) {
+      set.status = 400;
+      return { error: 'multipart/form-data with boundary required' };
+    }
+    let parsed;
+    try {
+      parsed = await parseMultipart(request, boundary);
+    } catch (err) {
+      if (err instanceof MultipartError) {
+        set.status = 400;
+        return { error: err.message };
+      }
+      throw err;
+    }
+    const xlsxFile = parsed.files.find((f) => f.fieldName === 'file');
+    if (!xlsxFile) {
+      set.status = 400;
+      return { error: 'file field is required (multipart key "file")' };
+    }
+    if (
+      !xlsxFile.mimeType.includes('spreadsheet') &&
+      !xlsxFile.fileName.toLowerCase().endsWith('.xlsx')
+    ) {
+      set.status = 400;
+      return { error: `file must be a .xlsx spreadsheet (got ${xlsxFile.mimeType})` };
+    }
+    const [companies, products, services, deals] = await Promise.all([
+      prisma.company.findMany({ select: { id: true, name: true } }),
+      prisma.product.findMany({
+        where: { status: { not: 'ARCHIVED' } },
+        select: { id: true, name: true, sku: true },
+      }),
+      prisma.service.findMany({
+        where: { status: { not: 'ARCHIVED' } },
+        select: { id: true, name: true },
+      }),
+      prisma.deal.findMany({
+        select: { id: true, title: true, stage: { select: { name: true } } },
+      }),
+    ]);
+    const ctx: ImportContext = {
+      prisma,
+      getAiConfig: () => getAiConfig(),
+      companies,
+      products,
+      services,
+      deals,
+      userId,
+    };
+    try {
+      const plan = await extractImportPlan(
+        new Uint8Array(xlsxFile.buffer),
+        ctx,
+      );
+      return { plan, fileName: xlsxFile.fileName };
+    } catch (err) {
+      const msg = (err as Error).message;
+      set.status = 422;
+      return { error: `Failed to extract import plan: ${msg}` };
+    }
+  })
+  .post('/import/commit', async ({ body, set, userId }) => {
+    if (!userId) { set.status = 401; return { error: 'Unauthorized' }; }
+    let plan: ImportPlan;
+    try {
+      plan = ImportPlanSchema.parse(body);
+    } catch (err) {
+      set.status = 422;
+      return { error: `Invalid plan: ${(err as Error).message}` };
+    }
+    const [companies, products, services, deals] = await Promise.all([
+      prisma.company.findMany({ select: { id: true, name: true } }),
+      prisma.product.findMany({
+        where: { status: { not: 'ARCHIVED' } },
+        select: { id: true, name: true, sku: true },
+      }),
+      prisma.service.findMany({
+        where: { status: { not: 'ARCHIVED' } },
+        select: { id: true, name: true },
+      }),
+      prisma.deal.findMany({
+        select: { id: true, title: true, stage: { select: { name: true } } },
+      }),
+    ]);
+    const ctx: ImportContext = {
+      prisma,
+      getAiConfig: () => getAiConfig(),
+      companies,
+      products,
+      services,
+      deals,
+      userId,
+    };
+    try {
+      const { resolved, newQuotationId } = await executeImportPlan(plan, ctx);
+      return { resolved, newQuotationId };
+    } catch (err) {
+      set.status = 500;
+      return { error: `Failed to commit import: ${(err as Error).message}` };
+    }
   });

@@ -102,7 +102,7 @@ export function AuditPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl md:text-3xl font-bold">Audit Log</h1>
-        <p className="text-muted-foreground">所有用戶喺系統上嘅操作記錄</p>
+        <p className="text-muted-foreground">所有用戶在系統上的操作記錄</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -136,7 +136,7 @@ export function AuditPage() {
         <Card>
           <CardContent className="p-12 text-center text-muted-foreground">
             <History className="h-12 w-12 mx-auto mb-3 opacity-50" />
-            冇 audit event
+            沒有 audit event
           </CardContent>
         </Card>
       ) : (

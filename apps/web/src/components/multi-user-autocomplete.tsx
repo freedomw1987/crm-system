@@ -62,7 +62,7 @@ export function MultiUserAutocomplete({
       className={className}
       disabled={disabled || isLoading}
       placeholder={placeholder}
-      emptyText={isLoading ? '載入中...' : '搵唔到'}
+      emptyText={isLoading ? '載入中...' : '找不到'}
     />
   );
 }

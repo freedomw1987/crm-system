@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
-import { FileText, Plus, Sparkles, Loader2, X, Trash2 } from 'lucide-react';
+import { FileText, Plus, Sparkles, Loader2, X, Trash2, FileUp } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/input';
 import { QuotationBuilder } from '@/components/quotation-builder';
+import { QuotationImportDialog } from '@/components/quotation-import-dialog';
 import { quotationsApi, chatApi, companiesApi, type Quotation } from '@/lib/api';
 import { formatCurrency, formatDate } from '@/lib/utils';
 
@@ -32,6 +33,15 @@ export function QuotationsPage() {
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  // 2026-06-30: AI Excel import dialog. The two-step flow (Upload →
+  // Preview/Edit → Commit) lives in `QuotationImportDialog`; we just
+  // own the open state + the navigate-on-success callback.
+  const [importOpen, setImportOpen] = useState(false);
+  function handleImportSuccess(quotationId: string) {
+    setImportOpen(false);
+    queryClient.invalidateQueries({ queryKey: ['quotations'] });
+    navigate(`/quotations/${quotationId}`);
+  }
   // 2026-06-09: multi-select Company + sales-rep (createdById) filters.
   // Empty array means "no filter". Wired into the queryKey so a
   // different selection triggers a fresh server fetch.
@@ -172,7 +182,7 @@ export function QuotationsPage() {
         navigate(`/quotations/${draftQuotationId}`);
         return;
       }
-      setAiError('AI 冇整到 quotation,睇下 chat 了解詳情');
+      setAiError('AI 沒有整到 quotation,看下 chat 了解詳情');
     } catch (err) {
       setAiError((err as Error).message);
     } finally {
@@ -191,6 +201,10 @@ export function QuotationsPage() {
           <Button variant="outline" onClick={() => setAiOpen(true)}>
             <Sparkles className="h-4 w-4 mr-2" />
             AI Draft
+          </Button>
+          <Button variant="outline" onClick={() => setImportOpen(true)}>
+            <FileUp className="h-4 w-4 mr-2" />
+            Import from Excel
           </Button>
           <Button onClick={() => setBuilderOpen(true)}>
             <Plus className="h-4 w-4 mr-2" />
@@ -266,8 +280,8 @@ export function QuotationsPage() {
               用自然語言講你想點報,例如:
             </p>
             <ul className="text-xs text-muted-foreground list-disc pl-5 space-y-1">
-              <li>「幫 ABC Company 開個 5 個 AC01 同 2 個 AC02 嘅 quotation」</li>
-              <li>「幫我整個 deal 客戶嘅 starter pack」</li>
+              <li>「幫 ABC Company 開個 5 個 AC01 和 2 個 AC02 的 quotation」</li>
+              <li>「幫我整個 deal 客戶的 starter pack」</li>
             </ul>
             <Textarea
               value={aiPrompt}
@@ -289,7 +303,7 @@ export function QuotationsPage() {
               {aiLoading ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  AI 諗緊...
+                  AI 想緊...
                 </>
               ) : (
                 <>
@@ -324,13 +338,21 @@ export function QuotationsPage() {
         </DialogContent>
       </Dialog>
 
+      {/* 2026-06-30: AI Excel import dialog. See
+          components/quotation-import-dialog.tsx for the full flow. */}
+      <QuotationImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onSuccess={handleImportSuccess}
+      />
+
       {isLoading ? (
         <p className="text-sm text-muted-foreground">載入中...</p>
       ) : quotations.length === 0 ? (
         <Card>
           <CardContent className="p-12 text-center text-muted-foreground">
             <FileText className="h-12 w-12 mx-auto mb-3 opacity-50" />
-            未有報價單,撳「+ 新報價」整第一個
+            未有報價單,點擊「+ 新報價」整第一個
           </CardContent>
         </Card>
       ) : (

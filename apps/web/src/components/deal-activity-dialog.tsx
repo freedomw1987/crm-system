@@ -137,7 +137,7 @@ export function DealActivityDialog({
           </div>
           <Textarea
             id="deal-activity-composer"
-            placeholder="寫低 follow-up 進度、客戶 reply、打咗電話嘅 outcome…"
+            placeholder="寫下 follow-up 進度、客戶 reply、打咗電話的 outcome…"
             value={content}
             onChange={(e) => setContent(e.target.value)}
             rows={3}

@@ -27,62 +27,11 @@ import { prisma } from '@crm/db';
 import { authContext } from '../lib/context';
 import { logEvent } from '../middleware/audit';
 import { requirePermission } from '../middleware/rbac';
-
-// Snapshot the role's current values into a ServiceManDay create payload.
-// Returns either { manDayRoleId, role, dayRate, costRate } (when roleId
-// resolves) or the legacy { role, dayRate, costRate: 0 } (when no roleId).
-// `costRate` defaults to 0 if the role has no cost defined — the service
-// creator can override in a future iteration if needed.
-function snapshotManDayLine(line: {
-  manDayRoleId?: string | null;
-  role?: string;
-  dayRate?: number;
-  costRate?: number;
-  days: number;
-  sortOrder?: number;
-}, roleLookup: Map<string, { name: string; price: number; cost: number }>) {
-  if (line.manDayRoleId) {
-    const r = roleLookup.get(line.manDayRoleId);
-    if (r) {
-      return {
-        manDayRoleId: line.manDayRoleId,
-        role: r.name,
-        dayRate: r.price,
-        costRate: r.cost,
-        days: line.days,
-        subtotal: Number(r.price) * Number(line.days),
-        sortOrder: line.sortOrder ?? 0,
-      };
-    }
-    // FK points to a missing role — fall through to free-form with the
-    // roleId nulled (avoids FK violation)
-  }
-  return {
-    manDayRoleId: null,
-    role: line.role ?? '',
-    dayRate: line.dayRate ?? 0,
-    costRate: line.costRate ?? 0,
-    days: line.days,
-    subtotal: Number(line.dayRate ?? 0) * Number(line.days),
-    sortOrder: line.sortOrder ?? 0,
-  };
-}
-
-// Pre-load the ManDayRoles referenced in an incoming payload so we can
-// snapshot them in one round-trip. If the payload doesn't reference any
-// roles (legacy free-form), this returns an empty map.
-async function buildRoleLookup(roleIds: string[]): Promise<Map<string, { name: string; price: number; cost: number }>> {
-  const map = new Map<string, { name: string; price: number; cost: number }>();
-  if (roleIds.length === 0) return map;
-  const roles = await prisma.manDayRole.findMany({
-    where: { id: { in: roleIds } },
-    select: { id: true, name: true, price: true, cost: true },
-  });
-  for (const r of roles) {
-    map.set(r.id, { name: r.name, price: Number(r.price), cost: Number(r.cost) });
-  }
-  return map;
-}
+// 2026-07-01 (US-IMPORT-MD): shared with the AI Excel import executor
+// (`apps/api/src/lib/excel-import.ts`). Both POST/PATCH here and
+// `executeImportPlan` need the same role-resolution logic for the
+// new SENT ManDayRole catalogue vs free-form snapshot.
+import { snapshotManDayLine, buildRoleLookup } from '../lib/man-day-snapshot';
 
 export const serviceRoutes = new Elysia({ prefix: '/services', tags: ['services'] })
   .use(authContext)
@@ -140,7 +89,7 @@ export const serviceRoutes = new Elysia({ prefix: '/services', tags: ['services'
     const roleIds = (data.manDayLines ?? [])
       .map((l) => l.manDayRoleId)
       .filter((id): id is string => Boolean(id));
-    const roleLookup = await buildRoleLookup(roleIds);
+    const roleLookup = await buildRoleLookup(prisma, roleIds);
     const service = await prisma.service.create({
       data: {
         name: data.name,
@@ -213,7 +162,7 @@ export const serviceRoutes = new Elysia({ prefix: '/services', tags: ['services'
     const roleIds = (data.manDayLines ?? [])
       .map((l) => l.manDayRoleId)
       .filter((id): id is string => Boolean(id));
-    const roleLookup = await buildRoleLookup(roleIds);
+    const roleLookup = await buildRoleLookup(prisma, roleIds);
 
     const updated = await prisma.$transaction(async (tx) => {
       const result = await tx.service.update({

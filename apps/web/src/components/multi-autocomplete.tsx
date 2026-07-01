@@ -53,7 +53,7 @@ export function MultiAutocomplete<T>({
   value,
   onChange,
   placeholder = '搜尋...',
-  emptyText = '搵唔到',
+  emptyText = '找不到',
   label,
   className,
   disabled,
@@ -178,7 +178,7 @@ export function MultiAutocomplete<T>({
             {filtered.length === 0 ? (
               <div className="p-2 text-sm text-muted-foreground text-center">
                 {selectedItems.length > 0 && items.length > 0 && selectedSet.size === items.length
-                  ? '已揀晒所有項目'
+                  ? '已選晒所有項目'
                   : emptyText}
               </div>
             ) : (

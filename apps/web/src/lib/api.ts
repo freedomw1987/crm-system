@@ -419,6 +419,48 @@ export const quotationsApi = {
     request<{ success: boolean }>(`/quotations/${quotationId}/items/${itemId}`, { method: 'DELETE' }),
   setStatus: (id: string, status: Quotation['status']) =>
     request<Quotation>(`/quotations/${id}/status`, { method: 'POST', body: JSON.stringify({ status }) }),
+  // 2026-06-30: Day-30 user request — "用戶可以上傳舊有的Quotation
+  // Excel file; 系統AI 可以幫我把這個Quotation上的資料做提取; 相對
+  // 在系統中, 創建Quotation記錄". Two-step flow:
+  //   1. importPreview(file) — POST /quotations/import/preview with
+  //      multipart/form-data file. Returns the LLM-extracted plan.
+  //   2. importCommit(plan)  — POST /quotations/import/commit with
+  //      the plan in JSON body. Returns the new Quotation id.
+  // The two-step flow is required because LLM extraction is
+  // non-deterministic — the user must confirm before the AI is
+  // allowed to write to the DB.
+  importPreview: async (file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    const token = getToken();
+    const r = await fetch(apiUrl('/quotations/import/preview'), {
+      method: 'POST',
+      body: fd,
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!r.ok) {
+      const errBody = (await r.json().catch(() => null)) as
+        | { error?: string }
+        | null;
+      throw new ApiError(
+        r.status,
+        errBody,
+        errBody?.error ?? `Import preview failed (${r.status})`,
+      );
+    }
+    return (await r.json()) as {
+      plan: unknown;
+      fileName: string;
+    };
+  },
+  importCommit: (plan: unknown) =>
+    request<{
+      resolved: unknown;
+      newQuotationId: string;
+    }>('/quotations/import/commit', {
+      method: 'POST',
+      body: JSON.stringify(plan),
+    }),
   // 2026-06-07 (US-A5): Download quotation as .xlsx (5 worksheets, bc-quotation
   // format). Uses raw fetch because the response is binary, not JSON.
   // Calls window.URL.createObjectURL to trigger a browser download dialog.
@@ -1042,6 +1084,25 @@ export interface TaxConfig {
   updatedBy?: { id: string; name: string; email: string } | null;
 }
 
+// 2026-07-01 (US-MAINT-1): Maintenance Service rate. Stored as
+// a percentage (0–100, e.g. 20 means 20%). The Quotation builder
+// reads this on open so the "＋維護費用" button can pre-compute
+// the fee amount at the moment the user clicks.
+//
+// 2026-07-01 rename: 維修費用 → 維護費用 + "Maintenance Fee" →
+// "Maintenance Service" (per user request). The TS type name
+// `MaintenanceFeeConfig` and `getMaintenanceFee`/`putMaintenanceFee`
+// method names keep their legacy identifiers to avoid breaking
+// the import surface across the codebase; only the displayed
+// strings change.
+export interface MaintenanceFeeConfig {
+  key: string;
+  rate: number; // percent (0–100)
+  description?: string | null;
+  updatedAt?: string | null;
+  updatedBy?: { id: string; name: string; email: string } | null;
+}
+
 // P2 multi-currency (2026-06-29): mirrors TaxConfig for the new
 // currency settings endpoint. The `default` is what new Quotation
 // rows default to (RMB / HKD / MOP); `rates` is the two RMB-anchored
@@ -1062,6 +1123,15 @@ export const settingsApi = {
   getTax: () => request<TaxConfig>('/settings/tax'),
   putTax: (data: { rate: number }) =>
     request<TaxConfig>('/settings/tax', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  // 2026-07-01 (US-MAINT-1): Maintenance Fee rate. Same
+  // shape as TaxConfig; server-side range is 0–100.
+  getMaintenanceFee: () => request<MaintenanceFeeConfig>('/settings/maintenance-fee'),
+  putMaintenanceFee: (data: { rate: number }) =>
+    request<MaintenanceFeeConfig>('/settings/maintenance-fee', {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
@@ -1106,4 +1176,122 @@ export const settingsApi = {
     request<{ ok: boolean }>(`/settings/pipelines/stages/${id}`, {
       method: 'DELETE',
     }),
+};
+
+// 2026-06-30: AI Excel import — 2-step flow (preview → commit).
+// preview: parses + LLM-extracts a structured plan; commit: re-validates
+// + executes find-or-create on the plan. The plan's `isNew` flags
+// surface in the dialog so the user sees what will be created
+// vs matched to existing records.
+export type ImportPlan = {
+  company: {
+    name: string;
+    taxId?: string | null;
+    industry?: string | null;
+    regionCode?: 'HK' | 'MO' | 'CN' | 'OTHER' | null;
+    contactEmail?: string | null;
+    contactPhone?: string | null;
+    contactPerson?: string | null;
+  };
+  deal?: {
+    title: string;
+    stage?: string | null;
+    value?: number | null;
+    ownerName?: string | null;
+  } | null;
+  contact?: {
+    name: string;
+    email?: string | null;
+    phone?: string | null;
+  } | null;
+  lineItems: Array<{
+    type: 'PRODUCT' | 'SERVICE';
+    name: string;
+    description?: string | null;
+    quantity: number;
+    unitPrice: number;
+    discount?: number | null;
+    sku?: string | null;
+    manDaySnapshot?: Array<{
+    role: string;
+    dayRate: number;
+    days: number;
+    costRate?: number | null;
+    // 2026-07-01 (US-IMPORT-MD): catalogue FK picked from the
+    // /man-day-roles autocomplete in the Preview modal. When set,
+    // the backend re-snapshots latest price/cost from ManDayRole
+    // at commit time. When null, the line is treated as free-form
+    // (legacy behaviour; matches what pre-2026-07-01 imports emit).
+    manDayRoleId?: string | null;
+  }> | null;
+  }>;
+  meta: {
+    title: string;
+    notes?: string | null;
+    validUntil?: string | null;
+    taxRate: number;
+    issueDate?: string | null;
+    currency: 'RMB' | 'HKD' | 'MOP';
+  };
+};
+export type ResolvedPlan = {
+  company: { id: string; isNew: boolean };
+  deal: { id: string; isNew: boolean } | null;
+  contact: { id: string; isNew: boolean } | null;
+  salesRepId: string | null;
+  lineItems: Array<{
+    productId: string | null;
+    serviceId: string | null;
+    quantity: number;
+    unitPrice: number;
+    discount: number;
+    name: string;
+    description: string | null;
+    sku: string | null;
+    manDaySnapshot: unknown | null;
+  }>;
+  meta: ImportPlan['meta'];
+};
+
+/**
+ * Day 30: extract the import-related methods onto a separate
+ * `quotationImportApi` so the existing `quotationsApi` block stays
+ * focused on the core CRUD + revision + export paths.
+ */
+export const quotationImportApi = {
+  /**
+   * Multipart upload of the .xlsx file → LLM-extracted plan +
+   * the imported-file name. Caller uses the `isNew` flags in the
+   * resolved-side payload to show the user what will be created
+   * vs reused before committing.
+   */
+  preview: async (file: File): Promise<{ plan: ImportPlan; fileName: string }> => {
+    const form = new FormData();
+    form.append('file', file);
+    const token = getToken();
+    const res = await fetch(apiUrl('/quotations/import/preview'), {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new ApiError(res.status, body, body?.error ?? `Failed to preview (${res.status})`);
+    }
+    return res.json();
+  },
+
+  /**
+   * Commit the same plan to actually write to the DB. The route
+   * re-runs ImportPlanSchema.parse on its end; we pass the plan
+   * straight through (no need to re-validate client-side).
+   */
+  commit: async (
+    plan: ImportPlan,
+  ): Promise<{ resolved: ResolvedPlan; newQuotationId: string }> => {
+    return request('/quotations/import/commit', {
+      method: 'POST',
+      body: JSON.stringify(plan),
+    });
+  },
 };

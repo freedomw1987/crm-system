@@ -57,7 +57,7 @@ export function Autocomplete<T>({
   value,
   onChange,
   placeholder = '搜尋...',
-  emptyText = '搵唔到',
+  emptyText = '找不到',
   onCreate,
   label,
   className,

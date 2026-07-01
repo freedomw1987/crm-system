@@ -52,7 +52,7 @@ export function DashboardPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl md:text-3xl font-bold">Dashboard</h1>
-        <p className="text-muted-foreground">歡迎返嚟,睇下今日嘅 overview</p>
+        <p className="text-muted-foreground">歡迎回來,看下今日的 overview</p>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

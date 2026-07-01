@@ -122,7 +122,7 @@ function ActivityList({ items, isLoading }: { items: Activity[]; isLoading: bool
   if (items.length === 0) {
     return (
       <p className="text-sm text-muted-foreground text-center py-6">
-        仲未有 Activity 記錄
+        仍未有 Activity 記錄
       </p>
     );
   }
@@ -298,7 +298,7 @@ export function ActivityItem({
                 aria-label="刪除 activity"
                 title="刪除"
                 onClick={() => {
-                  if (!confirm('確定刪除呢個 activity?')) return;
+                  if (!confirm('確定刪除這個 activity?')) return;
                   deleteActivity.mutate(activity.id);
                 }}
                 disabled={deleteActivity.isPending}
@@ -587,7 +587,7 @@ function Composer({
       </div>
       <Textarea
         id="activity-composer"
-        placeholder="寫低 follow-up 進度、客戶 reply、打咗電話嘅 outcome…"
+        placeholder="寫下 follow-up 進度、客戶 reply、打咗電話的 outcome…"
         value={content}
         onChange={(e) => setContent(e.target.value)}
         rows={2}
@@ -692,7 +692,7 @@ export function DeleteActivityButton({ id, onDone }: { id: string; onDone?: () =
       size="icon"
       aria-label="刪除 activity"
       onClick={() => {
-        if (!confirm('確定刪除呢個 activity?')) return;
+        if (!confirm('確定刪除這個 activity?')) return;
         del.mutate(id, { onSuccess: onDone });
       }}
       disabled={del.isPending}

@@ -63,7 +63,7 @@ export function DealDetailPage() {
   });
 
   if (isLoading) return <p className="p-6 text-muted-foreground">載入中...</p>;
-  if (!deal) return <p className="p-6 text-muted-foreground">搵唔到呢個 deal</p>;
+  if (!deal) return <p className="p-6 text-muted-foreground">找不到這個 deal</p>;
 
   const isOpen = deal.status === 'OPEN';
   const isWon = deal.status === 'WON';
@@ -329,8 +329,8 @@ function QuotationsTab({ dealId, dealCompanyId }: { dealId: string; dealCompanyI
       <Card>
         <CardContent className="p-12 text-center text-muted-foreground">
           <FileText className="h-10 w-10 mx-auto mb-3 opacity-50" />
-          <p>呢個 deal 仲未有報價。</p>
-          <p className="text-xs mt-1">撳上面「＋ 新增報價」整第一份。</p>
+          <p>這個 deal 仍未有報價。</p>
+          <p className="text-xs mt-1">按上面「＋ 新增報價」整第一份。</p>
         </CardContent>
       </Card>
     );
@@ -412,7 +412,7 @@ function ActivityTab({
       <Card>
         <CardContent className="p-12 text-center text-muted-foreground">
           <ActivityIcon className="h-10 w-10 mx-auto mb-3 opacity-50" />
-          <p>呢個 deal 仲未有 activity 記錄。</p>
+          <p>這個 deal 仍未有 activity 記錄。</p>
           <Button size="sm" className="mt-3" onClick={onAdd}>
             <Plus className="h-4 w-4 mr-1" /> 新增 Activity
           </Button>

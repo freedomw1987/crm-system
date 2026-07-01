@@ -211,7 +211,7 @@ export function AiChatPage() {
         <div className="flex-1 overflow-y-auto p-2 space-y-1 scrollbar-thin">
           {conversations.length === 0 ? (
             <p className="text-xs text-muted-foreground text-center py-4">
-              仲未有對話
+              仍未有對話
             </p>
           ) : (
             conversations.map((c) => (
@@ -278,7 +278,7 @@ export function AiChatPage() {
               {submitInFlight && streamingReply === '' && inFlightTools.length === 0 && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  AI 諗緊...
+                  AI 想緊...
                 </div>
               )}
 
@@ -301,7 +301,7 @@ export function AiChatPage() {
                     handleSubmit(e as unknown as FormEvent);
                   }
                 }}
-                placeholder="問 AI 有關 CRM 嘅嘢..."
+                placeholder="問 AI 有關 CRM 的物..."
                 rows={2}
                 className="flex-1"
               />
@@ -318,10 +318,10 @@ export function AiChatPage() {
 
 function EmptyState({ onSend, disabled }: { onSend: (msg: string) => void; disabled: boolean }) {
   const examples = [
-    '邊 5 個客戶最大貢獻 revenue?',
-    '搵下 "ABC" 呢間公司',
-    '幫我開個 AC01 x 10 嘅報價俾第一個 customer',
-    'Log 一個 call 俾 ABC Company,傾咗佢哋嘅 Q4 計劃',
+    '哪 5 個客戶最大貢獻 revenue?',
+    '搵下 "ABC" 這間公司',
+    '幫我開個 AC01 x 10 的報價給第一個 customer',
+    'Log 一個 call 給 ABC Company,談過佢哋的 Q4 計劃',
   ];
   // 2026-06-29: a free-text composer so the user can type their own
   // prompt on a new conversation, not just pick from the example
@@ -345,7 +345,7 @@ function EmptyState({ onSend, disabled }: { onSend: (msg: string) => void; disab
         </div>
         <h2 className="text-xl font-semibold mb-2">CRM AI Assistant</h2>
         <p className="text-muted-foreground mb-6 max-w-md">
-          用自然語言操作 CRM — 查客戶、生報價、log activity、睇 analytics。
+          用自然語言操作 CRM — 查客戶、生報價、log activity、看 analytics。
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-2xl">
           {examples.map((ex) => (
@@ -374,7 +374,7 @@ function EmptyState({ onSend, disabled }: { onSend: (msg: string) => void; disab
               handleSubmit(e as unknown as FormEvent);
             }
           }}
-          placeholder="問 AI 有關 CRM 嘅嘢..."
+          placeholder="問 AI 有關 CRM 的物..."
           rows={2}
           className="flex-1"
           autoFocus
@@ -434,7 +434,7 @@ function ConversationItem({
         type="button"
         onClick={(e) => {
           e.stopPropagation();
-          if (confirm('刪除呢個對話?')) onDelete();
+          if (confirm('刪除這個對話?')) onDelete();
         }}
         className={cn(
           'opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded',

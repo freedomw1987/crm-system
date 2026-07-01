@@ -55,7 +55,7 @@ export function QuotationDetailPage() {
   }
 
   if (isLoading) return <p>載入中...</p>;
-  if (!quotation) return <p>搵唔到呢張報價單</p>;
+  if (!quotation) return <p>找不到這張報價單</p>;
 
   async function transition(status: QuotationStatus) {
     if (!id) return;
@@ -71,7 +71,7 @@ export function QuotationDetailPage() {
 
   async function handleDelete() {
     if (!id) return;
-    if (!window.confirm('確定刪除呢張報價單?')) return;
+    if (!window.confirm('確定刪除這張報價單?')) return;
     try {
       await quotationsApi.remove(id);
       queryClient.invalidateQueries({ queryKey: ['quotations'] });
@@ -471,7 +471,7 @@ export function QuotationDetailPage() {
                   Hidden for HKD rows to avoid HKD-on-HKD noise. */}
               {quotation.currency !== 'HKD' && Number(quotation.totalHKD ?? 0) > 0 && (
                 <div className="flex justify-between text-xs text-muted-foreground pt-1 mt-1 border-t border-dashed">
-                  <span title="喺儲存時 snapshot,改系統匯率唔會重寫">
+                  <span title="在儲存時 snapshot,改系統匯率不會重寫">
                     ≈ HKD (匯率 {Number(quotation.exchangeRateToHKD ?? 0).toFixed(4)})
                   </span>
                   <span className="tabular-nums">{formatCurrency(quotation.totalHKD ?? 0, 'HKD')}</span>
@@ -482,7 +482,7 @@ export function QuotationDetailPage() {
                   guard (`totalMOP > 0`). */}
               {quotation.currency !== 'MOP' && Number(quotation.totalMOP ?? 0) > 0 && (
                 <div className="flex justify-between text-xs text-muted-foreground pt-1 mt-1 border-t border-dashed">
-                  <span title="喺儲存時 snapshot,改系統匯率唔會重寫">
+                  <span title="在儲存時 snapshot,改系統匯率不會重寫">
                     ≈ MOP (匯率 {Number(quotation.exchangeRateToMOP ?? 0).toFixed(4)})
                   </span>
                   <span className="tabular-nums">{formatCurrency(quotation.totalMOP ?? 0, 'MOP')}</span>
@@ -555,17 +555,17 @@ export function QuotationDetailPage() {
       <Dialog open={reviseConfirmOpen} onOpenChange={setReviseConfirmOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>建立 {quotation.number} 嘅修訂?</DialogTitle>
+            <DialogTitle>建立 {quotation.number} 的修訂?</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 text-sm">
-            <p>呢個動作會：</p>
+            <p>這個動作會：</p>
             <ul className="list-disc pl-5 space-y-1 text-muted-foreground">
-              <li>保留原本嘅 <span className="font-mono">{quotation.number}</span>（唔會郁佢）</li>
-              <li>複製客戶、Deal、銷售同事、所有 line items（同 snapshot）</li>
-              <li>開一個新嘅 DRAFT 報價單俾你改</li>
+              <li>保留原本的 <span className="font-mono">{quotation.number}</span>（不會郁佢）</li>
+              <li>複製客戶、Deal、銷售和事、所有 line items（和 snapshot）</li>
+              <li>開一個新的 DRAFT 報價單給你改</li>
             </ul>
             <p className="text-xs text-muted-foreground">
-              改好之後可以正常「發送」。原本嘅報價單同審計 log 會保留以供追溯。
+              改好之後可以正常「發送」。原本的報價單和審計 log 會保留以供追溯。
             </p>
           </div>
           <div className="flex justify-end gap-2 mt-2">

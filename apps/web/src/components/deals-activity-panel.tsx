@@ -228,7 +228,7 @@ export function DealsActivityPanel() {
           <p className="text-sm text-muted-foreground p-6 text-center">載入中...</p>
         ) : items.length === 0 ? (
           <p className="text-sm text-muted-foreground p-6 text-center">
-            呢段時間未有 Activity 記錄
+            這段時間未有 Activity 記錄
           </p>
         ) : (
           <ul className="divide-y">

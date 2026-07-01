@@ -420,7 +420,7 @@ function KanbanColumn({
       <div className="p-2 space-y-2 min-h-[200px] max-h-[70vh] overflow-y-auto scrollbar-thin">
         {deals.length === 0 ? (
           <p className="text-xs text-muted-foreground text-center py-8 select-none pointer-events-none">
-            拖 deal 落呢度
+            拖 deal 落此處
           </p>
         ) : (
           deals.map((d) => (
@@ -543,7 +543,7 @@ function DealCard({
                 navigate(`/deals/${deal.id}`);
               }}
               className="mt-1.5 inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded hover:bg-primary/10 transition-colors text-muted-foreground hover:text-foreground"
-              title={`查看呢個 deal 嘅 ${quoteCount} 份報價`}
+              title={`查看這個 deal 的 ${quoteCount} 份報價`}
               data-testid="deal-card-view-quotations"
             >
               <FileText className="h-3 w-3" />

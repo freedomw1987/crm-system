@@ -65,7 +65,7 @@ export function UserDetailPage() {
   });
 
   if (isLoading) return <p>載入中...</p>;
-  if (!user) return <p>搵唔到呢個用戶</p>;
+  if (!user) return <p>找不到這個用戶</p>;
 
   const isSelf = me?.id === user.id;
   const dirty = name !== user.name || role !== user.role || isActive !== user.isActive;
@@ -90,7 +90,7 @@ export function UserDetailPage() {
           <h1 className="text-2xl font-bold">{user.name}</h1>
           <p className="text-muted-foreground text-sm">{user.email}</p>
         </div>
-        {isSelf && <Badge variant="info">你呢個帳號</Badge>}
+        {isSelf && <Badge variant="info">你這個帳號</Badge>}
       </div>
 
       <Card>
@@ -122,7 +122,7 @@ export function UserDetailPage() {
                 <option value="true">啟用</option>
                 <option value="false">停用</option>
               </Select>
-              {isSelf && <p className="text-xs text-muted-foreground">唔可以停用自己</p>}
+              {isSelf && <p className="text-xs text-muted-foreground">不可停用自己</p>}
             </div>
           </div>
         </CardContent>
@@ -172,7 +172,7 @@ export function UserDetailPage() {
       <Dialog open={resetOpen} onOpenChange={setResetOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>重設 {user.email} 嘅密碼</DialogTitle>
+            <DialogTitle>重設 {user.email} 的密碼</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <Label htmlFor="npw">新密碼 (至少 8 字)</Label>

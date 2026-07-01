@@ -214,7 +214,7 @@ export default function SettingsPage() {
             )}
           </CardTitle>
           <CardDescription>
-            Drag rows to reorder. 改 name / probability / color 然後撳 Save 或 Tab 走個 focus 即 save。
+            Drag rows to reorder. 改 name / probability / color 然後點擊 Save 或 Tab 走個 focus 即 save。
           </CardDescription>
         </CardHeader>
         <CardContent>

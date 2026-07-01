@@ -36,7 +36,7 @@ export function UsersPage() {
       <div className="flex items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold">Users</h1>
-          <p className="text-muted-foreground">管理系統用戶帳號、角色同權限</p>
+          <p className="text-muted-foreground">管理系統用戶帳號、角色和權限</p>
         </div>
         <Button onClick={() => setCreateOpen(true)}>
           <Plus className="h-4 w-4 mr-2" />
@@ -68,7 +68,7 @@ export function UsersPage() {
         <Card>
           <CardContent className="p-12 text-center text-muted-foreground">
             <UsersIcon className="h-12 w-12 mx-auto mb-3 opacity-50" />
-            搵唔到用戶
+            找不到用戶
           </CardContent>
         </Card>
       ) : (

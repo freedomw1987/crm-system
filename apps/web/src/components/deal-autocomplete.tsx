@@ -138,8 +138,8 @@ export function DealAutocomplete({
         label={label}
         className={className}
         disabled={disabled || !companyId}
-        placeholder={companyId ? placeholder : '請先揀客戶'}
-        emptyText={companyId ? '呢個客戶未有任何 deal' : '請先揀客戶'}
+        placeholder={companyId ? placeholder : '請先選客戶'}
+        emptyText={companyId ? '這個客戶未有任何 deal' : '請先選客戶'}
         onCreate={
           allowCreate && companyId
             ? (q) => {

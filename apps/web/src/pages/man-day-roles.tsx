@@ -47,7 +47,7 @@ export function ManDayRolesPage() {
       <Card>
         <CardContent className="p-8 text-center text-muted-foreground">
           <UserCog className="h-8 w-8 mx-auto mb-2 opacity-50" />
-          <p>此頁面只供管理員使用。Sales rep 請透過 Service 表單嘅下拉選單揀人天角色。</p>
+          <p>此頁面只供管理員使用。Sales rep 請透過 Service 表單的下拉選單選人天角色。</p>
         </CardContent>
       </Card>
     );
@@ -59,7 +59,7 @@ export function ManDayRolesPage() {
         <div>
           <h1 className="text-2xl md:text-3xl font-bold">人天結構</h1>
           <p className="text-muted-foreground">
-            {roles.length} 個角色 · 報價用嘅人天單價同成本
+            {roles.length} 個角色 · 報價用的人天單價和成本
           </p>
         </div>
         <Button onClick={() => setCreating(true)}>
@@ -73,7 +73,7 @@ export function ManDayRolesPage() {
         <Card>
           <CardContent className="p-8 text-center text-muted-foreground">
             <UserCog className="h-8 w-8 mx-auto mb-2 opacity-50" />
-            <p>仲未有人天角色。Click 「新增人天角色」加第一個 — 例如 "Senior Engineer" ¥2000/¥1200。</p>
+            <p>仍未有人天角色。Click 「新增人天角色」加第一個 — 例如 "Senior Engineer" ¥2000/¥1200。</p>
           </CardContent>
         </Card>
       ) : (

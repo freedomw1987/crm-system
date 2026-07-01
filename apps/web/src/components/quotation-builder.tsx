@@ -12,7 +12,8 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, Plus, Trash2, X, Package, Briefcase, ChevronDown } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { Loader2, Plus, Trash2, X, Package, Briefcase, ChevronDown, Wrench } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input, Textarea } from '@/components/ui/input';
 import { Label, Select } from '@/components/ui/select';
@@ -120,6 +121,19 @@ function lineTotal(line: DraftLine): number {
   const disc = Number(line.discount) || 0;
   return qty * price * (1 - disc / 100);
 }
+
+// 2026-07-01 (US-MAINT-1): canonical display name for the
+// Maintenance Service line item. Used both as the `name` field
+// when we push the line via `addMaintenanceFeeLine` AND as the
+// detector for `hasMaintenanceFee` (to disable the button when
+// one is already present). Centralised so the label never
+// drifts between the two call sites.
+//
+// 2026-07-01 rename: 維修費用 → 維護費用 + "Maintenance Fee" →
+// "Maintenance Service" (per user request). The JS constant name
+// keeps the legacy `MAINTENANCE_FEE_NAME` identifier to avoid
+// touching every reference; only the displayed string changes.
+const MAINTENANCE_FEE_NAME = '維護費用 / Maintenance Service';
 
 /**
  * Compute the rate-to-HKD multiplier for a chosen currency.
@@ -318,6 +332,29 @@ export function QuotationBuilder({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [existing, userTouchedCurrency]);
 
+  // 2026-07-01 (US-MAINT-1): read the Maintenance Service rate
+  // from /settings/maintenance-fee so the "+ 維護費用" button can
+  // pre-compute the fee as `subtotal × rate / 100`. We mirror the
+  // tax/currency pattern: 60s stale time so the cache is shared
+  // with the settings page.
+  // 2026-07-01 rename: 維修費用 → 維護費用 + "Maintenance Fee" →
+  // "Maintenance Service" (per user request). Internal identifier
+  // names (MAINTENANCE_FEE_NAME, hasMaintenanceFee, query key,
+  // settingsApi.getMaintenanceFee) keep their legacy names to
+  // minimise churn.
+  const { data: maintenanceFeeCfg } = useQuery({
+    queryKey: ['settings', 'maintenance-fee'],
+    queryFn: () => settingsApi.getMaintenanceFee(),
+    staleTime: 60_000,
+  });
+
+  // True if any line item is already a maintenance-service row.
+  // Used to disable the button (we only allow ONE fee line per
+  // quote). Name match is intentional — we use the canonical
+  // display name "維護費用 / Maintenance Service" set by
+  // `addMaintenanceFeeLine`.
+  const hasMaintenanceFee = lines.some((l) => l.name === MAINTENANCE_FEE_NAME);
+
   // Live totals
   const subtotal = useMemo(() => lines.reduce((s, l) => s + lineTotal(l), 0), [lines]);
   const taxAmount = subtotal * (Number(taxRate) / 100);
@@ -411,12 +448,50 @@ export function QuotationBuilder({
     setLines((prev) => [...prev, { ...emptyLine(), itemType: type }]);
   }
 
+  // 2026-07-01 (US-MAINT-1): push a pre-filled Maintenance Service
+  // line item into `lines`. The unitPrice is
+  // `current_draft_subtotal × rate / 100`, snapshotted at the
+  // moment the button is clicked — later edits to other lines do
+  // NOT auto-update this fee (the user must delete it and click
+  // the button again to refresh). The line is typed as SERVICE so
+  // the existing Service SOW preview in `LineItemRow` keeps
+  // rendering correctly (`manDaySnapshot` stays undefined → no
+  // SOW breakdown, no serviceId → costSnapshot=0 → GP% = 100%,
+  // same as a PRODUCT line, which is what we want for a flat
+  // system fee).
+  function addMaintenanceFeeLine() {
+    if (!maintenanceFeeCfg || hasMaintenanceFee) return;
+    const rate = Number(maintenanceFeeCfg.rate) || 0;
+    // Recompute subtotal over the CURRENT draft lines so the user
+    // sees the fee match the visible total at the moment of the
+    // click. We re-derive rather than reading the existing
+    // `subtotal` memo because the user may click the button right
+    // after editing a line and we want the freshest snapshot.
+    const currentSubtotal = lines.reduce((s, l) => s + lineTotal(l), 0);
+    const feeAmount = Math.round(currentSubtotal * rate * 100) / 100 / 100;
+    // Note: rate is stored as a percentage (e.g. 20 = 20%), so we
+    // multiply by rate/100. The `Math.round(... * 100) / 100` is
+    // just to clean up floating point dust (e.g. 1234.5600000001).
+    setLines((prev) => [
+      ...prev,
+      {
+        ...emptyLine(),
+        itemType: 'SERVICE',
+        name: MAINTENANCE_FEE_NAME,
+        quantity: 1,
+        unitPrice: feeAmount,
+        discount: 0,
+        manDaySnapshot: undefined,
+      },
+    ]);
+  }
+
   function removeLine(idx: number) {
     setLines((prev) => (prev.length === 1 ? prev : prev.filter((_, i) => i !== idx)));
   }
 
   function validate(): string | null {
-    if (!companyId) return '揀個客戶先';
+    if (!companyId) return '選個客戶先';
     const validLines = lines.filter((l) => l.name.trim() && Number(l.quantity) > 0 && Number(l.unitPrice) >= 0);
     if (validLines.length === 0) return '至少要有一個 line item';
     return null;
@@ -615,7 +690,7 @@ export function QuotationBuilder({
           </Select>
           <p className="text-[11px] text-muted-foreground">
             新建報價預設跟 <a href="/settings/currency" className="underline">系統設定</a>;
-            HKD 等值會喺儲存時 snapshot。
+            HKD 等值會在儲存時寫入快照。
           </p>
         </div>
         {/* 2026-06-26: 銷售員 picker. Pre-fills from existing.salesRepId
@@ -641,6 +716,30 @@ export function QuotationBuilder({
             </Button>
             <Button size="sm" variant="outline" onClick={() => addLine('SERVICE')}>
               <Plus className="h-3 w-3 mr-1" /> 加 Service
+            </Button>
+            {/* 2026-07-01 (US-MAINT-1): "+ 維護費用" button.
+                - Computes fee = current draft subtotal × rate / 100.
+                - Disabled when rate hasn't loaded OR when an existing
+                  maintenance-service line is already present (we
+                  only allow ONE fee line per quote — re-click
+                  requires the user to delete the existing line first).
+                - Title explains the calculation so the user isn't
+                  surprised by the snapshot behaviour ("subtotal 改動
+                  不會自動更新這行").
+                - 2026-07-01 rename: 維修費用 → 維護費用 (per user
+                  request). */}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={addMaintenanceFeeLine}
+              disabled={!maintenanceFeeCfg || hasMaintenanceFee}
+              title={
+                hasMaintenanceFee
+                  ? '此 Quotation 已有維護費用 line item;請先刪除再按'
+                  : `加入一行維護費用 (= subtotal × ${maintenanceFeeCfg?.rate ?? 20}% / 100)`
+              }
+            >
+              <Wrench className="h-3 w-3 mr-1" /> + 維護費用
             </Button>
           </div>
         </CardHeader>
@@ -708,7 +807,7 @@ export function QuotationBuilder({
             return (
               <div
                 className="flex justify-between text-xs text-muted-foreground pt-1"
-                title="用 /settings/currency 嘅當前匯率計算。儲存後呢個數字會用嗰個時候嘅匯率 snapshot 落 row,改系統匯率唔會再重寫。"
+                title="使用 /settings/currency 的當前匯率計算。儲存後此數字會以當下的匯率快照寫入該 row,後續修改系統匯率不會重新計算。"
               >
                 <span>≈ HKD (匯率 {rate.toFixed(4)})</span>
                 <span className="tabular-nums">{formatCurrency(totalHKD, 'HKD')}</span>
@@ -729,7 +828,7 @@ export function QuotationBuilder({
             return (
               <div
                 className="flex justify-between text-xs text-muted-foreground pt-1"
-                title="用 /settings/currency 嘅當前匯率計算。儲存後呢個數字會用嗰個時候嘅匯率 snapshot 落 row,改系統匯率唔會再重寫。"
+                title="使用 /settings/currency 的當前匯率計算。儲存後此數字會以當下的匯率快照寫入該 row,後續修改系統匯率不會重新計算。"
               >
                 <span>≈ MOP (匯率 {rate.toFixed(4)})</span>
                 <span className="tabular-nums">{formatCurrency(totalMOP, 'MOP')}</span>
@@ -1094,7 +1193,7 @@ function ProductAutocomplete({
         {open && (
           <div className="absolute z-50 top-full mt-1 left-0 right-0 max-h-60 overflow-y-auto bg-white border border-border rounded shadow-lg">
             {filtered.length === 0 ? (
-              <div className="p-2 text-sm text-muted-foreground text-center">搵唔到</div>
+              <div className="p-2 text-sm text-muted-foreground text-center">查無資料</div>
             ) : (
               filtered.map((p) => (
                 <button
@@ -1219,7 +1318,7 @@ function ServiceAutocomplete({
         {open && (
           <div className="absolute z-50 top-full mt-1 left-0 right-0 max-h-60 overflow-y-auto bg-white border border-border rounded shadow-lg">
             {filtered.length === 0 ? (
-              <div className="p-2 text-sm text-muted-foreground text-center">搵唔到</div>
+              <div className="p-2 text-sm text-muted-foreground text-center">查無資料</div>
             ) : (
               filtered.map((s) => (
                 <button

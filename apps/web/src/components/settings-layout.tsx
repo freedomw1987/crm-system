@@ -43,6 +43,12 @@ const TABS = [
   // pre-fill logic, so visually grouping them helps admins spot
   // the relationship.
   { value: 'currency', label: 'Currency' },
+  // 2026-07-01 (US-MAINT-1): Maintenance Service tab — sits
+  // between Currency and Audit because it's another numeric setting
+  // that drives the Quotation builder's "+ 維護費用" button.
+  // 2026-07-01 rename: 維修費用 → 維護費用 (per user request).
+  // Same group as Tax / Currency for the same reason.
+  { value: 'maintenance-fee', label: '維護費用' },
   { value: 'audit', label: 'Audit' },
 ] as const;
 
@@ -78,7 +84,7 @@ export function SettingsLayout() {
       <div>
         <h1 className="text-2xl font-bold">系統設置</h1>
         <p className="text-sm text-muted-foreground">
-          管理 sales pipeline、user、role、AI、man-day 角色、稅率同 audit log。
+          管理 sales pipeline、user、role、AI、man-day 角色、稅率和 audit log。
         </p>
       </div>
 

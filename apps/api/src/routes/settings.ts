@@ -372,6 +372,124 @@ export const settingsRoutes = new Elysia({ prefix: '/settings', tags: ['settings
   )
 
   // ===================================================================
+  // 2026-07-01 (US-MAINT-1): GET /settings/maintenance-fee
+  // ===================================================================
+  // Mirrors /settings/tax: any authed user can read the rate so the
+  // Quotation builder can pre-fill the "+ 維護費用" button without
+  // a permission roundtrip. Rate is stored as a JSON number in
+  // [0, 1] (e.g. 0.20 = 20%); the PUT handler enforces the range.
+  .get(
+    '/maintenance-fee',
+    async ({ set }) => {
+      const row = await prisma.systemConfig.findUnique({
+        where: { key: 'maintenance_fee_rate' },
+        include: { updatedBy: { select: { id: true, name: true, email: true } } },
+      });
+      if (!row) {
+        // Seed should have created it. Graceful degrade to the
+        // documented default (20%) so the UI doesn't 500 on first
+        // visit before the seed runs.
+        return {
+          key: 'maintenance_fee_rate',
+          rate: 20,
+          description: 'Maintenance Service rate as a percentage (project subtotal × rate / 100). Default 20 = 20%.',
+          updatedAt: null,
+          updatedBy: null,
+        };
+      }
+      const rate = typeof row.value === 'number'
+        ? row.value
+        : Number((row.value as unknown) ?? 20);
+      return {
+        key: row.key,
+        rate,
+        description: row.description,
+        updatedAt: row.updatedAt,
+        updatedBy: row.updatedBy,
+      };
+    },
+    { detail: { summary: 'Get Maintenance Service rate' } }
+  )
+
+  // PUT /settings/maintenance-fee — admin only. Range 0..100 (0% to
+  // 100%); rejected outside this range. Audit logs the before/after
+  // diff so admins can trace historical rate changes (e.g. a
+  // Quotation that was created at 0.20 then changed to 0.25 still
+  // shows the original 0.20 because each Quotation snapshots its
+  // maintenance-service line at "+ 維護費用" button press time).
+  .use(requirePermission('settings:update'))
+  .put(
+    '/maintenance-fee',
+    async ({ body, set, request }) => {
+      const userId = await getUserIdFromRequest(request);
+      if (!userId) {
+        set.status = 401;
+        return { error: 'Unauthorized' };
+      }
+
+      const { rate } = body as { rate: number };
+      const oldRow = await prisma.systemConfig.findUnique({
+        where: { key: 'maintenance_fee_rate' },
+        select: { value: true },
+      });
+      const oldRate = oldRow ? Number((oldRow.value as unknown) ?? 20) : 20;
+
+      const updated = await prisma.systemConfig.upsert({
+        where: { key: 'maintenance_fee_rate' },
+        update: {
+          value: rate,
+          updatedById: userId,
+          // 2026-07-01: include `description` in the update
+          // clause so existing rows get the new wording (e.g.
+          // after a rename). Without this, the description
+          // would be permanently frozen at the value the seed
+          // wrote at first run.
+          description: 'Maintenance Service rate as a percentage (project subtotal × rate / 100). Default 20 = 20%.',
+        },
+        create: {
+          key: 'maintenance_fee_rate',
+          value: rate,
+          updatedById: userId,
+          description: 'Maintenance Service rate as a percentage (project subtotal × rate / 100). Default 20 = 20%.',
+        },
+        include: { updatedBy: { select: { id: true, name: true, email: true } } },
+      });
+
+      await logEvent({
+        actorId: userId,
+        action: 'SYSTEM_CONFIG_UPDATED',
+        resourceType: 'system_config',
+        resourceId: 'maintenance_fee_rate',
+        // 2026-07-01 rename: 維修費用 → 維護費用 (Maintenance Fee →
+        // Maintenance Service) per user request. The SystemConfig
+        // key `maintenance_fee_rate` keeps its legacy identifier
+        // so we don't break the stored DB row.
+        description: `Updated Maintenance Service rate: ${oldRate.toFixed(2)}% → ${rate.toFixed(2)}%`,
+        metadata: { key: 'maintenance_fee_rate', oldValue: oldRate, newValue: rate },
+        request,
+      });
+
+      return {
+        key: updated.key,
+        rate: Number((updated.value as unknown) ?? 0),
+        description: updated.description,
+        updatedAt: updated.updatedAt,
+        updatedBy: updated.updatedBy,
+      };
+    },
+    {
+      body: t.Object({
+        // Stored as a percentage number (0..100) so the admin input
+        // is intuitive ("20" = 20%); the Quotation builder divides
+        // by 100 when computing the line item amount
+        // (`subtotal * rate / 100`). Mirrors the default_tax_rate
+        // pattern.
+        rate: t.Number({ minimum: 0, maximum: 100 }),
+      }),
+    }
+  )
+
+  // ===================================================================
   // P2 multi-currency: GET /settings/currency
   // ===================================================================
   // Any authed user (no permission gate), mirrors getTax so the

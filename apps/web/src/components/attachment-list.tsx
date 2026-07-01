@@ -72,7 +72,7 @@ export function AttachmentList({ companyId }: AttachmentListProps) {
           </div>
         ) : items.length === 0 ? (
           <p className="text-sm text-muted-foreground p-6 text-center">
-            仲未有附件 · 去「Activity」tab 寫新跟進時可以順手上傳
+            仍未有附件 · 去「Activity」tab 寫新跟進時可以順手上傳
           </p>
         ) : (
           <ul className="divide-y">

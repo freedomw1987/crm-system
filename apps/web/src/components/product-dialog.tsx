@@ -118,7 +118,7 @@ export function ProductDialog({
   async function submit() {
     setError(null);
     if (!sku.trim() || !name.trim()) {
-      setError('請填 SKU 同產品名稱');
+      setError('請填 SKU 和產品名稱');
       return;
     }
     if (unitPrice < 0) {
@@ -153,7 +153,7 @@ export function ProductDialog({
         setError(
           (e.body && typeof e.body === 'object' && 'error' in e.body
             ? (e.body as { error: string }).error
-            : null) ?? 'SKU 衝突,揀另一個 SKU'
+            : null) ?? 'SKU 衝突,選另一個 SKU'
         );
       } else {
         setError(e instanceof Error ? e.message : '儲存失敗');

@@ -63,8 +63,8 @@ export function SettingsCurrencyPage() {
       const hkd = Number(draftHkdRate);
       const mop = Number(draftMopRate);
       // Form-level validation (server re-validates via TypeBox).
-      if (!Number.isFinite(hkd) || hkd <= 0) throw new Error('RMB → HKD 匯率必須係大過 0 嘅數字');
-      if (!Number.isFinite(mop) || mop <= 0) throw new Error('RMB → MOP 匯率必須係大於 0 嘅數字');
+      if (!Number.isFinite(hkd) || hkd <= 0) throw new Error('RMB → HKD 匯率必須係大過 0 的數字');
+      if (!Number.isFinite(mop) || mop <= 0) throw new Error('RMB → MOP 匯率必須係大於 0 的數字');
       return settingsApi.putCurrency({
         default: draftDefault,
         rates: { 'RMB->HKD': hkd, 'RMB->MOP': mop },
@@ -87,11 +87,11 @@ export function SettingsCurrencyPage() {
     const hkd = Number(draftHkdRate);
     const mop = Number(draftMopRate);
     if (!Number.isFinite(hkd) || hkd <= 0) {
-      setValidationError('RMB → HKD 匯率必須係大過 0 嘅數字');
+      setValidationError('RMB → HKD 匯率必須係大過 0 的數字');
       return;
     }
     if (!Number.isFinite(mop) || mop <= 0) {
-      setValidationError('RMB → MOP 匯率必須係大過 0 嘅數字');
+      setValidationError('RMB → MOP 匯率必須係大過 0 的數字');
       return;
     }
     saveMutation.mutate();
@@ -137,8 +137,8 @@ export function SettingsCurrencyPage() {
             <span>Default Currency &amp; Exchange Rates</span>
           </CardTitle>
           <CardDescription>
-            新建報價嘅預設出單貨幣,以及兩條以人民幣計嘅匯率。已存在嘅報價會保留當時
-            snapshotted 嘅 HKD 等值,改呢度唔會重寫歷史。
+            新建報價的預設出單貨幣,以及兩條以人民幣計的匯率。已存在的報價會保留當時
+            snapshotted 的 HKD 等值,改此處不會重寫歷史。
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
@@ -162,7 +162,7 @@ export function SettingsCurrencyPage() {
                 <option value="MOP">澳門幣 (MOP)</option>
               </Select>
               <p className="text-xs text-muted-foreground">
-                新建報價時 Currency 欄位嘅預設值;銷售同事可以喺 builder 改。
+                新建報價時 Currency 欄位的預設值;銷售和事可以在 builder 改。
               </p>
             </div>
           </div>
@@ -289,7 +289,7 @@ export function SettingsCurrencyPage() {
           </CardTitle>
           <CardDescription className="text-xs">
             每次 save 會寫一條 <code className="font-mono">SYSTEM_CONFIG_UPDATED</code>{' '}
-            audit event,記錄 currency_config 嘅舊值同新值(12 個月 retention)。
+            audit event,記錄 currency_config 的舊值和新值(12 個月 retention)。
           </CardDescription>
         </CardHeader>
         <CardContent>
