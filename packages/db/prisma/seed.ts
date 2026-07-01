@@ -61,18 +61,19 @@ async function main() {
   // script never wrote to). This commit closes that gap AND adds the new
   // settings:* permissions for SystemConfig.
   // NOTE: must come BEFORE user creation because User.roleId → Role.id.
-  const { PERMISSIONS } = await import('@crm/shared/permissions');
-  const allPermissionKeys = Object.keys(PERMISSIONS) as Array<keyof typeof PERMISSIONS>;
-  // Role → permission subset (matches packages/shared/src/permissions.ts)
+  //
+  // 2026-07-01: derive ROLE_PERMS from the canonical `ROLE_PERMISSIONS`
+  // matrix in @crm/shared instead of hard-coding SALES/VIEWER subsets.
+  // The hard-coded lists were 6+ months stale and missed every new
+  // permission added since (incl. `man-day-role:read`, `region:read`,
+  // `activity:read`, `attachment:read`, `chat:use`). Deriving from
+  // `ROLE_PERMISSIONS` means future permission additions automatically
+  // appear in the next fresh seed run.
+  const { ROLE_PERMISSIONS } = await import('@crm/shared/permissions');
   const ROLE_PERMS: Record<string, string[]> = {
-    ADMIN:  allPermissionKeys,                                // everything
-    SALES:  ['company:read','company:create','company:update','company:delete',
-             'contact:read','contact:create','contact:update','contact:delete',
-             'product:read',
-             'quotation:read','quotation:create','quotation:update','quotation:delete','quotation:send',
-             'deal:read','deal:create','deal:update','deal:delete',
-             'chat:use'],
-    VIEWER: ['company:read','contact:read','product:read','quotation:read','deal:read'],
+    ADMIN:  Array.from(ROLE_PERMISSIONS.ADMIN),
+    SALES:  Array.from(ROLE_PERMISSIONS.SALES),
+    VIEWER: Array.from(ROLE_PERMISSIONS.VIEWER),
   };
   for (const roleName of ['ADMIN', 'SALES', 'VIEWER'] as const) {
     const role = await prisma.role.create({
