@@ -213,10 +213,16 @@ export function initI18n(): typeof i18n {
   // key `dashboard.title` and miss every cross-namespace key.
   //
   // The rule: if the FIRST dot-separated segment of the key matches
-  // a registered namespace AND the caller didn't pass an explicit
-  // `ns` option, rewrite as `<ns>:<rest>`. Otherwise pass through
-  // unchanged — so nested keys like `dialog.matrix.selectedCount`
-  // (where 'dialog' is NOT a registered namespace) still work.
+  // a registered namespace, rewrite as `<ns>:<rest>` REGARDLESS of
+  // the caller's `ns` option. The `ns` option react-i18next passes
+  // (the defaultNS, e.g. `'common'`) is a fallback hint, not a hard
+  // restriction — when the key itself encodes the namespace, the
+  // explicit prefix wins. (Earlier this wrapper short-circuited on
+  // any `ns` option, but that meant the defaultNS passed by
+  // react-i18next shadowed EVERY cross-namespace lookup.)
+  //
+  // Nested keys like `dialog.matrix.selectedCount` (where 'dialog'
+  // is NOT a registered namespace) still pass through unchanged.
   //
   // Implementation: replace `i18n.t` with a wrapper. react-i18next's
   // `useTranslation()` reads from `i18n` on every render, so this
@@ -227,11 +233,6 @@ export function initI18n(): typeof i18n {
     key: string | string[],
     options?: Record<string, unknown>,
   ): string | string[] {
-    const opts = options as { ns?: unknown } | undefined;
-    // Caller passed an explicit namespace — honor it as-is.
-    if (opts && typeof opts.ns === 'string' && opts.ns.length > 0) {
-      return originalT(key as string, options);
-    }
     // Array form (i18next plural key) — recurse per-element so each
     // gets its own prefix resolution.
     if (Array.isArray(key)) {
@@ -243,7 +244,17 @@ export function initI18n(): typeof i18n {
     if (!NAMESPACES_SET.has(head)) return originalT(key, options);
     const rest = key.slice(firstDot + 1);
     if (rest.length === 0) return originalT(key, options);
-    return originalT(`${head}:${rest}`, options);
+    // Strip the `ns` option so the rewritten `head:rest` key isn't
+    // shadowed by the defaultNS the caller pre-baked. The colon
+    // syntax is the authoritative namespace selector; the `ns`
+    // option only matters as a fallback when the key has no
+    // explicit namespace.
+    const opts = options as { ns?: unknown } | undefined;
+    const cleanOptions =
+      opts && Object.prototype.hasOwnProperty.call(opts, 'ns')
+        ? { ...opts, ns: undefined }
+        : options;
+    return originalT(`${head}:${rest}`, cleanOptions);
   };
   // `i18n.t` is a property of the i18n instance. Replace in place so
   // both `i18n.t(...)` and react-i18next's `useTranslation().t(...)`

@@ -64,15 +64,33 @@ describe('i18n namespace resolution (P3-i18n 2026-07-02 fix)', () => {
     expect(result.length).toBeGreaterThan(0);
   });
 
-  test('explicit ns option in t() overrides the prefix heuristic', () => {
+  test('explicit ns option in t() does NOT shadow an obvious namespace prefix', () => {
     initI18n();
-    // 'nav.appName' would normally rewrite to 'nav:appName' (because
-    // 'nav' is a registered namespace). But when the caller passes
-    // an explicit `ns: 'common'`, we respect it. The lookup fails
-    // (common has no 'nav.appName' key) — what matters is that we
-    // DID NOT rewrite the key.
-    const result = i18n.t('nav.appName', { ns: 'common' });
-    expect(result).toBe('nav.appName'); // i18next returns the key on miss
+    // 2026-07-02 follow-up: the previous test asserted the wrapper
+    // bailed out on `ns: 'common'`. That was wrong — react-i18next's
+    // `useTranslation()` passes `{ns: 'common'}` (the defaultNS) on
+    // EVERY call, so a short-circuit-on-`ns` short-circuits ALL
+    // cross-namespace lookups and the UI renders literal keys
+    // (`dashboard.title`, `nav.appName`, etc).
+    //
+    // The correct rule: when the key's first dot-segment matches a
+    // registered namespace, the prefix ALWAYS wins — the `ns` option
+    // is just a fallback for keys without an explicit prefix. So
+    // `t('nav.appName', {ns: 'common'})` must still resolve to 'CRM'
+    // (the nav bundle value), NOT fall through to the `common`
+    // namespace.
+    expect(i18n.t('nav.appName', { ns: 'common' })).toBe('CRM');
+    expect(i18n.t('dashboard.title', { ns: 'common' })).toBe('Dashboard');
+  });
+
+  test('non-namespace-prefixed keys DO honour the explicit ns option', () => {
+    initI18n();
+    // `t('save', {ns: 'nav'})` — 'save' is a single segment, no
+    // namespace prefix, so the wrapper passes through. i18next then
+    // uses the `ns: 'nav'` option to look up 'save' in the nav
+    // namespace (where it doesn't exist) — returns the key.
+    const result = i18n.t('save', { ns: 'nav' });
+    expect(result).toBe('save');
   });
 
   test('single-segment keys (no dot) pass through unchanged', () => {
