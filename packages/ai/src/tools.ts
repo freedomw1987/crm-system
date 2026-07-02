@@ -201,20 +201,35 @@ const listQuotations: Tool = {
 // ============================================================
 const listDeals: Tool = {
   name: 'list_deals',
-  description: 'List sales deals in the pipeline, with optional filters by status, owner, or company.',
+  description: 'List sales deals in the pipeline, with optional filters by status, owner, or company. For "X\'s deals" or "show me David\'s open deals" prefer the ownerName parameter over chaining search_users → list_deals.',
   parameters: {
     type: 'object',
     properties: {
       status: { type: 'string', enum: ['OPEN', 'WON', 'LOST'], description: 'Filter by status' },
-      ownerId: { type: 'string', description: 'Filter by deal owner user ID' },
+      ownerId: { type: 'string', description: 'Filter by deal owner user ID (preferred if you have it)' },
+      ownerName: { type: 'string', description: 'Filter by deal owner NAME (case-insensitive substring). Resolved server-side to a userId; returns an empty list if no match. Prefer search_users for ambiguous names.' },
       companyId: { type: 'string', description: 'Filter by company' },
       limit: { type: 'number', description: 'Max results (default 20)' },
     },
   },
   execute: async (args) => {
+    let resolvedOwnerId = args.ownerId as string | undefined;
+    // RG-032: name-based owner filter. Only resolve when ownerId is
+    // NOT supplied — if both are present, ownerId wins (explicit > fuzzy).
+    if (!resolvedOwnerId && args.ownerName) {
+      const u = await prisma.user.findFirst({
+        where: {
+          isActive: true,
+          name: { contains: args.ownerName, mode: 'insensitive' },
+        },
+        select: { id: true },
+      });
+      if (!u) return []; // name didn't resolve — empty list beats error
+      resolvedOwnerId = u.id;
+    }
     const where: Record<string, unknown> = {};
     if (args.status) where.status = args.status;
-    if (args.ownerId) where.ownerId = args.ownerId;
+    if (resolvedOwnerId) where.ownerId = resolvedOwnerId;
     if (args.companyId) where.companyId = args.companyId;
     return prisma.deal.findMany({
       where,
@@ -672,6 +687,160 @@ const updateDealStage: Tool = {
   },
 };
 
+// ============================================================
+// Tool: search_users  (RG-032)
+// ============================================================
+// Lets the AI resolve a salesperson / team-member NAME to a UserId
+// instead of forcing the user to paste a UUID. The LLM calls this
+// whenever the user prompt contains a person reference ("David",
+// "John Smith", "salesperson John", "業務 David").
+const searchUsers: Tool = {
+  name: 'search_users',
+  description: 'Search CRM users by name or email fragment. Returns matching ACTIVE users with id, name, email, and role. Use this whenever the user refers to a salesperson or team member by NAME — never ask for a UserId if you can search by name first. If multiple matches are returned, surface the list to the user and ask which one they meant.',
+  parameters: {
+    type: 'object',
+    properties: {
+      query: { type: 'string', description: 'Name or email fragment (case-insensitive substring match, partial OK)' },
+      role: { type: 'string', enum: ['ADMIN', 'SALES', 'VIEWER'], description: 'Optional role filter' },
+      limit: { type: 'number', description: 'Max results (default 10, hard-capped at 50)' },
+    },
+    required: ['query'],
+  },
+  execute: async (args) => {
+    const where: Record<string, unknown> = { isActive: true };
+    if (args.role) where.role = args.role;
+    where.OR = [
+      { name: { contains: args.query, mode: 'insensitive' } },
+      { email: { contains: args.query, mode: 'insensitive' } },
+    ];
+    return prisma.user.findMany({
+      where,
+      take: Math.min(args.limit ?? 10, 50),
+      orderBy: { name: 'asc' },
+      select: { id: true, name: true, email: true, role: true },
+    });
+  },
+};
+
+// ============================================================
+// Tool: get_user_recent_activity  (RG-032)
+// ============================================================
+// Row-level activity log for a single user. Use this when the user
+// asks "what has David been doing lately?" — pair with search_users
+// to resolve the name to a UserId first.
+const getUserRecentActivity: Tool = {
+  name: 'get_user_recent_activity',
+  description: "Get recent sales activities (calls, emails, meetings, notes) authored by a specific user. Pair with search_users if you only have a name. Use to answer \"what has David been doing lately?\" or \"show me John's recent calls\".",
+  parameters: {
+    type: 'object',
+    properties: {
+      userId: { type: 'string', description: 'User ID (use search_users first if you only have a name)' },
+      type: { type: 'string', enum: ['NOTE', 'CALL', 'EMAIL', 'MEETING'], description: 'Optional filter by activity type' },
+      daysBack: { type: 'number', description: 'How many days back to look (default 30, hard-capped at 365)' },
+      limit: { type: 'number', description: 'Max results (default 20, hard-capped at 100)' },
+    },
+    required: ['userId'],
+  },
+  execute: async (args) => {
+    // Hard-cap daysBack to keep "give me everything" queries bounded.
+    const days = Math.min(args.daysBack ?? 30, 365);
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+    return prisma.activity.findMany({
+      where: {
+        authorId: args.userId,
+        ...(args.type ? { type: args.type } : {}),
+        createdAt: { gte: since },
+      },
+      // Hits the [authorId, createdAt desc] index on Activity
+      // (schema.prisma line 717). Order is the second key, so the
+      // index covers the WHERE + ORDER BY without a sort step.
+      take: Math.min(args.limit ?? 20, 100),
+      orderBy: { createdAt: 'desc' },
+      include: {
+        company: { select: { id: true, name: true } },
+        deal: { select: { id: true, title: true } },
+      },
+    });
+  },
+};
+
+// ============================================================
+// Tool: get_salesperson_summary  (RG-032)
+// ============================================================
+// Aggregate counts + totals for one salesperson over a window. Use
+// this for "how is X doing?" / "X 最近 sales 情況" — it's cheaper
+// than chaining list_deals + get_user_recent_activity and the answer
+// is usually a 5-row table, not a wall of raw rows.
+const getSalespersonSummary: Tool = {
+  name: 'get_salesperson_summary',
+  description: "Get an aggregate summary of one salesperson's recent performance: deal counts (open/won/lost) + total pipeline value, quotation counts by status, and activity counts by type. Returns numbers, not rows — pair with list_deals / get_user_recent_activity if you need the underlying rows. Use to answer \"how is David doing?\" or \"David 最近 sales 情況\".",
+  parameters: {
+    type: 'object',
+    properties: {
+      userId: { type: 'string', description: 'User ID (use search_users first if you only have a name)' },
+      daysBack: { type: 'number', description: 'How many days back to look (default 30, hard-capped at 365)' },
+    },
+    required: ['userId'],
+  },
+  execute: async (args) => {
+    const days = Math.min(args.daysBack ?? 30, 365);
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+
+    // 4 parallel queries — no N+1. We select only the columns we
+    // need so the row payload stays small.
+    const [deals, quotations, activities, user] = await Promise.all([
+      prisma.deal.findMany({
+        where: { ownerId: args.userId, createdAt: { gte: since } },
+        select: { status: true, value: true },
+      }),
+      prisma.quotation.findMany({
+        where: { createdById: args.userId, createdAt: { gte: since } },
+        select: { status: true, total: true },
+      }),
+      prisma.activity.findMany({
+        where: { authorId: args.userId, createdAt: { gte: since } },
+        select: { type: true },
+      }),
+      prisma.user.findUnique({
+        where: { id: args.userId },
+        select: { id: true, name: true, email: true, role: true },
+      }),
+    ]);
+
+    const dealCounts: Record<string, number> = { OPEN: 0, WON: 0, LOST: 0 };
+    let pipelineValue = 0;
+    for (const d of deals) {
+      dealCounts[d.status] = (dealCounts[d.status] ?? 0) + 1;
+      // LOST deals don't count toward pipeline value — they were never
+      // going to close. OPEN + WON both do (WON already closed at this
+      // value, but it's still a number the user wants to see in the
+      // "this month's wins" line).
+      // d.value is a Prisma.Decimal — convert via Number() for the
+      // aggregate. Precision loss is acceptable at the summary level
+      // (the LLM will format the value to 2 decimals in its reply).
+      if (d.status !== 'LOST') pipelineValue += d.value ? Number(d.value) : 0;
+    }
+    const quotationCounts: Record<string, number> = {};
+    for (const q of quotations) {
+      quotationCounts[q.status] = (quotationCounts[q.status] ?? 0) + 1;
+    }
+    const activityCounts: Record<string, number> = {};
+    for (const a of activities) {
+      activityCounts[a.type] = (activityCounts[a.type] ?? 0) + 1;
+    }
+
+    return {
+      user,
+      period: { from: since.toISOString(), days },
+      deals: { total: deals.length, byStatus: dealCounts, pipelineValue },
+      quotations: { total: quotations.length, byStatus: quotationCounts },
+      activities: { total: activities.length, byType: activityCounts },
+    };
+  },
+};
+
 export const toolRegistry: Tool[] = [
   searchCompanies,
   getCompany,
@@ -684,6 +853,10 @@ export const toolRegistry: Tool[] = [
   draftQuotation,
   logActivity,
   getTopCustomers,
+  // RG-032: name-based salesperson lookup. Read-only — no confirmation.
+  searchUsers,
+  getUserRecentActivity,
+  getSalespersonSummary,
 ];
 
 /**

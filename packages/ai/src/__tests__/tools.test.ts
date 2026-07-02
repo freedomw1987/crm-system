@@ -107,6 +107,8 @@ describe('READ_TOOLS (RG-CHAT-002 complement)', () => {
   it('contains the documented read tools', () => {
     // Pin the canonical wire-format names (snake_case) so a future
     // rename here is caught.
+    // RG-032: 3 new name-lookup tools added — search_users,
+    // get_user_recent_activity, get_salesperson_summary.
     for (const name of [
       'search_companies',
       'get_company',
@@ -116,6 +118,9 @@ describe('READ_TOOLS (RG-CHAT-002 complement)', () => {
       'list_deals',
       'list_pipelines',
       'get_top_customers',
+      'search_users',
+      'get_user_recent_activity',
+      'get_salesperson_summary',
     ]) {
       expect(READ_TOOLS.has(name)).toBe(true);
     }

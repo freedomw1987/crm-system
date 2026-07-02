@@ -1600,3 +1600,32 @@ if (literals?.length) throw new Error(`literal i18n keys rendered: ${literals.jo
 - Manual probe at `/tmp/pw-test/probe-empty-state-spinner.mjs` (transient) — clicks the sidebar "New Chat" button to enter EmptyState, sends a message, asserts the spinner is visible within 5s. PASS as of 2026-07-03.
 
 **Lesson:** "Both branches must render the same loading state" is a pairing invariant — any time one branch of a conditional view (here, `!activeId` vs. `activeId`) shows a transient loading indicator, the OTHER branch must show it too, even if the user is about to swap views. The fix had no behaviour change beyond UX feedback — the SSE pipeline, message persistence, and conversation-swap are unchanged.
+
+## RG-032-AI-CHAT-SALES-NAME-LOOKUP — AI forced UserId input for salesperson queries
+
+**Symptom:** When the user asked the AI assistant "what has Admin User been doing lately?" or "David 最近 sales 情況", the AI replied with "please provide a UserId" instead of resolving the name. The only sales-by-user tool was `list_deals(ownerId=...)` which required a UUID; nothing in the tool registry could resolve a name to a user. Existing conversation transcripts show the AI literally listing its missing-tool inventory ("❌ 冇 (冇 search_users)", "❌ 冇 (冇 list_activities by user)").
+
+**Root cause:** The original AI tool registry (`packages/ai/src/tools.ts`) was designed around entity IDs — every user-scoped query (`list_deals(ownerId)`, `get_company(id)`, `search_companies(query)`) accepted either an ID or a name-search-friendly string. But there's no `users` table equivalent — there's `list_companies` by name but no `list_users` by name. The sales-team workflow the AI is meant to support (managers asking about their reps, reps asking about each other) is name-first, not ID-first, so this was a usability blocker.
+
+**Fix (2026-07-03):** Three new tools + one extension, all read-only (no confirmation gate):
+
+1. **`search_users(query, role?, limit?)`** — substring-match on `User.name` and `User.email` (case-insensitive), filters to `isActive: true`, returns `{id, name, email, role}`. Capped at 50 results.
+2. **`get_user_recent_activity(userId, type?, daysBack?, limit?)`** — `prisma.activity.findMany({ where: { authorId, createdAt: { gte: since } } })` ordered by `createdAt desc`, joined with company + deal. Hits the `[authorId, createdAt desc]` index on Activity. `daysBack` hard-capped at 365; `limit` hard-capped at 100.
+3. **`get_salesperson_summary(userId, daysBack?)`** — 4 parallel aggregates (`Promise.all` of deals/quotations/activities/user), returns counts by status + total pipeline value (excludes LOST). Use this for "how is X doing" questions; cheaper than chaining list_deals + get_user_recent_activity.
+4. **`list_deals(ownerName?)`** — new optional parameter alongside the existing `ownerId`. Server-side resolves the name to a userId via `prisma.user.findFirst({ where: { isActive: true, name: { contains, mode: 'insensitive' } } })`. If `ownerName` doesn't resolve, returns `[]` (empty list beats error). If both `ownerId` and `ownerName` are supplied, `ownerId` wins (explicit > fuzzy).
+
+System prompt (`packages/ai/src/prompts.ts`) updated with a new `# Looking up people by name` section that:
+- Tells the AI to call `search_users` whenever the user prompt contains a person reference
+- Tells the AI to surface the matched name back to the user ("Found David Chu (admin@crm.local)...")
+- Tells the AI to ask for disambiguation ONLY if multiple matches AND intent is ambiguous
+- Provides a tool-selection matrix: row-level activity → `get_user_recent_activity`, aggregate → `get_salesperson_summary`, deals-by-name → `ownerName` param on `list_deals`.
+
+**Pinned by:**
+- `packages/ai/src/__tests__/tools.test.ts` line ~107-122 — pins the 3 new wire-format names (`search_users`, `get_user_recent_activity`, `get_salesperson_summary`) in the `READ_TOOLS` pin list. The existing partition invariant `WRITE_TOOLS ∪ READ_TOOLS == toolRegistry` (line 104) automatically validates the count.
+- Manual Playwright probe at `/tmp/pw-test/probe-name-lookup.mjs` (transient) — sends "What has Admin User been doing in the last 30 days?" via the EmptyState composer, waits for the AI to finish streaming, asserts:
+  - The conversation panel shows `search_users` and `get_user_recent_activity` tool pills (proves the AI called the new tools, not asked for a UserId).
+  - The response contains a markdown table of real activity rows joined with company + deal.
+  - The response surfaces the resolved name ("Here's what Admin User (admin@crm.local) has been doing…").
+  - PASS as of 2026-07-03.
+
+**Lesson:** when designing a tool registry, "what makes sense as an input parameter" and "what's natural for the user to provide" can diverge. `list_deals(ownerId)` is the correct wire format (UUIDs are stable, name changes don't break references), but the user-facing entry point is a name. The right answer is a thin **resolution layer** at the front of the chain — `search_users` + auto-resolution in `list_deals(ownerName)` — rather than asking the user to bridge the gap manually. Same pattern would apply to `list_quotations(salesRepName=...)` and `get_company(slugOrName=...)` if those workflows ever come up.
