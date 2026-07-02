@@ -123,7 +123,7 @@ export default function SettingsPage() {
   });
 
   const createMutation = useMutation({
-    mutationFn: () => settingsApi.createStage({ name: 'New Stage', probability: 50, color: DEFAULT_COLOR }),
+    mutationFn: () => settingsApi.createStage({ name: t('settings.pipelines.newStageName'), probability: 50, color: DEFAULT_COLOR }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings', 'pipelines'] });
     },
@@ -166,7 +166,7 @@ export default function SettingsPage() {
     if (dealCount > 0) {
       setDeleteCandidate({ id, name, dealCount });
     } else {
-      if (confirm(`Delete stage "${name}"?`)) {
+      if (confirm(t('settings.pipelines.deleteConfirm', { name }))) {
         deleteMutation.mutate(id);
       }
     }
@@ -175,7 +175,7 @@ export default function SettingsPage() {
   if (isLoading) {
     return (
       <div className="flex items-center gap-2 text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" /> Loading settings…
+        <Loader2 className="h-4 w-4 animate-spin" /> {t('settings.pipelines.loadingPipelines')}
       </div>
     );
   }
@@ -183,7 +183,7 @@ export default function SettingsPage() {
     return (
       <Card>
         <CardContent className="pt-6 text-sm text-destructive">
-          Failed to load pipelines: {(error as Error).message}
+          {t('settings.pipelines.loadFailed', { message: (error as Error).message })}
         </CardContent>
       </Card>
     );
@@ -192,7 +192,7 @@ export default function SettingsPage() {
     return (
       <Card>
         <CardContent className="pt-6 text-sm text-muted-foreground">
-          No pipeline configured yet. Create one in the database seed.
+          {t('settings.pipelines.noPipeline')}
         </CardContent>
       </Card>
     );
@@ -208,15 +208,24 @@ export default function SettingsPage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <span>{defaultPipeline.name}</span>
+            <span>
+              {/* Translate the seed default name. The DB name is the
+                  source of truth for user-edited pipelines — we only
+                  intercept the canonical seed value (matches all 3
+                  locale catalogs), so a renamed pipeline displays
+                  whatever the user typed. */}
+              {defaultPipeline.name === 'Default Sales Pipeline'
+                ? t('settings.pipelines.defaultPipelineName')
+                : defaultPipeline.name}
+            </span>
             {defaultPipeline.isDefault && (
               <span className="text-xs font-normal text-muted-foreground border rounded px-1.5 py-0.5">
-                default
+                {t('settings.pipelines.defaultBadge')}
               </span>
             )}
           </CardTitle>
           <CardDescription>
-            {t('settings.pipelineHelp')}
+            {t('settings.pipelines.pipelineHelp')}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -247,7 +256,7 @@ export default function SettingsPage() {
                 ))}
                 {defaultPipeline.stages.length === 0 && (
                   <p className="text-sm text-muted-foreground text-center py-6">
-                    No stages yet. Click "Add stage" to create one.
+                    {t('settings.pipelines.noStages')}
                   </p>
                 )}
               </div>
@@ -261,7 +270,7 @@ export default function SettingsPage() {
               disabled={createMutation.isPending}
             >
               <Plus className="h-4 w-4 mr-1" />
-              Add stage
+              {t('settings.pipelines.addStage')}
             </Button>
           </div>
         </CardContent>
@@ -274,16 +283,18 @@ export default function SettingsPage() {
             <div className="flex items-start gap-3">
               <AlertTriangle className="h-6 w-6 text-amber-500 shrink-0" />
               <div>
-                <h2 className="font-semibold">Cannot delete stage</h2>
+                <h2 className="font-semibold">{t('settings.pipelines.deleteBlockedTitle')}</h2>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Stage "{deleteCandidate.name}" has {deleteCandidate.dealCount} active deal(s).
-                  Reassign them to another stage in the Deals kanban first, then try again.
+                  {t('settings.pipelines.deleteBlockedBody', {
+                    name: deleteCandidate.name,
+                    count: deleteCandidate.dealCount,
+                  })}
                 </p>
               </div>
             </div>
             <div className="flex justify-end">
               <Button type="button" variant="outline" onClick={() => setDeleteCandidate(null)}>
-                <X className="h-4 w-4 mr-1" /> Close
+                <X className="h-4 w-4 mr-1" /> {t('settings.pipelines.close')}
               </Button>
             </div>
           </div>
@@ -313,6 +324,7 @@ function SortableStageRow({
   isDeleting: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const { t: tr } = useTranslation();
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -327,7 +339,7 @@ function SortableStageRow({
       <button
         type="button"
         className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground p-1"
-        aria-label="Drag to reorder"
+        aria-label={tr('settings.pipelines.dragAriaLabel')}
         {...attributes}
         {...listeners}
       >
@@ -338,14 +350,14 @@ function SortableStageRow({
         value={draft.color}
         onChange={(e) => onDraftChange({ color: e.target.value })}
         className="h-8 w-8 rounded border cursor-pointer"
-        aria-label="Stage color"
+        aria-label={tr('settings.pipelines.colorAriaLabel')}
       />
       <Input
         className="flex-1"
         value={draft.name}
         onChange={(e) => onDraftChange({ name: e.target.value })}
         onBlur={onSave}
-        placeholder="Stage name"
+        placeholder={tr('settings.pipelines.namePlaceholder')}
       />
       <div className="flex items-center gap-1 text-xs text-muted-foreground w-28">
         <Input
@@ -362,9 +374,9 @@ function SortableStageRow({
       {dealCount > 0 && (
         <span
           className="text-xs text-muted-foreground border rounded px-1.5 py-0.5 whitespace-nowrap"
-          title={`${dealCount} active deal(s) using this stage`}
+          title={tr('settings.pipelines.dealsBadgeTitle', { count: dealCount })}
         >
-          {dealCount} deal{dealCount === 1 ? '' : 's'}
+          {tr('common.countDeals', { count: dealCount })}
         </span>
       )}
       <Button
@@ -373,7 +385,7 @@ function SortableStageRow({
         variant="ghost"
         onClick={onSave}
         disabled={isSaving}
-        title="Save changes"
+        title={tr('settings.pipelines.saveChangesTitle')}
       >
         {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
       </Button>
@@ -383,7 +395,7 @@ function SortableStageRow({
         variant="ghost"
         onClick={onDelete}
         disabled={isDeleting}
-        title={dealCount > 0 ? 'Stage has active deals — delete blocked' : 'Delete stage'}
+        title={dealCount > 0 ? tr('settings.pipelines.deleteBlockedTitleAttr') : tr('settings.pipelines.deleteStageTitle')}
       >
         {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4 text-destructive" />}
       </Button>

@@ -34,6 +34,8 @@
   "retry": "重试",
   "by": "by",
   "reasoning": "推理过程",
+  "countDeals_one": "{{count}} 个商机",
+  "countDeals_other": "{{count}} 个商机",
   "autocomplete": {
     "searchPlaceholder": "搜索...",
     "noResults": "找不到",

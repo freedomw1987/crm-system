@@ -34,6 +34,8 @@
   "retry": "Retry",
   "by": "by",
   "reasoning": "Reasoning process",
+  "countDeals_one": "{{count}} deal",
+  "countDeals_other": "{{count}} deals",
   "autocomplete": {
     "searchPlaceholder": "Search…",
     "noResults": "No results",

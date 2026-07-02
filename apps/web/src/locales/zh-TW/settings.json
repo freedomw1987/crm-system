@@ -1,5 +1,5 @@
 {
-  "description": "管理個人偏好、銷售 pipeline、用戶、角色、AI、人天角色、稅率和 audit log。",
+  "description": "管理個人偏好、銷售流程、用戶、角色、AI、人天角色、稅率和稽核紀錄。",
   "account": {
     "title": "帳戶",
     "personalInfo": "個人資料",
@@ -113,5 +113,34 @@
     "save": "儲存",
     "saved": "已儲存"
   },
-  "pipelineHelp": "Drag rows to reorder. 改 name / probability / color 然後點擊 Save 或 Tab 走個 focus 即 save。"
+  "pipelines": {
+    "pipelineHelp": "拖曳行以重新排序。修改 名稱 / 機率 / 顏色 後,按儲存或離開焦點即自動儲存。",
+    "defaultPipelineName": "預設銷售流程",
+    "defaultBadge": "預設",
+    "loadingPipelines": "載入設定中…",
+    "loadFailed": "載入 pipeline 失敗:{{message}}",
+    "noPipeline": "尚未設定 pipeline。請先在資料庫 seed 中建立。",
+    "noStages": "尚未建立任何階段。請按「新增階段」建立。",
+    "addStage": "新增階段",
+    "newStageName": "新階段",
+    "deleteConfirm": "確定刪除階段「{{name}}」?",
+    "deleteBlockedTitle": "無法刪除階段",
+    "deleteBlockedBody": "階段「{{name}}」仍有 {{count}} 筆進行中的商機。請先在商機看板上重新分配,再回來刪除。",
+    "close": "關閉",
+    "dragAriaLabel": "拖曳以重新排序",
+    "colorAriaLabel": "階段顏色",
+    "namePlaceholder": "階段名稱",
+    "dealsBadgeTitle_one": "{{count}} 筆進行中的商機正在使用此階段",
+    "dealsBadgeTitle_other": "{{count}} 筆進行中的商機正在使用此階段",
+    "saveChangesTitle": "儲存改動",
+    "deleteBlockedTitleAttr": "此階段仍有進行中的商機,無法刪除",
+    "deleteStageTitle": "刪除階段",
+    "auditLog": "稽核紀錄"
+  },
+  "audit": {
+    "tab": "稽核紀錄",
+    "event": "稽核事件",
+    "trailTitle": "稽核追蹤"
+  }
 }
+

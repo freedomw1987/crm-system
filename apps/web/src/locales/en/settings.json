@@ -113,5 +113,33 @@
     "save": "Save",
     "saved": "Saved"
   },
-  "pipelineHelp": "Drag rows to reorder. Edit name / probability / color, then click Save or Tab away to commit."
+  "pipelines": {
+    "pipelineHelp": "Drag rows to reorder. Edit name / probability / color, then click Save or Tab away to commit.",
+    "defaultPipelineName": "Default Sales Pipeline",
+    "defaultBadge": "default",
+    "loadingPipelines": "Loading settings…",
+    "loadFailed": "Failed to load pipelines: {{message}}",
+    "noPipeline": "No pipeline configured yet. Create one in the database seed.",
+    "noStages": "No stages yet. Click \"Add stage\" to create one.",
+    "addStage": "Add stage",
+    "newStageName": "New Stage",
+    "deleteConfirm": "Delete stage \"{{name}}\"?",
+    "deleteBlockedTitle": "Cannot delete stage",
+    "deleteBlockedBody": "Stage \"{{name}}\" has {{count}} active deal(s). Reassign them to another stage in the Deals kanban first, then try again.",
+    "close": "Close",
+    "dragAriaLabel": "Drag to reorder",
+    "colorAriaLabel": "Stage color",
+    "namePlaceholder": "Stage name",
+    "dealsBadgeTitle_one": "{{count}} active deal using this stage",
+    "dealsBadgeTitle_other": "{{count}} active deals using this stage",
+    "saveChangesTitle": "Save changes",
+    "deleteBlockedTitleAttr": "Stage has active deals — delete blocked",
+    "deleteStageTitle": "Delete stage",
+    "auditLog": "audit log"
+  },
+  "audit": {
+    "tab": "Audit Log",
+    "event": "audit event",
+    "trailTitle": "Audit Trail"
+  }
 }

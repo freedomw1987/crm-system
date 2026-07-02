@@ -1515,3 +1515,60 @@ tokens are streaming, watch the api container logs — must show
 
 ---
 
+
+## RG-029-I18N-NS-SHADOWED-BY-DEFAULTNS — `t('dashboard.title')` returned the literal key in every locale
+
+**Symptom:** Dashboard rendered `dashboard.title`, `dashboard.welcomeBack`, `dashboard.kpi.companies`, `nav.appName`, `nav.dashboard`, etc. (literal i18n keys) instead of translated strings, in **all three** locales. The page logged in successfully, fetched data (KPIs, recent quotations) — only the chrome labels were broken.
+
+**Root cause:** `apps/web/src/i18n/index.ts` had a wrapper around `i18n.t` to rewrite `dashboard.title` → `dashboard:title` (namespace-prefix style). The wrapper short-circuited on any `{ns: ...}` option:
+
+```ts
+if (opts && typeof opts.ns === 'string' && opts.ns.length > 0) {
+  return originalT(key, options);  // BUG: bail out
+}
+```
+
+`react-i18next`'s `useTranslation()` passes `{ns: 'common'}` (the configured `defaultNS`) on **every** call. So the wrapper bailed out for every cross-namespace key, the original t looked up `dashboard.title` in the `common` namespace, the lookup missed, and i18next returned the key as a fallback.
+
+**Fix (2026-07-02):** the wrapper now ALWAYS applies the namespace-prefix rewrite when the key's first dot-segment matches a registered namespace, then **strips the `ns` option** from the call to `originalT` so the rewritten `head:rest` form isn't shadowed:
+
+```ts
+const cleanOptions =
+  opts && Object.prototype.hasOwnProperty.call(opts, 'ns')
+    ? { ...opts, ns: undefined }
+    : options;
+return originalT(`${head}:${rest}`, cleanOptions);
+```
+
+**Pinned by:**
+- `apps/web/src/i18n/__tests__/namespace-resolution.test.ts` (9 tests). The previous version had a test `t("nav.appName", {ns:"common"}) → "nav.appName"` (asserted the bug); it is now flipped to `→ "CRM"`, plus a new test that `t("save", {ns: "nav"})` (no namespace prefix) DOES honour the explicit `ns` option.
+- Manual Playwright smoke at `apps/web/scripts/i18n-smoke.mjs` — visits 11 pages in both zh-TW and zh-CN, scans the rendered body for `namespace.subkey` patterns that look like literal i18n keys. Must report `22/22 pass`.
+
+**Symptom-scanner (cheap CI guard):** add a one-liner check in any future E2E:
+
+```js
+const literals = bodyText.match(/\b(common|nav|auth|role|status|errors|dashboard|settings|company|deal|quotation|product|service|contact|user|audit|ai|activity|attachment)\.[a-z][a-zA-Z0-9.]*/g);
+if (literals?.length) throw new Error(`literal i18n keys rendered: ${literals.join(', ')}`);
+```
+
+**Lesson:** wrappers around third-party APIs have to honour ALL the ways the real caller invokes them, not just the one we tested. react-i18next's `useTranslation()`-injected `ns` option was the silent killer here — it would have shown up in a Playwright run, not in a unit test of the wrapper in isolation.
+
+## RG-030-PIPELINES-PAGE-UNTRANSLATED — `/settings/pipelines` chrome was hardcoded English
+
+**Symptom:** `/settings/pipelines` rendered "Drag rows to reorder. 改 name / probability / color 然後點擊 Save 或 Tab 走個 focus 即 save。" — the zh-TW/zh-CN `pipelineHelp` value was itself half-translated (mixed CJK + English field names + English UI verbs), AND the page itself had 10+ hardcoded English strings (`Add stage`, `Delete stage`, `Save changes`, `No stages yet`, `Cannot delete stage`, `Delete stage "X"?`, `Stage name`, `Stage color`, `Drag to reorder`, `{{count}} active deal(s) using this stage`, etc). The seeded pipeline name `Default Sales Pipeline` also showed in English regardless of locale.
+
+**Root cause:** `apps/web/src/pages/settings.tsx` was never migrated when the Phase-2 i18n pass extracted strings from the other pages. The page was a `Day 11` page that pre-dated the i18n work, and the catalog values were written as Chinese-annotated English ("改 name / probability / color") instead of getting properly translated.
+
+**Fix (2026-07-02):**
+1. Added `settings.pipelines.*` (20 keys) and `settings.audit.*` (3 keys) to all three locales with proper Chinese — `拖曳行以重新排序。修改 名稱 / 機率 / 顏色 後,按儲存或離開焦點即自動儲存。` (zh-TW) / `拖动行以重新排序。修改 名称 / 概率 / 颜色 后,按保存或离开焦点即自动保存。` (zh-CN).
+2. Added `settings.pipelines.defaultPipelineName` and a conditional render in `SettingsPage` so the seed name shows localised (`預設銷售流程` / `默认销售流程`) — but only when `defaultPipeline.name === 'Default Sales Pipeline'` (the canonical seed value). User-edited names pass through untouched.
+3. Added `common.countDeals_one/_other` for the per-stage deal-count badge (uses i18next's plural rule so `count: 1` → `1 筆商機` and `count: 5` → `5 筆商機`).
+4. Wrapped every JSX literal in the page (and in the `SortableStageRow` sub-component) with `t('settings.pipelines.X')`, including the `confirm()` in `requestDelete` and the `aria-label` / `title` / `placeholder` attributes.
+5. Cleaned up the `settings.description` in zh-TW/zh-CN — was "...和 audit log。" (mixed CJK + English), now "...和稽核紀錄。" / "...和审计日志。"
+
+**Pinned by:**
+- `apps/web/scripts/i18n-smoke.mjs` — added `/settings/pipelines` to the page list (12 pages × 2 locales = 24/24 pass).
+- A focused Playwright probe at `apps/web/scripts/i18n-pipelines-probe.mjs` (transient, not committed) that asserts the help text is fully translated AND that no leftover English strings appear on the page.
+- `apps/web/src/i18n/__tests__/catalog-completeness.test.ts` — 6 tests confirm the new `settings.pipelines.*`, `settings.audit.*`, and `common.countDeals_*` keys exist in all three locales with identical key sets.
+
+**Lesson:** when shipping i18n in waves (per-page), keep a running list of "pages that haven't been touched yet" and add a regression test that fails if a NEW page is added without a corresponding catalog update. The `i18n-smoke.mjs` page list is that mechanism — adding `/settings/pipelines` to the list was the moment this gap was forced open.

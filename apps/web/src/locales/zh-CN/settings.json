@@ -1,5 +1,5 @@
 {
-  "description": "管理个人偏好、销售 pipeline、用户、角色、AI、人天角色、税率和 audit log。",
+  "description": "管理个人偏好、销售 pipeline、用户、角色、AI、人天角色、税率和审计日志。",
   "account": {
     "title": "账户",
     "personalInfo": "个人资料",
@@ -113,5 +113,33 @@
     "save": "保存",
     "saved": "已保存"
   },
-  "pipelineHelp": "Drag rows to reorder. 改 name / probability / color 然后点击 Save 或 Tab 走个 focus 即 save。"
+  "pipelines": {
+    "pipelineHelp": "拖动行以重新排序。修改 名称 / 概率 / 颜色 后,按保存或离开焦点即自动保存。",
+    "defaultPipelineName": "默认销售流程",
+    "defaultBadge": "默认",
+    "loadingPipelines": "载入设定中…",
+    "loadFailed": "载入 pipeline 失败:{{message}}",
+    "noPipeline": "尚未设定 pipeline。请先在数据库 seed 中建立。",
+    "noStages": "尚未建立任何阶段。请按「新增阶段」建立。",
+    "addStage": "新增阶段",
+    "newStageName": "新阶段",
+    "deleteConfirm": "确定删除阶段「{{name}}」?",
+    "deleteBlockedTitle": "无法删除阶段",
+    "deleteBlockedBody": "阶段「{{name}}」仍有 {{count}} 个进行中的商机。请先在商机看板上重新分配,再回来删除。",
+    "close": "关闭",
+    "dragAriaLabel": "拖动以重新排序",
+    "colorAriaLabel": "阶段颜色",
+    "namePlaceholder": "阶段名称",
+    "dealsBadgeTitle_one": "{{count}} 个进行中的商机正在使用此阶段",
+    "dealsBadgeTitle_other": "{{count}} 个进行中的商机正在使用此阶段",
+    "saveChangesTitle": "保存改动",
+    "deleteBlockedTitleAttr": "此阶段仍有进行中的商机,无法删除",
+    "deleteStageTitle": "删除阶段",
+    "auditLog": "审计日志"
+  },
+  "audit": {
+    "tab": "审计日志",
+    "event": "审计事件",
+    "trailTitle": "审计追踪"
+  }
 }

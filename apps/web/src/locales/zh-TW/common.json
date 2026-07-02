@@ -34,6 +34,8 @@
   "retry": "重試",
   "by": "by",
   "reasoning": "推理過程",
+  "countDeals_one": "{{count}} 筆商機",
+  "countDeals_other": "{{count}} 筆商機",
   "autocomplete": {
     "searchPlaceholder": "搜尋...",
     "noResults": "找不到",
