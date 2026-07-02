@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { Briefcase, Plus, Trash2, Power, PowerOff } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
@@ -12,6 +13,7 @@ import { formatCurrency } from '@/lib/utils';
 import { QuickCreateServiceDialog } from '@/components/quick-create-service-dialog';
 
 export function ServicesPage() {
+  const { t } = useTranslation();
   const [search, setSearch] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const queryClient = useQueryClient();
@@ -44,29 +46,29 @@ export function ServicesPage() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold">Services</h1>
-          <p className="text-muted-foreground">服務目錄,每個服務可設人天結構 (SOW) 與定價</p>
+          <h1 className="text-2xl md:text-3xl font-bold">{t('service.title')}</h1>
+          <p className="text-muted-foreground">{t('service.subtitle')}</p>
         </div>
         <Button onClick={() => setCreateOpen(true)}>
           <Plus className="h-4 w-4 mr-1" />
-          新增服務
+          {t('service.newService')}
         </Button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div className="space-y-1.5">
-          <Label htmlFor="search">搜尋</Label>
-          <Input id="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="服務名稱..." />
+          <Label htmlFor="search">{t('common.search')}</Label>
+          <Input id="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('service.searchPlaceholder')} />
         </div>
       </div>
 
       {isLoading ? (
-        <p className="text-sm text-muted-foreground">載入中...</p>
+        <p className="text-sm text-muted-foreground">{t('service.loading')}</p>
       ) : filtered.length === 0 ? (
         <Card>
           <CardContent className="p-12 text-center text-muted-foreground">
             <Briefcase className="h-12 w-12 mx-auto mb-3 opacity-50" />
-            尚未建立任何服務
+            {t('service.empty')}
           </CardContent>
         </Card>
       ) : (
@@ -87,26 +89,26 @@ export function ServicesPage() {
                     </p>
                   </div>
                   <Badge variant={s.status === 'ACTIVE' ? 'success' : s.status === 'ARCHIVED' ? 'secondary' : 'outline'}>
-                    {s.status === 'ACTIVE' ? 'Active' : s.status === 'ARCHIVED' ? 'Archived' : 'Draft'}
+                    {s.status === 'ACTIVE' ? t('service.status.ACTIVE') : s.status === 'ARCHIVED' ? t('service.status.ARCHIVED') : t('service.status.DRAFT')}
                   </Badge>
                 </div>
 
                 <div className="flex items-baseline justify-between text-sm">
-                  <span className="text-muted-foreground">總價</span>
+                  <span className="text-muted-foreground">{t('service.card.total')}</span>
                   <span className="font-semibold text-lg">
                     {formatCurrency(Number(s.unitPrice), s.currency)}
                   </span>
                 </div>
 
                 <div className="text-xs text-muted-foreground">
-                  {s.manDays?.length ?? 0} 個 man-day role
+                  {t('service.card.manDayRoles', { count: s.manDays?.length ?? 0 })}
                   {' · '}
-                  {s.manDays?.reduce((sum, m) => sum + m.days, 0) ?? 0} days total
+                  {t('service.card.daysTotal', { count: s.manDays?.reduce((sum, m) => sum + m.days, 0) ?? 0 })}
                 </div>
 
                 <div className="flex gap-2 pt-2 border-t">
                   <Button asChild variant="outline" size="sm" className="flex-1">
-                    <Link to={`/services/${s.id}`}>編輯</Link>
+                    <Link to={`/services/${s.id}`}>{t('service.card.edit')}</Link>
                   </Button>
                   <Button
                     variant="outline"
@@ -120,7 +122,7 @@ export function ServicesPage() {
                     variant="outline"
                     size="sm"
                     onClick={() => {
-                      if (confirm(`確定刪除「${s.name}」?`)) removeService.mutate(s.id);
+                      if (confirm(t('service.deleteConfirm', { name: s.name }))) removeService.mutate(s.id);
                     }}
                     disabled={removeService.isPending}
                   >

@@ -19,6 +19,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Paperclip, Send, X, Loader2, StickyNote } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -26,7 +27,6 @@ import {
 import { Textarea } from '@/components/ui/input';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { activitiesApi, attachmentsApi, type ActivityType } from '@/lib/api';
-import { ACTIVITY_TYPE_META } from '@/components/activity-feed';
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -46,6 +46,7 @@ export interface DealActivityDialogProps {
 export function DealActivityDialog({
   open, onOpenChange, dealId, dealTitle,
 }: DealActivityDialogProps) {
+  const { t } = useTranslation();
   const qc = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   // 2026-06-30: let the sales rep pick the activity type (備註 / 電話
@@ -83,7 +84,7 @@ export function DealActivityDialog({
     mutationFn: async () => {
       const trimmed = content.trim();
       if (!trimmed && files.length === 0) {
-        throw new Error('請輸入內容或加入附件');
+        throw new Error(t('activity.error.contentOrAttachmentRequired'));
       }
       const act = await activitiesApi.create({
         type,
@@ -103,7 +104,7 @@ export function DealActivityDialog({
       qc.invalidateQueries({ queryKey: ['deals-kanban'] });
       onOpenChange(false);
     },
-    onError: (e) => setError(e instanceof Error ? e.message : '儲存失敗'),
+    onError: (e) => setError(e instanceof Error ? e.message : t('activity.error.saveFailed')),
   });
 
   function addFiles(list: FileList | null) {
@@ -117,12 +118,14 @@ export function DealActivityDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <StickyNote className="h-4 w-4 text-slate-500" />
-            新增 Activity{dealTitle ? ` · ${dealTitle}` : ''}
+            {dealTitle
+              ? t('activity.dialog.titleWithDeal', { deal: dealTitle })
+              : t('activity.dialog.title')}
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <div>
-            <label className="text-xs text-muted-foreground" htmlFor="deal-activity-type">類型</label>
+            <label className="text-xs text-muted-foreground" htmlFor="deal-activity-type">{t('activity.type')}</label>
             <select
               id="deal-activity-type"
               value={type}
@@ -130,14 +133,14 @@ export function DealActivityDialog({
               className="w-full h-9 rounded border bg-background px-2 text-sm mt-1"
               data-testid="deal-activity-type"
             >
-              {(['NOTE', 'CALL', 'EMAIL', 'MEETING'] as ActivityType[]).map((t) => (
-                <option key={t} value={t}>{ACTIVITY_TYPE_META[t].label}</option>
+              {(['NOTE', 'CALL', 'EMAIL', 'MEETING'] as ActivityType[]).map((tt) => (
+                <option key={tt} value={tt}>{t(`status.activity.${tt}`)}</option>
               ))}
             </select>
           </div>
           <Textarea
             id="deal-activity-composer"
-            placeholder="寫下 follow-up 進度、客戶 reply、打咗電話的 outcome…"
+            placeholder={t('activity.composer.placeholder')}
             value={content}
             onChange={(e) => setContent(e.target.value)}
             rows={3}
@@ -156,7 +159,7 @@ export function DealActivityDialog({
                   <span className="text-muted-foreground">{formatBytes(f.size)}</span>
                   <button
                     type="button"
-                    aria-label={`移除 ${f.name}`}
+                    aria-label={t('activity.attachment.remove', { name: f.name })}
                     onClick={() => setFiles((prev) => prev.filter((_, j) => j !== i))}
                     className="text-muted-foreground hover:text-destructive"
                   >
@@ -175,7 +178,7 @@ export function DealActivityDialog({
             onClick={() => fileInputRef.current?.click()}
             disabled={submit.isPending}
           >
-            <Paperclip className="h-3.5 w-3.5 mr-1" /> 加附件
+            <Paperclip className="h-3.5 w-3.5 mr-1" /> {t('activity.attachment.add')}
           </Button>
           <input
             ref={fileInputRef}
@@ -190,7 +193,7 @@ export function DealActivityDialog({
             onClick={() => onOpenChange(false)}
             disabled={submit.isPending}
           >
-            取消
+            {t('common.cancel')}
           </Button>
           <Button
             type="button"
@@ -198,7 +201,7 @@ export function DealActivityDialog({
             disabled={submit.isPending || (!content.trim() && files.length === 0)}
           >
             {submit.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Send className="h-3.5 w-3.5 mr-1" />}
-            儲存
+            {t('common.save')}
           </Button>
         </DialogFooter>
       </DialogContent>

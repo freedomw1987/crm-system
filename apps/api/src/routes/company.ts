@@ -4,6 +4,7 @@ import { logEvent } from '../middleware/audit';
 import { authContext } from '../lib/context';
 import { requirePermission } from '../middleware/rbac';
 import { withAuditDelete } from '../lib/with-audit';
+import { tApi } from '../lib/i18n';
 
 // P0-2 (2026-06-07 review): all 4 company endpoints (GET list/detail,
 // POST, PATCH, DELETE) were public. Now gated by authContext and
@@ -62,7 +63,7 @@ export const companyRoutes = new Elysia({ prefix: '/companies', tags: ['companie
 
   // Get single company
   .use(requirePermission('company:read'))
-  .get('/:id', async ({ params, set }) => {
+  .get('/:id', async ({ params, set, locale }) => {
     const company = await prisma.company.findUnique({
       where: { id: params.id },
       include: {
@@ -77,7 +78,7 @@ export const companyRoutes = new Elysia({ prefix: '/companies', tags: ['companie
     });
     if (!company) {
       set.status = 404;
-      return { error: 'Company not found' };
+      return { error: tApi(locale, 'COMPANY_NOT_FOUND') };
     }
     return company;
   })
@@ -138,7 +139,7 @@ export const companyRoutes = new Elysia({ prefix: '/companies', tags: ['companie
 
   // Update company
   .use(requirePermission('company:update'))
-  .patch('/:id', async ({ params, body, set, userId, request }) => {
+  .patch('/:id', async ({ params, body, set, userId, request, locale }) => {
     try {
       const data = body as Record<string, unknown>;
       // Same region-code → id resolution as the create handler.
@@ -180,18 +181,18 @@ export const companyRoutes = new Elysia({ prefix: '/companies', tags: ['companie
       return company;
     } catch {
       set.status = 404;
-      return { error: 'Company not found' };
+      return { error: tApi(locale, 'COMPANY_NOT_FOUND') };
     }
   })
 
   // Delete company
   .use(requirePermission('company:delete'))
-  .delete('/:id', async ({ params, set, userId, request }) => {
+  .delete('/:id', async ({ params, set, userId, request, locale }) => {
     try {
       const before = await prisma.company.findUnique({ where: { id: params.id }, select: { name: true } });
       if (!before) {
         set.status = 404;
-        return { error: 'Company not found' };
+        return { error: tApi(locale, 'COMPANY_NOT_FOUND') };
       }
       return await withAuditDelete({
         action: 'COMPANY_DELETED',
@@ -204,6 +205,6 @@ export const companyRoutes = new Elysia({ prefix: '/companies', tags: ['companie
       });
     } catch {
       set.status = 404;
-      return { error: 'Company not found' };
+      return { error: tApi(locale, 'COMPANY_NOT_FOUND') };
     }
   });

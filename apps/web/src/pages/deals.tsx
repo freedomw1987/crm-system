@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient, type QueryKey } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { KanbanSquare, Plus, GripVertical, X, Edit2, FileText, StickyNote, Trash2 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -19,6 +20,7 @@ import { DealActivityDialog } from '@/components/deal-activity-dialog';
 import { DealsActivityPanel } from '@/components/deals-activity-panel';
 
 export function DealsPage() {
+  const { t } = useTranslation();
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -180,18 +182,20 @@ export function DealsPage() {
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold">Deals Pipeline</h1>
+          <h1 className="text-2xl md:text-3xl font-bold">{t('deal.title')}</h1>
           <p className="text-muted-foreground">
-            銷售 pipeline · {kanban?.pipeline.name ?? 'Default Sales Pipeline'}
+            {t('deal.pipelineLabel', { name: kanban?.pipeline.name ?? t('deal.defaultPipeline') })}
           </p>
         </div>
         <div className="flex items-center gap-3">
           <div className="text-right text-sm hidden md:block">
-            <div className="text-muted-foreground text-xs">Open / Total</div>
-            <div className="font-semibold">{stats.openCount} deals · {formatCurrency(stats.totalValue, systemCurrency)}</div>
+            <div className="text-muted-foreground text-xs">{t('deal.stats.openTotal')}</div>
+            <div className="font-semibold">
+              {t('deal.stats.openDeals', { count: stats.openCount })} · {formatCurrency(stats.totalValue, systemCurrency)}
+            </div>
           </div>
           <Button onClick={() => setCreateOpen(true)}>
-            <Plus className="h-4 w-4 mr-1" /> 新增 Deal
+            <Plus className="h-4 w-4 mr-1" /> {t('deal.newDeal')}
           </Button>
         </div>
       </div>
@@ -207,16 +211,16 @@ export function DealsPage() {
             value={filterCompanyIds}
             onChange={setFilterCompanyIds}
             companies={companies}
-            label="Company"
-            placeholder="搜尋公司..."
+            label={t('deal.filters.company')}
+            placeholder={t('deal.filters.companyPlaceholder')}
           />
         </div>
         <div className="min-w-[260px] flex-1 max-w-md">
           <MultiUserAutocomplete
             value={filterOwnerIds}
             onChange={setFilterOwnerIds}
-            label="銷售員"
-            placeholder="搜尋銷售員..."
+            label={t('deal.filters.salesRep')}
+            placeholder={t('deal.filters.salesRepPlaceholder')}
           />
         </div>
         {(filterCompanyIds.length > 0 || filterOwnerIds.length > 0) && (
@@ -226,26 +230,26 @@ export function DealsPage() {
             onClick={() => { setFilterCompanyIds([]); setFilterOwnerIds([]); }}
             className="text-muted-foreground"
           >
-            <X className="h-3 w-3 mr-1" /> 清除 filter
+            <X className="h-3 w-3 mr-1" /> {t('deal.filters.clearAll')}
           </Button>
         )}
         {(filterCompanyIds.length > 0 || filterOwnerIds.length > 0) && kanban && (
           <div className="text-sm text-muted-foreground pb-2 w-full">
-            顯示 {kanban.buckets.reduce((sum, b) => sum + b.deals.length, 0)} 個 deal
+            {t('deal.filters.showingCount', { count: kanban.buckets.reduce((sum, b) => sum + b.deals.length, 0) })}
           </div>
         )}
       </div>
 
       {/* Stats row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatCard label="Open Deals" value={`${stats.openCount}`} />
-        <StatCard label="Total Value" value={formatCurrency(stats.totalValue, systemCurrency)} />
-        <StatCard label="Weighted (by prob.)" value={formatCurrency(stats.weightedValue, systemCurrency)} highlight />
-        <StatCard label="Stages" value={`${kanban?.buckets.length ?? 0}`} />
+        <StatCard label={t('deal.stats.openDeals')} value={`${stats.openCount}`} />
+        <StatCard label={t('deal.stats.totalValue')} value={formatCurrency(stats.totalValue, systemCurrency)} />
+        <StatCard label={t('deal.stats.weightedValue')} value={formatCurrency(stats.weightedValue, systemCurrency)} highlight />
+        <StatCard label={t('deal.stats.stages')} value={`${kanban?.buckets.length ?? 0}`} />
       </div>
 
       {isLoading || !kanban ? (
-        <p className="text-sm text-muted-foreground">載入中...</p>
+        <p className="text-sm text-muted-foreground">{t('deal.loading')}</p>
       ) : (
         <>
           {/* Kanban board first — sales reps see the funnel layout as
@@ -266,7 +270,7 @@ export function DealsPage() {
                   systemCurrency={systemCurrency}
                   onEdit={(deal) => setEditing(deal)}
                   onDelete={(deal) => {
-                    if (confirm(`確定刪除 deal「${deal.title}」?此操作無法復原,相關 activities / quotations 會一齊 cascade。`)) {
+                    if (confirm(t('deal.deleteConfirm', { title: deal.title }))) {
                       deleteDeal.mutate(deal.id);
                     }
                   }}
@@ -308,7 +312,7 @@ export function DealsPage() {
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              為「{quotationFor?.title ?? ''}」建立報價
+              {t('deal.quotationDialog.title', { title: quotationFor?.title ?? '' })}
             </DialogTitle>
           </DialogHeader>
           {quotationFor && (
@@ -379,6 +383,7 @@ function KanbanColumn({
   /** Day N+1: open DealActivityDialog pre-filled with this deal. */
   onNewActivity?: (deal: Deal) => void;
 }) {
+  const { t } = useTranslation();
   const [dragOver, setDragOver] = useState(false);
   // Prisma returns Decimal as a string; coerce each value so we don't
   // accidentally concatenate two strings and produce a trillion-HK$ total.
@@ -420,7 +425,7 @@ function KanbanColumn({
       <div className="p-2 space-y-2 min-h-[200px] max-h-[70vh] overflow-y-auto scrollbar-thin">
         {deals.length === 0 ? (
           <p className="text-xs text-muted-foreground text-center py-8 select-none pointer-events-none">
-            拖 deal 落此處
+            {t('deal.column.emptyDropZone')}
           </p>
         ) : (
           deals.map((d) => (
@@ -437,7 +442,7 @@ function KanbanColumn({
         )}
       </div>
       <div className="px-3 py-1.5 text-[10px] text-muted-foreground border-t">
-        Probability: {stage.probability}%
+        {t('deal.stats.probability', { value: stage.probability })}
       </div>
     </div>
   );
@@ -466,6 +471,7 @@ function DealCard({
   /** Day N+1: open DealActivityDialog pre-filled with this deal. */
   onNewActivity?: (d: Deal) => void;
 }) {
+  const { t } = useTranslation();
   // Track drag state so a click on the card body doesn't navigate while
   // the user is mid-drag.
   const [dragging, setDragging] = useState(false);
@@ -511,7 +517,10 @@ function DealCard({
             {deal.owner && (
               <span
                 className="shrink-0 inline-flex items-center justify-center h-5 w-5 rounded-full bg-primary/15 text-primary text-[10px] font-semibold"
-                title={`銷售員: ${deal.owner.name}${deal.owner.email ? ` <${deal.owner.email}>` : ''}`}
+                title={t('deal.card.ownerTooltip', {
+                  name: deal.owner.name,
+                  email: deal.owner.email ? ` <${deal.owner.email}>` : '',
+                })}
                 data-testid="deal-card-owner-initial"
               >
                 {deal.owner.name.slice(0, 1).toUpperCase()}
@@ -543,11 +552,11 @@ function DealCard({
                 navigate(`/deals/${deal.id}`);
               }}
               className="mt-1.5 inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded hover:bg-primary/10 transition-colors text-muted-foreground hover:text-foreground"
-              title={`查看這個 deal 的 ${quoteCount} 份報價`}
+              title={t('deal.card.viewQuotations_tooltip', { count: quoteCount })}
               data-testid="deal-card-view-quotations"
             >
               <FileText className="h-3 w-3" />
-              {quoteCount} 份報價
+              {t('deal.card.viewQuotations', { count: quoteCount })}
             </button>
           ) : (
             <button
@@ -557,10 +566,10 @@ function DealCard({
                 onNewQuotation?.(deal);
               }}
               className="mt-1.5 inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded hover:bg-primary/10 transition-colors text-primary font-medium"
-              title="為此 deal 建立第一份報價"
+              title={t('deal.card.firstQuotationTitle')}
             >
               <FileText className="h-3 w-3" />
-              ＋ 報價
+              {t('deal.card.firstQuotation')}
             </button>
           )}
           {/* Day N+1: "新增 Activity" — log a follow-up note for this
@@ -575,9 +584,9 @@ function DealCard({
                 onNewActivity(deal);
               }}
               className="mt-1 ml-1 inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded hover:bg-primary/10 transition-colors text-muted-foreground hover:text-foreground"
-              title="為此 deal 記錄跟進"
+              title={t('deal.card.newActivityTitle')}
             >
-              <StickyNote className="h-3 w-3" /> ＋ Activity
+              <StickyNote className="h-3 w-3" /> {t('deal.card.newActivity')}
             </button>
           )}
         </div>
@@ -589,7 +598,7 @@ function DealCard({
               rightmost control. */}
           <button
             type="button"
-            aria-label="編輯 deal"
+            aria-label={t('deal.card.editDeal')}
             onClick={(e) => { e.stopPropagation(); onEdit(deal); }}
             className="text-muted-foreground hover:text-foreground transition-colors p-0.5 -m-0.5"
           >
@@ -598,8 +607,8 @@ function DealCard({
           {onDelete && (
             <button
               type="button"
-              aria-label="刪除 deal"
-              title="刪除 deal"
+              aria-label={t('deal.card.deleteDeal')}
+              title={t('deal.card.deleteDeal')}
               onClick={(e) => { e.stopPropagation(); onDelete(deal); }}
               className="text-muted-foreground hover:text-destructive transition-colors p-0.5 -m-0.5"
             >
@@ -670,6 +679,7 @@ export function DealDialog({
    */
   onSaved?: (deal?: Deal) => void;
 }) {
+  const { t } = useTranslation();
   const isEdit = !!deal;
   // RG-2026-06-07-DEAL-AUTOCOMPLETE: pre-fill expectedCloseDate to
   // `today + defaultExpectedCloseDateOffsetDays` for Quick-Create flows
@@ -737,11 +747,11 @@ export function DealDialog({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!companyId || !stageId) {
-      setError('Company 與 Stage 必填');
+      setError(t('deal.dialog.errors.companyStageRequired'));
       return;
     }
     if (!title.trim()) {
-      setError('Deal 名稱必填');
+      setError(t('deal.dialog.errors.titleRequired'));
       return;
     }
     setSubmitting(true);
@@ -812,28 +822,28 @@ export function DealDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{isEdit ? '編輯 Deal' : '新增 Deal'}</DialogTitle>
+          <DialogTitle>{isEdit ? t('deal.dialog.editTitle') : t('deal.dialog.newTitle')}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
-            <Label htmlFor="title">Deal 名稱 *</Label>
+            <Label htmlFor="title">{t('deal.dialog.title')}</Label>
             <Input id="title" value={title} onChange={(e) => setTitle(e.target.value)} required />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <Label htmlFor="company">公司 *</Label>
+              <Label htmlFor="company">{t('deal.dialog.company')}</Label>
               <CompanyAutocomplete
                 companies={companies}
                 value={companyId}
                 onChange={setCompanyId}
                 label=""
                 disabled={isEdit}
-                placeholder={isEdit ? '公司不可修改' : '搜尋客戶名稱...'}
+                placeholder={isEdit ? t('deal.dialog.companyReadonly') : t('deal.dialog.searchCompany')}
                 allowCreate={!isEdit}
               />
             </div>
             <div>
-              <Label htmlFor="stage">Stage *</Label>
+              <Label htmlFor="stage">{t('deal.dialog.stage')}</Label>
               <select
                 id="stage"
                 value={stageId}
@@ -853,11 +863,11 @@ export function DealDialog({
                   picked currency so the user can see at a glance which
                   unit the amount is in. Defaults to the system
                   currency on mount. */}
-              <Label htmlFor="value">金額 ({currency})</Label>
+              <Label htmlFor="value">{t('deal.dialog.amount', { currency })}</Label>
               <Input id="value" type="number" value={value} onChange={(e) => setValue(e.target.value)} />
             </div>
             <div>
-              <Label htmlFor="currency">貨幣</Label>
+              <Label htmlFor="currency">{t('deal.dialog.currency')}</Label>
               <select
                 id="currency"
                 value={currency}
@@ -872,13 +882,13 @@ export function DealDialog({
                     pricing lives in the sales pipeline and should
                     always snap to one of the three currencies the
                     admin maintains rates for. */}
-                <option value="RMB">人民幣 (RMB)</option>
-                <option value="HKD">港幣 (HKD)</option>
-                <option value="MOP">澳門幣 (MOP)</option>
+                <option value="RMB">{t('deal.currencies.RMB')}</option>
+                <option value="HKD">{t('deal.currencies.HKD')}</option>
+                <option value="MOP">{t('deal.currencies.MOP')}</option>
               </select>
             </div>
             <div>
-              <Label htmlFor="close">預計成交日</Label>
+              <Label htmlFor="close">{t('deal.dialog.expectedClose')}</Label>
               <Input id="close" type="date" value={expectedCloseDate} onChange={(e) => setExpectedCloseDate(e.target.value)} />
             </div>
           </div>
@@ -900,9 +910,11 @@ export function DealDialog({
             </div>
           )}
           <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>取消</Button>
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>{t('deal.dialog.cancel')}</Button>
             <Button type="submit" disabled={submitting || !title.trim()}>
-              {submitting ? (isEdit ? '儲存中...' : '建立中...') : (isEdit ? '儲存' : '建立')}
+              {submitting
+                ? (isEdit ? t('deal.dialog.submit.saving') : t('deal.dialog.submit.creating'))
+                : (isEdit ? t('deal.dialog.submit.edit') : t('deal.dialog.submit.create'))}
             </Button>
           </DialogFooter>
         </form>

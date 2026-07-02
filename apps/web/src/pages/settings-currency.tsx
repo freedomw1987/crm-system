@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import type { ChangeEvent, KeyboardEvent } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Loader2, Save, AlertTriangle, History, Coins } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -31,6 +32,7 @@ import { formatDateTime } from '@/lib/utils';
  * `metadata: { key: 'currency_config', oldValue, newValue }`.
  */
 export function SettingsCurrencyPage() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { data, isLoading, error } = useQuery({
     queryKey: ['settings', 'currency'],
@@ -63,8 +65,8 @@ export function SettingsCurrencyPage() {
       const hkd = Number(draftHkdRate);
       const mop = Number(draftMopRate);
       // Form-level validation (server re-validates via TypeBox).
-      if (!Number.isFinite(hkd) || hkd <= 0) throw new Error('RMB → HKD 匯率必須係大過 0 的數字');
-      if (!Number.isFinite(mop) || mop <= 0) throw new Error('RMB → MOP 匯率必須係大於 0 的數字');
+      if (!Number.isFinite(hkd) || hkd <= 0) throw new Error(t('settings.currency.errors.rmbToHkdInvalid'));
+      if (!Number.isFinite(mop) || mop <= 0) throw new Error(t('settings.currency.errors.rmbToMopInvalid'));
       return settingsApi.putCurrency({
         default: draftDefault,
         rates: { 'RMB->HKD': hkd, 'RMB->MOP': mop },
@@ -87,11 +89,11 @@ export function SettingsCurrencyPage() {
     const hkd = Number(draftHkdRate);
     const mop = Number(draftMopRate);
     if (!Number.isFinite(hkd) || hkd <= 0) {
-      setValidationError('RMB → HKD 匯率必須係大過 0 的數字');
+      setValidationError(t('settings.currency.errors.rmbToHkdInvalid'));
       return;
     }
     if (!Number.isFinite(mop) || mop <= 0) {
-      setValidationError('RMB → MOP 匯率必須係大過 0 的數字');
+      setValidationError(t('settings.currency.errors.rmbToMopInvalid'));
       return;
     }
     saveMutation.mutate();
@@ -100,7 +102,7 @@ export function SettingsCurrencyPage() {
   if (isLoading) {
     return (
       <div className="flex items-center gap-2 text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" /> Loading currency config…
+        <Loader2 className="h-4 w-4 animate-spin" /> {t('settings.currency.loading')}
       </div>
     );
   }
@@ -108,7 +110,7 @@ export function SettingsCurrencyPage() {
     return (
       <Card>
         <CardContent className="pt-6 text-sm text-destructive">
-          Failed to load currency config: {(error as Error).message}
+          {t('settings.currency.loadFailed', { message: (error as Error).message })}
         </CardContent>
       </Card>
     );
@@ -134,18 +136,17 @@ export function SettingsCurrencyPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Coins className="h-5 w-5" />
-            <span>Default Currency &amp; Exchange Rates</span>
+            <span>{t('settings.currency.title')}</span>
           </CardTitle>
           <CardDescription>
-            新建報價的預設出單貨幣,以及兩條以人民幣計的匯率。已存在的報價會保留當時
-            snapshotted 的 HKD 等值,改此處不會重寫歷史。
+            {t('settings.currency.description')}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <label htmlFor="currency-default" className="text-sm font-medium">
-                預設出單貨幣
+                {t('settings.currency.default')}
               </label>
               <Select
                 id="currency-default"
@@ -157,12 +158,12 @@ export function SettingsCurrencyPage() {
                 }}
                 disabled={saveMutation.isPending}
               >
-                <option value="RMB">人民幣 (RMB)</option>
-                <option value="HKD">港幣 (HKD)</option>
-                <option value="MOP">澳門幣 (MOP)</option>
+                <option value="RMB">{t('settings.currency.optionRmb')}</option>
+                <option value="HKD">{t('settings.currency.optionHkd')}</option>
+                <option value="MOP">{t('settings.currency.optionMop')}</option>
               </Select>
               <p className="text-xs text-muted-foreground">
-                新建報價時 Currency 欄位的預設值;銷售和事可以在 builder 改。
+                {t('settings.currency.defaultHelper')}
               </p>
             </div>
           </div>
@@ -170,7 +171,7 @@ export function SettingsCurrencyPage() {
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <label htmlFor="rate-rmb-hkd" className="text-sm font-medium">
-                1 RMB = ? HKD
+                {t('settings.currency.rmbToHkdLabel')}
               </label>
               <Input
                 id="rate-rmb-hkd"
@@ -191,7 +192,7 @@ export function SettingsCurrencyPage() {
             </div>
             <div className="space-y-1.5">
               <label htmlFor="rate-rmb-mop" className="text-sm font-medium">
-                1 RMB = ? MOP
+                {t('settings.currency.rmbToMopLabel')}
               </label>
               <Input
                 id="rate-rmb-mop"
@@ -218,11 +219,14 @@ export function SettingsCurrencyPage() {
               have to do the math in their head. */}
           {derivedMopToHkd > 0 && (
             <div className="rounded-md border border-dashed border-border/60 bg-muted/30 px-3 py-2 text-xs">
-              <div className="text-muted-foreground">派生匯率</div>
+              <div className="text-muted-foreground">{t('settings.currency.derivedRates')}</div>
               <div className="font-mono mt-0.5">
-                1 MOP ≈ <span className="font-semibold">{derivedMopToHkd.toFixed(4)}</span> HKD
+                {t('settings.currency.derivedRateValue', { rate: derivedMopToHkd.toFixed(4) })}
                 <span className="text-muted-foreground">
-                  {' '} (= RMB→HKD {Number(draftHkdRate).toFixed(4)} ÷ RMB→MOP {Number(draftMopRate).toFixed(4)})
+                  {t('settings.currency.derivedRateFormula', {
+                    hkd: Number(draftHkdRate).toFixed(4),
+                    mop: Number(draftMopRate).toFixed(4),
+                  })}
                 </span>
               </div>
             </div>
@@ -239,7 +243,7 @@ export function SettingsCurrencyPage() {
               ) : (
                 <Save className="h-4 w-4 mr-1" />
               )}
-              Save
+              {saveMutation.isPending ? t('settings.currency.saving') : t('settings.currency.save')}
             </Button>
           </div>
 
@@ -252,19 +256,23 @@ export function SettingsCurrencyPage() {
 
           <div className="text-xs text-muted-foreground border-t pt-3 space-y-1">
             <div>
-              <span className="font-medium">當前生效值:</span>{' '}
+              <span className="font-medium">{t('settings.currency.currentValue')}</span>{' '}
               <span className="font-mono">
-                {currentDefault} · RMB→HKD {currentHkd} · RMB→MOP {currentMop}
+                {t('settings.currency.currentValueText', {
+                  default: currentDefault,
+                  hkd: currentHkd,
+                  mop: currentMop,
+                })}
               </span>
             </div>
             {data?.updatedAt && (
               <div>
-                <span className="font-medium">最後更新:</span>{' '}
+                <span className="font-medium">{t('settings.currency.lastUpdated')}</span>{' '}
                 {formatDateTime(data.updatedAt)}
                 {data.updatedBy && (
                   <>
                     {' '}
-                    by <span className="font-medium">{data.updatedBy.name}</span>
+                    {t('common.by')} <span className="font-medium">{data.updatedBy.name}</span>
                     {data.updatedBy.email && (
                       <span className="text-muted-foreground/70"> ({data.updatedBy.email})</span>
                     )}
@@ -274,7 +282,7 @@ export function SettingsCurrencyPage() {
             )}
             {savedAt && (
               <div className="text-green-600 dark:text-green-400">
-                ✓ Saved at {formatDateTime(savedAt)}
+                {t('settings.currency.savedAt', { when: formatDateTime(savedAt) })}
               </div>
             )}
           </div>
@@ -285,11 +293,10 @@ export function SettingsCurrencyPage() {
         <CardHeader>
           <CardTitle className="text-sm font-medium flex items-center gap-2">
             <History className="h-4 w-4" />
-            Audit Trail
+            {t('settings.currency.auditTrailTitle')}
           </CardTitle>
           <CardDescription className="text-xs">
-            每次 save 會寫一條 <code className="font-mono">SYSTEM_CONFIG_UPDATED</code>{' '}
-            audit event,記錄 currency_config 的舊值和新值(12 個月 retention)。
+            {t('settings.currency.auditNote')}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -298,7 +305,7 @@ export function SettingsCurrencyPage() {
             className="text-sm text-primary hover:underline inline-flex items-center gap-1"
           >
             <History className="h-3.5 w-3.5" />
-            View audit log for this setting →
+            {t('settings.currency.auditTrailLink')}
           </Link>
         </CardContent>
       </Card>

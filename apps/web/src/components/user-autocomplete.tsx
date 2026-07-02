@@ -17,6 +17,7 @@
  * picker) and `includeInactive` to surface soft-deleted users.
  */
 import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { Autocomplete } from './autocomplete';
 import { usersApi, type UserSummary } from '@/lib/api';
 
@@ -38,11 +39,12 @@ export function UserAutocomplete({
   onChange,
   roleFilter = 'SALES',
   includeInactive = false,
-  label = '銷售員',
+  label,
   className,
   disabled,
-  placeholder = '搜尋銷售員...',
+  placeholder,
 }: UserAutocompleteProps) {
+  const { t } = useTranslation();
   const { data, isLoading } = useQuery({
     queryKey: ['users', { role: roleFilter }],
     queryFn: () => usersApi.list({ role: roleFilter, limit: 200 }),
@@ -58,11 +60,11 @@ export function UserAutocomplete({
       getSubLabel={(u) => u.email}
       value={value ?? undefined}
       onChange={(key) => onChange(key || null)}
-      label={label}
+      label={label ?? t('user.label')}
       className={className}
       disabled={disabled || isLoading}
-      placeholder={placeholder}
-      emptyText={isLoading ? '載入中...' : '找不到'}
+      placeholder={placeholder ?? t('user.searchPlaceholder')}
+      emptyText={isLoading ? t('user.loading') : t('user.noResults')}
     />
   );
 }

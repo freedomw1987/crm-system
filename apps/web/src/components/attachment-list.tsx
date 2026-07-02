@@ -18,6 +18,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Paperclip, Download, FileText, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { attachmentsApi, type Attachment } from '@/lib/api';
@@ -38,6 +39,7 @@ export interface AttachmentListProps {
 }
 
 export function AttachmentList({ companyId }: AttachmentListProps) {
+  const { t } = useTranslation();
   const { data, isLoading } = useQuery({
     queryKey: ['attachments', { companyId }],
     queryFn: () => attachmentsApi.forCompany(companyId),
@@ -52,7 +54,7 @@ export function AttachmentList({ companyId }: AttachmentListProps) {
     try {
       await downloadAttachment(att);
     } catch (e) {
-      setError(e instanceof Error ? e.message : '下載失敗');
+      setError(e instanceof Error ? e.message : t('attachment.downloadFailed'));
     } finally {
       setDownloadingId(null);
     }
@@ -62,17 +64,17 @@ export function AttachmentList({ companyId }: AttachmentListProps) {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Paperclip className="h-4 w-4" /> 附件 ({items.length})
+          <Paperclip className="h-4 w-4" /> {t('attachment.title', { count: items.length })}
         </CardTitle>
       </CardHeader>
       <CardContent className="p-0">
         {isLoading ? (
           <div className="p-6 text-sm text-muted-foreground flex items-center gap-2">
-            <Loader2 className="h-3 w-3 animate-spin" /> 載入中...
+            <Loader2 className="h-3 w-3 animate-spin" /> {t('attachment.loading')}
           </div>
         ) : items.length === 0 ? (
           <p className="text-sm text-muted-foreground p-6 text-center">
-            仍未有附件 · 去「Activity」tab 寫新跟進時可以順手上傳
+            {t('attachment.empty')}
           </p>
         ) : (
           <ul className="divide-y">
@@ -92,14 +94,14 @@ export function AttachmentList({ companyId }: AttachmentListProps) {
                   onClick={() => handleDownload(att)}
                   disabled={downloadingId === att.id}
                   className="inline-flex items-center gap-1 text-sm text-primary hover:underline shrink-0 disabled:opacity-50"
-                  title="下載"
+                  title={t('attachment.download')}
                 >
                   {downloadingId === att.id ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   ) : (
                     <Download className="h-3.5 w-3.5" />
                   )}
-                  下載
+                  {t('attachment.download')}
                 </button>
               </li>
             ))}

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import {
   ArrowLeft, FileText, Plus, User, Calendar, DollarSign, Briefcase, Trash2, Edit2, Activity as ActivityIcon,
 } from 'lucide-react';
@@ -20,6 +21,7 @@ import { DealDialog } from '@/pages/deals';
 type Tab = 'quotations' | 'activity';
 
 export function DealDetailPage() {
+  const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -62,8 +64,8 @@ export function DealDetailPage() {
     enabled: !!id && tab === 'activity',
   });
 
-  if (isLoading) return <p className="p-6 text-muted-foreground">載入中...</p>;
-  if (!deal) return <p className="p-6 text-muted-foreground">找不到這個 deal</p>;
+  if (isLoading) return <p className="p-6 text-muted-foreground">{t('deal.detail.loading')}</p>;
+  if (!deal) return <p className="p-6 text-muted-foreground">{t('deal.detail.notFound')}</p>;
 
   const isOpen = deal.status === 'OPEN';
   const isWon = deal.status === 'WON';
@@ -73,7 +75,7 @@ export function DealDetailPage() {
     // Re-check inside the closure — TS can't carry the post-null-check
     // narrowing from the render path into an async function body.
     if (!id || !deal) return;
-    if (!window.confirm(`確定刪除 deal「${deal.title}」?此操作無法復原,相關 activities / quotations 會一齊 cascade。`)) return;
+    if (!window.confirm(t('deal.detail.deleteConfirm', { title: deal.title }))) return;
     setDeleteLoading(true);
     try {
       await dealsApi.remove(id);
@@ -83,7 +85,7 @@ export function DealDetailPage() {
       qc.invalidateQueries({ queryKey: ['companies-all'] });
       navigate('/deals');
     } catch (err) {
-      window.alert(`刪除失敗: ${(err as Error).message}`);
+      window.alert(t('deal.detail.deleteFailed', { message: (err as Error).message }));
     } finally {
       setDeleteLoading(false);
     }
@@ -109,9 +111,9 @@ export function DealDetailPage() {
                 {deal.stage.name}
               </Badge>
             )}
-            {isOpen && <Badge variant="info">Open</Badge>}
-            {isWon && <Badge variant="success">Won</Badge>}
-            {isLost && <Badge variant="destructive">Lost</Badge>}
+            {isOpen && <Badge variant="info">{t('status.deal.OPEN')}</Badge>}
+            {isWon && <Badge variant="success">{t('status.deal.WON')}</Badge>}
+            {isLost && <Badge variant="destructive">{t('status.deal.LOST')}</Badge>}
           </div>
           <p className="text-sm text-muted-foreground mt-1">
             {deal.company ? (
@@ -141,7 +143,7 @@ export function DealDetailPage() {
             data-testid="deal-detail-new-quotation"
           >
             <Plus className="h-4 w-4 mr-2" />
-            新增報價
+            {t('deal.detail.newQuotation')}
           </Button>
           <Button
             variant="outline"
@@ -149,7 +151,7 @@ export function DealDetailPage() {
             onClick={() => setEditOpen(true)}
           >
             <Edit2 className="h-4 w-4 mr-2" />
-            編輯
+            {t('deal.detail.edit')}
           </Button>
           <Button
             variant="outline"
@@ -159,7 +161,7 @@ export function DealDetailPage() {
             className="text-destructive hover:text-destructive"
           >
             <Trash2 className="h-4 w-4 mr-2" />
-            刪除
+            {t('deal.detail.delete')}
           </Button>
         </div>
       </div>
@@ -168,27 +170,27 @@ export function DealDetailPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <MetaTile
           icon={<DollarSign className="h-3.5 w-3.5" />}
-          label="Deal Value"
+          label={t('deal.detail.meta.dealValue')}
           value={formatCurrency(Number(deal.value), deal.currency)}
         />
         {deal.expectedCloseDate && (
           <MetaTile
             icon={<Calendar className="h-3.5 w-3.5" />}
-            label="預計成交日"
+            label={t('deal.detail.meta.expectedClose')}
             value={formatDate(deal.expectedCloseDate)}
           />
         )}
         {deal.closedAt && (
           <MetaTile
             icon={<Calendar className="h-3.5 w-3.5" />}
-            label={isWon ? '成交日' : '結案日'}
+            label={isWon ? t('deal.detail.meta.closedAtWon') : t('deal.detail.meta.closedAt')}
             value={formatDate(deal.closedAt)}
           />
         )}
         <MetaTile
           icon={<FileText className="h-3.5 w-3.5" />}
-          label="報價數量"
-          value={`${(deal.quotations ?? []).length} 份`}
+          label={t('deal.detail.meta.quotationCount')}
+          value={`${(deal.quotations ?? []).length}${t('deal.detail.meta.quotationCountSuffix')}`}
         />
       </div>
 
@@ -199,14 +201,14 @@ export function DealDetailPage() {
           onClick={() => setTab('quotations')}
           count={(deal.quotations ?? []).length}
         >
-          報價
+          {t('deal.detail.tabs.quotations')}
         </TabButton>
         <TabButton
           active={tab === 'activity'}
           onClick={() => setTab('activity')}
           count={dealActivities.length}
         >
-          Activity
+          {t('deal.detail.tabs.activity')}
         </TabButton>
       </div>
 
@@ -240,7 +242,7 @@ export function DealDetailPage() {
       <Dialog open={quotationBuilderOpen} onOpenChange={setQuotationBuilderOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>為「{deal.title}」建立報價</DialogTitle>
+            <DialogTitle>{t('deal.detail.quotationBuilderTitle', { title: deal.title })}</DialogTitle>
           </DialogHeader>
           <QuotationBuilder
             defaultCompanyId={deal.company?.id ?? ''}
@@ -316,21 +318,22 @@ function QuotationsTab({ dealId, dealCompanyId }: { dealId: string; dealCompanyI
   // We re-fetch the full quotation list filtered by dealId. The detail
   // endpoint's `deal.quotations` only carries id/number/status/total;
   // the full row (title, items, total) is needed for the table.
+  const { t } = useTranslation();
   const { data: quotations = [], isLoading } = useQuery({
     queryKey: ['quotations', { dealId }],
     queryFn: () => quotationsApi.list({ dealId, limit: 50 }),
     enabled: !!dealId,
   });
 
-  if (isLoading) return <p className="text-sm text-muted-foreground">載入中...</p>;
+  if (isLoading) return <p className="text-sm text-muted-foreground">{t('deal.detail.loading')}</p>;
 
   if (quotations.length === 0) {
     return (
       <Card>
         <CardContent className="p-12 text-center text-muted-foreground">
           <FileText className="h-10 w-10 mx-auto mb-3 opacity-50" />
-          <p>這個 deal 仍未有報價。</p>
-          <p className="text-xs mt-1">按上面「＋ 新增報價」整第一份。</p>
+          <p>{t('deal.detail.quotationTabEmpty')}</p>
+          <p className="text-xs mt-1">{t('deal.detail.quotationTabEmptyHint')}</p>
         </CardContent>
       </Card>
     );
@@ -343,10 +346,10 @@ function QuotationsTab({ dealId, dealCompanyId }: { dealId: string; dealCompanyI
           <table className="w-full text-sm">
             <thead className="bg-muted/50 border-b">
               <tr className="text-left">
-                <th className="px-4 py-3 font-medium">Number</th>
-                <th className="px-4 py-3 font-medium">Title</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3 font-medium text-right">Total</th>
+                <th className="px-4 py-3 font-medium">{t('deal.detail.quotationTable.number')}</th>
+                <th className="px-4 py-3 font-medium">{t('deal.detail.quotationTable.title')}</th>
+                <th className="px-4 py-3 font-medium">{t('deal.detail.quotationTable.status')}</th>
+                <th className="px-4 py-3 font-medium text-right">{t('deal.detail.quotationTable.total')}</th>
                 {/* 2026-06-26: 銷售員 column on the deal-detail
                     Quotations tab. Mirrors the list page so users
                     scanning "all the quotations on this deal" can
@@ -354,11 +357,11 @@ function QuotationsTab({ dealId, dealCompanyId }: { dealId: string; dealCompanyI
                     (important when reassigning deals mid-flight).
                     Falls back to the creator when salesRepId is
                     null. */}
-                <th className="px-4 py-3 font-medium">銷售員</th>
-                <th className="px-4 py-3 font-medium">Created</th>
-                <th className="px-4 py-3 font-medium">Sent</th>
-                <th className="px-4 py-3 font-medium">Accepted</th>
-                <th className="px-4 py-3"></th>
+                <th className="px-4 py-3 font-medium">{t('deal.detail.quotationTable.salesRep')}</th>
+                <th className="px-4 py-3 font-medium">{t('deal.detail.quotationTable.created')}</th>
+                <th className="px-4 py-3 font-medium">{t('deal.detail.quotationTable.sent')}</th>
+                <th className="px-4 py-3 font-medium">{t('deal.detail.quotationTable.accepted')}</th>
+                <th className="px-4 py-3 font-medium"></th>
               </tr>
             </thead>
             <tbody>
@@ -388,7 +391,7 @@ function QuotationsTab({ dealId, dealCompanyId }: { dealId: string; dealCompanyI
                   </td>
                   <td className="px-4 py-3 text-right">
                     <Button asChild variant="ghost" size="sm">
-                      <Link to={`/quotations/${q.id}`}>查看</Link>
+                      <Link to={`/quotations/${q.id}`}>{t('deal.detail.quotationTable.view')}</Link>
                     </Button>
                   </td>
                 </tr>
@@ -407,14 +410,15 @@ function ActivityTab({
   activities: Activity[];
   onAdd: () => void;
 }) {
+  const { t } = useTranslation();
   if (activities.length === 0) {
     return (
       <Card>
         <CardContent className="p-12 text-center text-muted-foreground">
           <ActivityIcon className="h-10 w-10 mx-auto mb-3 opacity-50" />
-          <p>這個 deal 仍未有 activity 記錄。</p>
+          <p>{t('deal.detail.activityEmpty')}</p>
           <Button size="sm" className="mt-3" onClick={onAdd}>
-            <Plus className="h-4 w-4 mr-1" /> 新增 Activity
+            <Plus className="h-4 w-4 mr-1" /> {t('deal.detail.newActivity')}
           </Button>
         </CardContent>
       </Card>
@@ -429,7 +433,7 @@ function ActivityTab({
     <div className="space-y-3">
       <div className="flex justify-end">
         <Button size="sm" variant="outline" onClick={onAdd}>
-          <Plus className="h-4 w-4 mr-1" /> 新增 Activity
+          <Plus className="h-4 w-4 mr-1" /> {t('deal.detail.newActivity')}
         </Button>
       </div>
       {activities.map((a) => (
@@ -440,6 +444,7 @@ function ActivityTab({
 }
 
 function QuotationStatusBadge({ status }: { status: QuotationStatus }) {
+  const { t } = useTranslation();
   const map: Record<QuotationStatus, 'default' | 'secondary' | 'info' | 'success' | 'warning' | 'destructive'> = {
     DRAFT: 'secondary',
     SENT: 'info',
@@ -449,5 +454,5 @@ function QuotationStatusBadge({ status }: { status: QuotationStatus }) {
     EXPIRED: 'warning',
     INVOICED: 'success',
   };
-  return <Badge variant={map[status] ?? 'default'}>{status}</Badge>;
+  return <Badge variant={map[status] ?? 'default'}>{t(`status.quotation.${status}`)}</Badge>;
 }

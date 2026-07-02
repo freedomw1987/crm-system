@@ -27,6 +27,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Loader2, Save, AlertTriangle, History, Wrench } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -35,6 +36,7 @@ import { settingsApi } from '@/lib/api';
 import { formatDateTime } from '@/lib/utils';
 
 export function SettingsMaintenanceFeePage() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { data, isLoading, error } = useQuery({
     queryKey: ['settings', 'maintenance-fee'],
@@ -59,7 +61,7 @@ export function SettingsMaintenanceFeePage() {
     mutationFn: () => {
       const n = Number(draftRate);
       if (!Number.isFinite(n) || n < 0 || n > 100) {
-        throw new Error('維護費用比率必須為 0–100 之間的百分比');
+        throw new Error(t('settings.maintenanceFee.errors.rateInvalid'));
       }
       return settingsApi.putMaintenanceFee({ rate: n });
     },
@@ -77,7 +79,7 @@ export function SettingsMaintenanceFeePage() {
   function handleSave() {
     const n = Number(draftRate);
     if (draftRate === '' || !Number.isFinite(n) || n < 0 || n > 100) {
-      setValidationError('維護費用比率必須為 0–100 之間的百分比');
+      setValidationError(t('settings.maintenanceFee.errors.rateInvalid'));
       return;
     }
     saveMutation.mutate();
@@ -86,7 +88,7 @@ export function SettingsMaintenanceFeePage() {
   if (isLoading) {
     return (
       <div className="flex items-center gap-2 text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" /> 載入維護費用設定…
+        <Loader2 className="h-4 w-4 animate-spin" /> {t('settings.maintenanceFee.loading')}
       </div>
     );
   }
@@ -94,7 +96,7 @@ export function SettingsMaintenanceFeePage() {
     return (
       <Card>
         <CardContent className="pt-6 text-sm text-destructive">
-          載入維護費用比率失敗:{(error as Error).message}
+          {t('settings.maintenanceFee.loadFailed', { message: (error as Error).message })}
         </CardContent>
       </Card>
     );
@@ -109,19 +111,17 @@ export function SettingsMaintenanceFeePage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Wrench className="h-5 w-5" />
-            <span>Maintenance Service Rate</span>
+            <span>{t('settings.maintenanceFee.title')}</span>
           </CardTitle>
           <CardDescription>
-            「+ 維護費用」按鈕會將報價的 project subtotal × (rate ÷ 100) 加為
-            一行 SERVICE-typed line item。用戶按下按鈕時會將費率快照寫入此行,
-            之後再修改其他 line item 不會自動更新。若需要重新計算,請刪除舊的費用行再按一次按鈕。
+            {t('settings.maintenanceFee.description')}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-end gap-3">
             <div className="space-y-1.5 flex-1 max-w-xs">
               <label htmlFor="mf-rate" className="text-sm font-medium">
-                維護費用比率 (%)
+                {t('settings.maintenanceFee.rate')}
               </label>
               <div className="flex items-center gap-2">
                 <Input
@@ -143,7 +143,7 @@ export function SettingsMaintenanceFeePage() {
                 />
                 <span className="text-sm text-muted-foreground">%</span>
                 <span className="text-xs text-muted-foreground/70">
-                  × project subtotal
+                  {t('settings.maintenanceFee.rateMultiplier')}
                 </span>
               </div>
             </div>
@@ -157,20 +157,18 @@ export function SettingsMaintenanceFeePage() {
               ) : (
                 <Save className="h-4 w-4 mr-1" />
               )}
-              Save
+              {saveMutation.isPending ? t('settings.maintenanceFee.saving') : t('settings.maintenanceFee.save')}
             </Button>
           </div>
 
           {/* Worked example — updates live as the draft rate changes */}
           <div className="text-xs text-muted-foreground bg-muted/40 px-3 py-2 rounded space-y-0.5">
-            <div className="font-medium text-foreground">計算示例:</div>
+            <div className="font-medium text-foreground">{t('settings.maintenanceFee.example')}</div>
             <div>
-              Project subtotal{' '}
-              <span className="font-mono">= 100,000</span> × {Number(draftRate || 0).toFixed(2)}% ={' '}
-              <span className="font-mono font-semibold text-foreground">
-                {(100_000 * Number(draftRate || 0) / 100).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-              </span>{' '}
-              (維護費用 line item 的 unitPrice)
+              {t('settings.maintenanceFee.exampleLine', {
+                rate: Number(draftRate || 0).toFixed(2),
+                result: (100_000 * Number(draftRate || 0) / 100).toLocaleString(undefined, { maximumFractionDigits: 2 }),
+              })}
             </div>
           </div>
 
@@ -183,17 +181,17 @@ export function SettingsMaintenanceFeePage() {
 
           <div className="text-xs text-muted-foreground border-t pt-3 space-y-1">
             <div>
-              <span className="font-medium">當前生效值:</span>{' '}
+              <span className="font-medium">{t('settings.maintenanceFee.currentValue')}</span>{' '}
               <span className="font-mono">{currentRate}%</span>
             </div>
             {data?.updatedAt && (
               <div>
-                <span className="font-medium">最後更新:</span>{' '}
+                <span className="font-medium">{t('settings.maintenanceFee.lastUpdated')}</span>{' '}
                 {formatDateTime(data.updatedAt)}
                 {data.updatedBy && (
                   <>
                     {' '}
-                    by <span className="font-medium">{data.updatedBy.name}</span>
+                    {t('common.by')} <span className="font-medium">{data.updatedBy.name}</span>
                     {data.updatedBy.email && (
                       <span className="text-muted-foreground/70"> ({data.updatedBy.email})</span>
                     )}
@@ -203,7 +201,7 @@ export function SettingsMaintenanceFeePage() {
             )}
             {savedAt && (
               <div className="text-green-600 dark:text-green-400">
-                ✓ Saved at {formatDateTime(savedAt)}
+                {t('settings.maintenanceFee.savedAt', { when: formatDateTime(savedAt) })}
               </div>
             )}
           </div>
@@ -214,11 +212,10 @@ export function SettingsMaintenanceFeePage() {
         <CardHeader>
           <CardTitle className="text-sm font-medium flex items-center gap-2">
             <History className="h-4 w-4" />
-            Audit Trail
+            {t('settings.maintenanceFee.auditTrailTitle')}
           </CardTitle>
           <CardDescription className="text-xs">
-            每次儲存會寫入一筆 <code className="font-mono">SYSTEM_CONFIG_UPDATED</code>{' '}
-            audit event,記錄舊值與新值。resourceId 為 <code className="font-mono">maintenance_fee_rate</code>。
+            {t('settings.maintenanceFee.auditNote')}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -227,7 +224,7 @@ export function SettingsMaintenanceFeePage() {
             className="text-sm text-primary hover:underline inline-flex items-center gap-1"
           >
             <History className="h-3.5 w-3.5" />
-            View audit log →
+            {t('settings.maintenanceFee.auditTrailLink')}
           </Link>
         </CardContent>
       </Card>

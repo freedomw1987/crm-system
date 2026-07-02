@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { History } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -9,58 +10,61 @@ import { Badge } from '@/components/ui/badge';
 import { auditApi, type AuditAction, type AuditLog } from '@/lib/api';
 import { formatDateTime } from '@/lib/utils';
 
-// Display labels for each action. The `variant` feeds the Badge component
-// in AuditRow. Unknown actions (e.g. a future backend enum we haven't
-// mapped yet) fall back to a secondary gray badge showing the raw enum —
-// see the `?? FALLBACK` line in AuditRow. That fallback is the only thing
-// keeping the page from crashing when the backend emits an action we
-// forgot to add here, so KEEP IT even when extending this map.
-const ACTION_LABELS: Record<AuditAction, { label: string; variant: 'default' | 'info' | 'success' | 'warning' | 'destructive' | 'secondary' }> = {
-  USER_LOGIN:              { label: '登入',         variant: 'success' },
-  USER_LOGIN_FAILED:       { label: '登入失敗',     variant: 'destructive' },
-  USER_LOGOUT:             { label: '登出',         variant: 'secondary' },
-  PASSWORD_CHANGED:        { label: '改密碼',       variant: 'info' },
-  USER_CREATED:            { label: '新增用戶',     variant: 'default' },
-  USER_UPDATED:            { label: '更新用戶',     variant: 'default' },
-  USER_DEACTIVATED:        { label: '停用用戶',     variant: 'warning' },
-  USER_REACTIVATED:        { label: '重啟用戶',     variant: 'success' },
-  USER_DELETED:            { label: '刪除用戶',     variant: 'destructive' },
-  PASSWORD_RESET:          { label: '重設密碼',     variant: 'info' },
-  QUOTATION_CREATED:       { label: '新增報價',     variant: 'default' },
-  QUOTATION_UPDATED:       { label: '更新報價',     variant: 'default' },
-  QUOTATION_DELETED:       { label: '刪除報價',     variant: 'destructive' },
-  QUOTATION_STATUS_CHANGED:{ label: '報價狀態變更', variant: 'info' },
-  COMPANY_CREATED:         { label: '新增公司',     variant: 'default' },
-  COMPANY_UPDATED:         { label: '更新公司',     variant: 'default' },
-  COMPANY_DELETED:         { label: '刪除公司',     variant: 'destructive' },
-  CONTACT_CREATED:         { label: '新增聯絡人',   variant: 'default' },
-  CONTACT_UPDATED:         { label: '更新聯絡人',   variant: 'default' },
-  CONTACT_DELETED:         { label: '刪除聯絡人',   variant: 'destructive' },
-  DEAL_CREATED:            { label: '新增 Deal',    variant: 'default' },
-  DEAL_UPDATED:            { label: '更新 Deal',    variant: 'default' },
-  DEAL_DELETED:            { label: '刪除 Deal',    variant: 'destructive' },
-  DEAL_STAGE_CHANGED:      { label: 'Deal Stage 變更', variant: 'info' },
-  PRODUCT_CREATED:         { label: '新增 Product', variant: 'default' },
-  PRODUCT_UPDATED:         { label: '更新 Product', variant: 'default' },
-  PRODUCT_DELETED:         { label: '刪除 Product', variant: 'destructive' },
-  SERVICE_CREATED:         { label: '新增 Service', variant: 'default' },
-  SERVICE_UPDATED:         { label: '更新 Service', variant: 'default' },
-  SERVICE_DELETED:         { label: '刪除 Service', variant: 'destructive' },
-  ROLE_CREATED:            { label: '新增 Role',    variant: 'default' },
-  ROLE_UPDATED:            { label: '更新 Role',    variant: 'default' },
-  ROLE_DELETED:            { label: '刪除 Role',    variant: 'destructive' },
-  REGION_CREATED:          { label: '新增 Region',  variant: 'default' },
-  REGION_UPDATED:          { label: '更新 Region',  variant: 'default' },
-  REGION_DELETED:          { label: '刪除 Region',  variant: 'destructive' },
+// Display variants for each action. The label is resolved at render time
+// via t(`audit.actions.${action}`); only the visual variant (which feeds
+// the Badge component) lives in this map.
+//
+// Why split label/variant: t() is a hook and can't be called inside a
+// module-level object literal, so we keep the variant map here and look
+// up the label from the i18n bundle inside the components that render.
+//
+// Unknown actions (e.g. a future backend enum we haven't mapped yet)
+// fall back to a secondary gray badge showing the raw enum — see the
+// `?? FALLBACK` line in AuditRow. That fallback is the only thing keeping
+// the page from crashing when the backend emits an action we forgot to
+// add here, so KEEP IT even when extending this map.
+const ACTION_VARIANTS: Record<AuditAction, 'default' | 'info' | 'success' | 'warning' | 'destructive' | 'secondary'> = {
+  USER_LOGIN:              'success',
+  USER_LOGIN_FAILED:       'destructive',
+  USER_LOGOUT:             'secondary',
+  PASSWORD_CHANGED:        'info',
+  USER_CREATED:            'default',
+  USER_UPDATED:            'default',
+  USER_DEACTIVATED:        'warning',
+  USER_REACTIVATED:        'success',
+  USER_DELETED:            'destructive',
+  PASSWORD_RESET:          'info',
+  QUOTATION_CREATED:       'default',
+  QUOTATION_UPDATED:       'default',
+  QUOTATION_DELETED:       'destructive',
+  QUOTATION_STATUS_CHANGED:'info',
+  COMPANY_CREATED:         'default',
+  COMPANY_UPDATED:         'default',
+  COMPANY_DELETED:         'destructive',
+  CONTACT_CREATED:         'default',
+  CONTACT_UPDATED:         'default',
+  CONTACT_DELETED:         'destructive',
+  DEAL_CREATED:            'default',
+  DEAL_UPDATED:            'default',
+  DEAL_DELETED:            'destructive',
+  DEAL_STAGE_CHANGED:      'info',
+  PRODUCT_CREATED:         'default',
+  PRODUCT_UPDATED:         'default',
+  PRODUCT_DELETED:         'destructive',
+  SERVICE_CREATED:         'default',
+  SERVICE_UPDATED:         'default',
+  SERVICE_DELETED:         'destructive',
+  ROLE_CREATED:            'default',
+  ROLE_UPDATED:            'default',
+  ROLE_DELETED:            'destructive',
+  REGION_CREATED:          'default',
+  REGION_UPDATED:          'default',
+  REGION_DELETED:          'destructive',
 };
 
-// Fallback for any future action the backend emits that we haven't added
-// above. Prevents the "Cannot read properties of undefined (reading
-// 'variant')" crash the audit page was hitting when DEAL_STAGE_CHANGED
-// (and PRODUCT_*/REGION_*/ROLE_*/SERVICE_*) were logged.
-const FALLBACK_META = { label: null as string | null, variant: 'secondary' as const };
-function getActionMeta(action: string) {
-  return ACTION_LABELS[action as AuditAction] ?? { ...FALLBACK_META, label: action };
+const FALLBACK_VARIANT = 'secondary' as const;
+function getActionVariant(action: string) {
+  return ACTION_VARIANTS[action as AuditAction] ?? FALLBACK_VARIANT;
 }
 
 export function AuditPage() {
@@ -76,6 +80,7 @@ export function AuditPage() {
   // whatever the user last typed. The useEffect below syncs the URL
   // → state on every searchParams change so deep links work whether you
   // arrive via direct nav, browser back/forward, or in-app link.
+  const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   const [action, setAction] = useState<string>(searchParams.get('action') ?? '');
   const [actorId, setActorId] = useState<string>(searchParams.get('actorId') ?? '');
@@ -101,42 +106,42 @@ export function AuditPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl md:text-3xl font-bold">Audit Log</h1>
-        <p className="text-muted-foreground">所有用戶在系統上的操作記錄</p>
+        <h1 className="text-2xl md:text-3xl font-bold">{t('audit.title')}</h1>
+        <p className="text-muted-foreground">{t('audit.pageSubtitle')}</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div className="space-y-1.5">
-          <Label htmlFor="search">Resource ID</Label>
+          <Label htmlFor="search">{t('audit.filter.resourceIdLabel')}</Label>
           <Input
             id="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="resource id 篩選"
+            placeholder={t('audit.filter.resourceIdPlaceholder')}
           />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="action">Action</Label>
+          <Label htmlFor="action">{t('audit.filter.action')}</Label>
           <Select id="action" value={action} onChange={(e) => setAction(e.target.value)}>
-            <option value="">全部 Action</option>
-            {Object.entries(ACTION_LABELS).map(([k, v]) => (
-              <option key={k} value={k}>{v.label} ({k})</option>
+            <option value="">{t('audit.filter.allActionsLabel')}</option>
+            {Object.entries(ACTION_VARIANTS).map(([k]) => (
+              <option key={k} value={k}>{t('audit.actionOption', { label: t(`audit.actions.${k}` as const), key: k })}</option>
             ))}
           </Select>
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="actor">Actor ID</Label>
-          <Input id="actor" value={actorId} onChange={(e) => setActorId(e.target.value)} placeholder="user id 篩選" />
+          <Label htmlFor="actor">{t('audit.filter.actorIdLabel')}</Label>
+          <Input id="actor" value={actorId} onChange={(e) => setActorId(e.target.value)} placeholder={t('audit.filter.actorIdPlaceholder')} />
         </div>
       </div>
 
       {isLoading ? (
-        <p className="text-sm text-muted-foreground">載入中...</p>
+        <p className="text-sm text-muted-foreground">{t('audit.loading')}</p>
       ) : items.length === 0 ? (
         <Card>
           <CardContent className="p-12 text-center text-muted-foreground">
             <History className="h-12 w-12 mx-auto mb-3 opacity-50" />
-            沒有 audit event
+            {t('audit.empty')}
           </CardContent>
         </Card>
       ) : (
@@ -146,12 +151,12 @@ export function AuditPage() {
               <table className="w-full text-sm">
                 <thead className="bg-muted/50 border-b">
                   <tr className="text-left">
-                    <th className="px-4 py-3 font-medium">When</th>
-                    <th className="px-4 py-3 font-medium">Actor</th>
-                    <th className="px-4 py-3 font-medium">Action</th>
-                    <th className="px-4 py-3 font-medium">Resource</th>
-                    <th className="px-4 py-3 font-medium">Detail</th>
-                    <th className="px-4 py-3 font-medium">IP</th>
+                    <th className="px-4 py-3 font-medium">{t('audit.table.timestamp')}</th>
+                    <th className="px-4 py-3 font-medium">{t('audit.table.actor')}</th>
+                    <th className="px-4 py-3 font-medium">{t('audit.table.action')}</th>
+                    <th className="px-4 py-3 font-medium">{t('audit.table.entity')}</th>
+                    <th className="px-4 py-3 font-medium">{t('audit.table.details')}</th>
+                    <th className="px-4 py-3 font-medium">{t('audit.table.ipAddress')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -169,10 +174,16 @@ export function AuditPage() {
 }
 
 function AuditRow({ event }: { event: AuditLog }) {
+  const { t } = useTranslation();
   // Use the safe accessor so a missing label (e.g. a brand-new backend
   // action we haven't mapped yet) doesn't take down the entire row with
   // a "Cannot read properties of undefined (reading 'variant')" error.
-  const meta = getActionMeta(event.action);
+  const variant = getActionVariant(event.action);
+  // Only attempt i18n lookup for actions we've mapped; unknown actions
+  // (future backend enums) fall through to the raw enum so the row still
+  // renders something useful.
+  const known = (event.action in ACTION_VARIANTS);
+  const label = known ? t(`audit.actions.${event.action}` as const) : event.action;
   return (
     <tr className="border-b last:border-0 hover:bg-muted/30">
       <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
@@ -189,7 +200,7 @@ function AuditRow({ event }: { event: AuditLog }) {
         )}
       </td>
       <td className="px-4 py-3">
-        <Badge variant={meta.variant}>{meta.label}</Badge>
+        <Badge variant={variant}>{label}</Badge>
       </td>
       <td className="px-4 py-3 text-xs">
         {event.resourceType && (

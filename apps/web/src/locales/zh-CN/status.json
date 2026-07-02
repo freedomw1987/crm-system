@@ -1,0 +1,27 @@
+{
+  "quotation": {
+    "DRAFT": "草稿",
+    "SENT": "已发送",
+    "VIEWED": "已查看",
+    "ACCEPTED": "已接受",
+    "REJECTED": "已拒绝",
+    "EXPIRED": "已过期",
+    "INVOICED": "已开票"
+  },
+  "deal": {
+    "OPEN": "进行中",
+    "WON": "成交",
+    "LOST": "丢单"
+  },
+  "activity": {
+    "NOTE": "备注",
+    "CALL": "电话",
+    "EMAIL": "电子邮件",
+    "MEETING": "会议"
+  },
+  "service": {
+    "ACTIVE": "启用",
+    "ARCHIVED": "已归档",
+    "DRAFT": "草稿"
+  }
+}

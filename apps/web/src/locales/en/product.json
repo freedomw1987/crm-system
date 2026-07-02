@@ -1,0 +1,67 @@
+{
+  "title": "Products",
+  "subtitle": "Product catalogue — manage names, descriptions, pricing, and stock.",
+  "newProduct": "New Product",
+  "search": "Search",
+  "searchPlaceholder": "Product name / SKU…",
+  "filter": {
+    "category": "Category",
+    "allCategories": "All categories",
+    "status": "Status",
+    "allStatuses": "All statuses"
+  },
+  "card": {
+    "price": "Price",
+    "stock": "Stock: ",
+    "lowStockWarning": "(below {{threshold}} triggers an alert)",
+    "edit": "Edit",
+    "delete": "Delete"
+  },
+  "deleteConfirm": "Delete \"{{name}}\"? This cannot be undone.",
+  "loading": "Loading…",
+  "empty": "No products yet",
+  "dialog": {
+    "createTitle": "New Product",
+    "editTitle": "Edit Product",
+    "sku": "SKU *",
+    "skuPlaceholder": "e.g. HW-MON-001",
+    "name": "Product name *",
+    "namePlaceholder": "e.g. 27\" 4K Monitor",
+    "description": "Description",
+    "descriptionPlaceholder": "Specs, features, use cases…",
+    "category": "Category",
+    "categoryPlaceholder": "e.g. Hardware",
+    "status": "Status",
+    "price": "Price *",
+    "cost": "Cost",
+    "currency": "Currency",
+    "trackInventory": "Track stock",
+    "stock": "Current stock",
+    "lowStock": "Low-stock alert",
+    "lowStockPlaceholder": "0 = no alert",
+    "totalAuto": "Total (auto)",
+    "cancel": "Cancel",
+    "save": "Save",
+    "create": "Create",
+    "errors": {
+      "skuAndNameRequired": "SKU and product name are required",
+      "priceNegative": "Price cannot be negative",
+      "skuConflict": "SKU is taken, please choose another",
+      "saveFailed": "Couldn't save product"
+    }
+  },
+  "status": {
+    "ACTIVE": "Active",
+    "ARCHIVED": "Archived",
+    "OUT_OF_STOCK": "Out of Stock"
+  },
+  "currency": {
+    "RMB": "Renminbi (RMB)",
+    "HKD": "Hong Kong Dollar (HKD)",
+    "MOP": "Macau Pataca (MOP)",
+    "USD": "US Dollar (USD)",
+    "CNY": "CNY",
+    "EUR": "EUR",
+    "GBP": "GBP"
+  }
+}

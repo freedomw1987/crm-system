@@ -13,6 +13,7 @@
  * `ProductAutocomplete`, `ServiceAutocomplete` below).
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Plus } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/select';
@@ -56,8 +57,8 @@ export function Autocomplete<T>({
   getMeta,
   value,
   onChange,
-  placeholder = '搜尋...',
-  emptyText = '找不到',
+  placeholder,
+  emptyText,
   onCreate,
   label,
   className,
@@ -65,6 +66,9 @@ export function Autocomplete<T>({
   filterable = true,
   maxItems = 10,
 }: AutocompleteProps<T>) {
+  const { t } = useTranslation();
+  const resolvedPlaceholder = placeholder ?? t('common.autocomplete.searchPlaceholder');
+  const resolvedEmptyText = emptyText ?? t('common.autocomplete.noResults');
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
@@ -127,14 +131,14 @@ export function Autocomplete<T>({
           onChange={(e) => { setQuery(e.target.value); setOpen(true); setHighlight(0); if (value) onChange(''); }}
           onFocus={() => setOpen(true)}
           onKeyDown={onKeyDown}
-          placeholder={placeholder}
+          placeholder={resolvedPlaceholder}
           disabled={disabled}
           autoComplete="off"
         />
         {open && !disabled && (
           <div className="absolute z-50 top-full mt-1 left-0 right-0 max-h-72 overflow-y-auto bg-white border border-border rounded shadow-lg">
             {filtered.length === 0 ? (
-              <div className="p-2 text-sm text-muted-foreground text-center">{emptyText}</div>
+              <div className="p-2 text-sm text-muted-foreground text-center">{resolvedEmptyText}</div>
             ) : (
               filtered.map((it, idx) => {
                 const k = getKey(it);
@@ -169,7 +173,7 @@ export function Autocomplete<T>({
                   onClick={() => { onCreate!(query.trim()); setOpen(false); }}
                   className="w-full text-left px-2 py-1.5 text-sm text-primary hover:bg-muted rounded flex items-center gap-1"
                 >
-                  <Plus className="h-3 w-3" /> 新增「{query.trim()}」
+                  <Plus className="h-3 w-3" /> {t('common.autocomplete.addNew', { name: query.trim() })}
                 </button>
               </div>
             )}

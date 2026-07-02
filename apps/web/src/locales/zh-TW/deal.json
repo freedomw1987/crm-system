@@ -1,0 +1,114 @@
+{
+  "title": "Deals Pipeline",
+  "pipelineLabel": "銷售 pipeline · {{name}}",
+  "defaultPipeline": "Default Sales Pipeline",
+  "newDeal": "新增 Deal",
+  "label": "關聯 Deal (可選)",
+  "searchPlaceholder": "搜尋 deal 名...",
+  "pleaseSelectCustomer": "請先選客戶",
+  "noDealsForCustomer": "這個客戶未有任何 deal",
+  "stats": {
+    "openTotal": "Open / Total",
+    "openDeals_one": "{{count}} deal",
+    "openDeals_other": "{{count}} deals",
+    "openDeals": "Open Deals",
+    "totalValue": "Total Value",
+    "weightedValue": "Weighted (by prob.)",
+    "stages": "Stages",
+    "probability": "Probability: {{value}}%"
+  },
+  "filters": {
+    "company": "Company",
+    "companyPlaceholder": "搜尋公司...",
+    "salesRep": "銷售員",
+    "salesRepPlaceholder": "搜尋銷售員...",
+    "clearAll": "清除 filter",
+    "showingCount_one": "顯示 {{count}} 個 deal",
+    "showingCount_other": "顯示 {{count}} 個 deal"
+  },
+  "column": {
+    "emptyDropZone": "拖 deal 落此處"
+  },
+  "card": {
+    "ownerTooltip": "銷售員: {{name}}{{email}}",
+    "viewQuotations_tooltip": "查看這個 deal 的 {{count}} 份報價",
+    "viewQuotations_one": "{{count}} 份報價",
+    "viewQuotations_other": "{{count}} 份報價",
+    "firstQuotationTitle": "為此 deal 建立第一份報價",
+    "firstQuotation": "＋ 報價",
+    "newActivityTitle": "為此 deal 記錄跟進",
+    "newActivity": "＋ Activity",
+    "editDeal": "編輯 deal",
+    "deleteDeal": "刪除 deal"
+  },
+  "deleteConfirm": "確定刪除 deal「{{title}}」?此操作無法復原,相關 activities / quotations 會一齊 cascade。",
+  "loading": "載入中...",
+  "dialog": {
+    "newTitle": "新增 Deal",
+    "editTitle": "編輯 Deal",
+    "title": "Deal 名稱 *",
+    "company": "公司 *",
+    "companyReadonly": "公司不可修改",
+    "searchCompany": "搜尋客戶名稱...",
+    "stage": "Stage *",
+    "amount": "金額 ({{currency}})",
+    "currency": "貨幣",
+    "expectedClose": "預計成交日",
+    "cancel": "取消",
+    "submit": {
+      "create": "建立",
+      "edit": "儲存",
+      "creating": "建立中...",
+      "saving": "儲存中..."
+    },
+    "errors": {
+      "companyStageRequired": "Company 與 Stage 必填",
+      "titleRequired": "Deal 名稱必填"
+    }
+  },
+  "quotationDialog": {
+    "title": "為「{{title}}」建立報價"
+  },
+  "currencies": {
+    "RMB": "人民幣 (RMB)",
+    "HKD": "港幣 (HKD)",
+    "MOP": "澳門幣 (MOP)"
+  },
+  "detail": {
+    "loading": "載入中...",
+    "notFound": "找不到這個 deal",
+    "deleteConfirm": "確定刪除 deal「{{title}}」?此操作無法復原,相關 activities / quotations 會一齊 cascade。",
+    "deleteFailed": "刪除失敗: {{message}}",
+    "newQuotation": "新增報價",
+    "edit": "編輯",
+    "delete": "刪除",
+    "meta": {
+      "dealValue": "Deal Value",
+      "expectedClose": "預計成交日",
+      "closedAtWon": "成交日",
+      "closedAt": "結案日",
+      "quotationCount": "報價數量",
+      "quotationCountSuffix": " 份"
+    },
+    "tabs": {
+      "quotations": "報價",
+      "activity": "Activity"
+    },
+    "quotationTabEmpty": "這個 deal 仍未有報價。",
+    "quotationTabEmptyHint": "按上面「＋ 新增報價」整第一份。",
+    "quotationTable": {
+      "number": "Number",
+      "title": "Title",
+      "status": "Status",
+      "total": "Total",
+      "salesRep": "銷售員",
+      "created": "Created",
+      "sent": "Sent",
+      "accepted": "Accepted",
+      "view": "查看"
+    },
+    "activityEmpty": "這個 deal 仍未有 activity 記錄。",
+    "newActivity": "新增 Activity",
+    "quotationBuilderTitle": "為「{{title}}」建立報價"
+  }
+}

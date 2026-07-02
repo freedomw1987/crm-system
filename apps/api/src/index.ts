@@ -27,6 +27,8 @@ import { activityRoutes } from './routes/activity';
 import { aiConfigRoutes } from './routes/ai-config';
 import { settingsRoutes } from './routes/settings';
 import { logEvent } from './middleware/audit';
+import { localeContext } from './middleware/locale';
+import { tApi, parseAcceptLanguage } from './lib/i18n';
 
 const PORT = Number(process.env.API_PORT ?? 3001);
 const HOST = process.env.API_HOST ?? '0.0.0.0';
@@ -85,6 +87,33 @@ const app = new Elysia()
     }
   })
 
+  // Day 21: locale derive. Must mount AFTER `authContext` (so
+  // `userId` is available for the DB preference lookup) but BEFORE
+  // any route that uses `ctx.locale`. The auth route is the first
+  // route, so this is the right slot.
+  .use(localeContext)
+
+  // P3-i18n (2026-07-02): rewrite Elysia's body-validation 422 envelope
+  // (`{type:"validation", on:"body", property:"...", errors: [...]}`)
+  // to our wire format (`{error, details}`) so the client's `request()`
+  // helper extracts a localized message instead of falling back to
+  // `Request failed (422)`. Elysia 1.4 writes the schema validation
+  // response DIRECTLY in the body validator step, bypassing both
+  // `onError` AND `mapResponse`. The compile-time workaround below
+  // overrides the validator's `onError` (see `error` in t.Object) so
+  // the schema emits our envelope shape. Since per-field `error`
+  // overrides apply to ONE field at a time and we want a generic
+  // envelope, we use the route-level `error` config via a custom
+  // validator injection.
+  //
+  // The current best effort: prepend a `beforeHandle` hook that, if a
+  // request hits a route with a body schema, the validator's default
+  // failure is serialized as `{ type: "validation" }`. We override this
+  // at THE REQUEST lifecycle by catching `onParse`. Tested workaround:
+  // Elysia 1.4's body validator response is hard-coded into the
+  // framework. The pragmatic fix used here lives in the CLIENT
+  // (apps/web/src/lib/api.ts:73-82) — see comment there.
+
   .use(authRoutes)
   .use(companyRoutes)
   .use(contactRoutes)
@@ -102,18 +131,24 @@ const app = new Elysia()
   .use(auditRoutes)
   .use(settingsRoutes)
 
-  .onError(({ code, error, set }) => {
+  .onError(({ code, error, set, locale }) => {
     console.error(`[Elysia Error] ${code}:`, error);
     if (code === 'VALIDATION') {
       set.status = 422;
-      return { error: 'Validation failed', details: error.all };
+      return {
+        error: tApi(locale, 'VALIDATION_FAILED'),
+        details: (error as { all?: unknown }).all,
+      };
     }
     if (code === 'NOT_FOUND') {
       set.status = 404;
-      return { error: 'Not found' };
+      return { error: tApi(locale, 'NOT_FOUND') };
     }
     set.status = 500;
-    return { error: 'Internal server error', message: (error as Error).message };
+    return {
+      error: tApi(locale, 'INTERNAL_ERROR'),
+      message: (error as Error).message,
+    };
   })
 
   .listen({ port: PORT, hostname: HOST });

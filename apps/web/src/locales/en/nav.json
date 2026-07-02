@@ -1,0 +1,27 @@
+{
+  "dashboard": "Dashboard",
+  "companies": "Companies",
+  "deals": "Deals",
+  "quotations": "Quotation",
+  "products": "Product",
+  "services": "Service",
+  "contacts": "Contacts",
+  "settings": "System Settings",
+  "admin": "Admin",
+  "account": "Account",
+  "signOut": "Sign out",
+  "aiAssistant": "AI Assistant",
+  "aiAssistantOpen": "Open AI Assistant",
+  "appName": "CRM",
+  "settingsTabs": {
+    "pipelines": "Pipelines",
+    "users": "Users",
+    "roles": "Roles",
+    "ai": "AI",
+    "manDay": "Man-day",
+    "tax": "Tax",
+    "currency": "Currency",
+    "maintenanceFee": "Maintenance Fee",
+    "audit": "Audit"
+  }
+}

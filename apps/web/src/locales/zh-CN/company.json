@@ -1,0 +1,94 @@
+{
+  "title": "公司",
+  "subtitle_one": "{{count}} 家公司",
+  "subtitle_other": "{{count}} 家公司",
+  "newCompany": "新增公司",
+  "label": "公司",
+  "searchPlaceholder": "搜索公司名 / legal name / email...",
+  "noResults": "没有符合的公司",
+  "empty": "未有公司",
+  "loading": "加载中...",
+  "filterByRegion": "地区:",
+  "filterAll": "全部",
+  "form": {
+    "newTitle": "新增公司",
+    "editTitle": "编辑公司",
+    "name": "公司名称 *",
+    "legalName": "法定名称",
+    "taxId": "商业登记 / Tax ID",
+    "industry": "行业",
+    "email": "Email",
+    "phone": "电话",
+    "website": "网站",
+    "status": "状态",
+    "region": "地区 (Region) *",
+    "customRegion": "其他地区 (自由填写)",
+    "customRegionPlaceholder": "例如: Taiwan, Singapore, Japan...",
+    "submit": {
+      "create": "建立",
+      "edit": "保存",
+      "creating": "建立中...",
+      "saving": "保存中..."
+    },
+    "cancel": "取消"
+  },
+  "card": {
+    "deactivated": "已停用",
+    "contacts_one": "{{count}} 联系人",
+    "contacts_other": "{{count}} 联系人",
+    "quotations_one": "{{count}} 报价",
+    "quotations_other": "{{count}} 报价",
+    "deals_one": "{{count}} deal",
+    "deals_other": "{{count}} deals",
+    "newDeal": "新增 Deal",
+    "newQuotation": "新增 Quotation",
+    "editCompany": "编辑公司",
+    "deleteCompany": "删除公司"
+  },
+  "deleteConfirm": "确定删除「{{name}}」?此操作无法复原,相关的 contacts / deals / quotations 会一并 cascade。",
+  "inlineDialog": {
+    "title": "新增 Quotation"
+  },
+  "detail": {
+    "loading": "加载中...",
+    "notFound": "找不到这间公司",
+    "deleteContactConfirm": "删除这个联系人?",
+    "tabs": {
+      "contacts": "联络人",
+      "deals": "Deals",
+      "quotation": "Quotation",
+      "activity": "Activity",
+      "attachments": "附件"
+    },
+    "activityTitle": "公司 Activity",
+    "contactsEmpty": "仍未有联络人",
+    "newContact": "新增联络人",
+    "newContactTitle": "新增联络人",
+    "newContactFirstName": "名 *",
+    "newContactLastName": "姓 *",
+    "newContactTitleLabel": "职位",
+    "newContactTitlePlaceholder": "e.g. CEO, Procurement Manager",
+    "newContactEmail": "Email",
+    "newContactPhone": "电话",
+    "newContactIsPrimary": "设为主要联络人 (Primary)",
+    "contactDialog": {
+      "cancel": "取消",
+      "submitCreate": "建立",
+      "submitCreating": "建立中..."
+    },
+    "dealsEmpty": "暂未有 deal · 按右上「新增 Deal」开第一个",
+    "newDeal": "新增 Deal",
+    "quotationsEmpty": "仍未有报价单 · 按右上「新增 Quotation」开第一份",
+    "newQuotation": "新增 Quotation"
+  },
+  "errors": {
+    "loadFailed": "加载公司失败",
+    "saveFailed": "保存公司失败"
+  },
+  "region": {
+    "HK": "香港",
+    "MO": "澳门",
+    "CN": "中国",
+    "OTHER": "其他"
+  }
+}

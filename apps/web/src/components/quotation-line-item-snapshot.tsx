@@ -30,6 +30,7 @@
  *   - deleted:  !item.product  (for PRODUCT)  ||  !item.service  (for SERVICE)
  */
 
+import { useTranslation } from 'react-i18next';
 import { Badge } from '@/components/ui/badge';
 import { formatCurrency } from '@/lib/utils';
 import type { QuotationItem } from '@/lib/api';
@@ -121,6 +122,7 @@ export function LineItemSnapshotMeta({
   /** Tighter spacing for print layout. */
   print?: boolean;
 }) {
+  const { t } = useTranslation();
   const deleted = isLineItemDeleted(item);
   const description = resolveLineItemDescription(item);
   const sow = item.manDaySnapshot ?? [];
@@ -135,22 +137,22 @@ export function LineItemSnapshotMeta({
       {deleted && (
         <div>
           <span className={labelClass} data-testid={`line-deleted-${item.id ?? item.name}`}>
-            (已刪除)
+            {t('quotation.snapshot.deleted')}
           </span>
           {print ? (
             <span className="text-[10px] text-gray-500 italic">
-              原紀錄已刪除,以下為 snapshot 資料
+              {t('quotation.snapshot.deletedNote')}
             </span>
           ) : (
             <span className="text-[10px] text-muted-foreground italic">
-              原紀錄已刪除,以下為 snapshot 資料
+              {t('quotation.snapshot.deletedNote')}
             </span>
           )}
         </div>
       )}
       {item.itemType === 'SERVICE' && !deleted && (
         // Lightweight type indicator — helps the reader scan a long quote
-        <Badge variant="outline" className="text-[10px] py-0">Service</Badge>
+        <Badge variant="outline" className="text-[10px] py-0">{t('quotation.snapshot.service')}</Badge>
       )}
       {description && (
         <p className={descClass + ' whitespace-pre-wrap'}>
@@ -160,7 +162,7 @@ export function LineItemSnapshotMeta({
       {showSow && (
         <details className={print ? 'text-xs' : 'text-xs'} data-testid={`line-sow-${item.id ?? item.name}`}>
           <summary className={print ? 'cursor-pointer text-gray-700 hover:text-black' : 'cursor-pointer text-muted-foreground hover:text-foreground'}>
-            SOW · {sow.length} 個 role breakdown
+            {t('quotation.snapshot.sowTitle', { count: sow.length })}
           </summary>
           <div className={print ? 'mt-1 space-y-0.5 pl-3 border-l-2 border-gray-400' : 'mt-1.5 space-y-0.5 pl-3 border-l-2 border-primary/30'}>
             {sow.map((m, i) => (
@@ -169,7 +171,7 @@ export function LineItemSnapshotMeta({
                 className={print ? 'flex justify-between text-gray-700' : 'flex justify-between text-muted-foreground'}
               >
                 <span>
-                  {m.role} · {m.days}d × {formatCurrency(m.dayRate, currency)}
+                  {m.role} · {t('quotation.snapshot.dayRate', { days: m.days, rate: formatCurrency(m.dayRate, currency) })}
                 </span>
                 <span className="tabular-nums">{formatCurrency(m.subtotal, currency)}</span>
               </div>

@@ -27,6 +27,7 @@ import { prisma } from '@crm/db';
 import { authContext } from '../lib/context';
 import { logEvent } from '../middleware/audit';
 import { requirePermission } from '../middleware/rbac';
+import { tApi } from '../lib/i18n';
 // 2026-07-01 (US-IMPORT-MD): shared with the AI Excel import executor
 // (`apps/api/src/lib/excel-import.ts`). Both POST/PATCH here and
 // `executeImportPlan` need the same role-resolution logic for the
@@ -59,12 +60,12 @@ export const serviceRoutes = new Elysia({ prefix: '/services', tags: ['services'
     return { items, total: items.length };
   })
 
-  .get('/:id', async ({ params, set }) => {
+  .get('/:id', async ({ params, set, locale }) => {
     const service = await prisma.service.findUnique({
       where: { id: params.id },
       include: { manDayLines: { orderBy: { sortOrder: 'asc' } } },
     });
-    if (!service) { set.status = 404; return { error: 'Service not found' }; }
+    if (!service) { set.status = 404; return { error: tApi(locale, 'SERVICE_NOT_FOUND') }; }
     return service;
   })
 
@@ -138,7 +139,7 @@ export const serviceRoutes = new Elysia({ prefix: '/services', tags: ['services'
     }),
   })
 
-  .patch('/:id', async ({ params, body, set, userId, request }) => {
+  .patch('/:id', async ({ params, body, set, userId, request, locale }) => {
     const data = body as Partial<{
       name: string;
       description: string | null;
@@ -157,7 +158,7 @@ export const serviceRoutes = new Elysia({ prefix: '/services', tags: ['services'
       }>;
     }>;
     const before = await prisma.service.findUnique({ where: { id: params.id }, include: { manDayLines: true } });
-    if (!before) { set.status = 404; return { error: 'Service not found' }; }
+    if (!before) { set.status = 404; return { error: tApi(locale, 'SERVICE_NOT_FOUND') }; }
 
     const roleIds = (data.manDayLines ?? [])
       .map((l) => l.manDayRoleId)

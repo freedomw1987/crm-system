@@ -1,0 +1,27 @@
+{
+  "dashboard": "仪表板",
+  "companies": "公司",
+  "deals": "商机",
+  "quotations": "报价单",
+  "products": "产品",
+  "services": "服务",
+  "contacts": "联系人",
+  "settings": "系统设置",
+  "admin": "管理员",
+  "account": "账号",
+  "signOut": "退出",
+  "aiAssistant": "AI 助手",
+  "aiAssistantOpen": "打开 AI 助手",
+  "appName": "CRM",
+  "settingsTabs": {
+    "pipelines": "销售流程",
+    "users": "用户",
+    "roles": "角色",
+    "ai": "AI",
+    "manDay": "人天角色",
+    "tax": "税率",
+    "currency": "币种",
+    "maintenanceFee": "维护费用",
+    "audit": "审计日志"
+  }
+}

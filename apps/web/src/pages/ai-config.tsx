@@ -25,6 +25,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import { useTranslation, Trans } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Save, Sparkles, Eye, EyeOff, Loader2, CheckCircle2, AlertCircle, TestTube2 } from 'lucide-react';
 import { aiConfigApi, type AiConfigResponse } from '@/lib/api';
@@ -44,6 +45,7 @@ interface TestResult {
 
 export function AiConfigPage() {
   const { user } = useAuth();
+  const { t } = useTranslation();
   const qc = useQueryClient();
   const isAdmin = user?.role === 'ADMIN';
 
@@ -104,14 +106,14 @@ export function AiConfigPage() {
       <Card>
         <CardContent className="p-8 text-center text-muted-foreground">
           <Sparkles className="h-8 w-8 mx-auto mb-2 opacity-50" />
-          <p>此頁面只供管理員使用。</p>
+          <p>{t('ai.config.fields.adminOnly')}</p>
         </CardContent>
       </Card>
     );
   }
 
   if (isLoading) {
-    return <p className="text-sm text-muted-foreground">載入中...</p>;
+    return <p className="text-sm text-muted-foreground">{t('common.loading')}</p>;
   }
 
   const canSave = endpointUrl.trim() && apiKey.trim() && modelName.trim() && !saveMutation.isPending;
@@ -120,60 +122,72 @@ export function AiConfigPage() {
     <div className="space-y-6 max-w-3xl">
       <div>
         <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-2">
-          <Sparkles className="h-7 w-7" /> AI 設定
+          <Sparkles className="h-7 w-7" /> {t('ai.config.title')}
         </h1>
         <p className="text-muted-foreground">
-          配置 AI 助理連接的 LLM 提供者。Endpoint、API key 和 model name 全部由管理員設定,不用用 server env。
+          {t('ai.config.subtitle')}
         </p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>LLM Provider</CardTitle>
+          <CardTitle>{t('ai.config.providerCard.title')}</CardTitle>
           <CardDescription>
-            用 OpenAI-compatible 的 endpoint — 適用於 OpenAI、OpenRouter、Together、自建 vLLM / Ollama 等。
-            API key 會用 AES-256-GCM 加密儲存,GET 請求只回遮罩版本。
+            {t('ai.config.providerCard.description')}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
           {/* Status pill */}
           <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">狀態:</span>
+            <span className="text-sm text-muted-foreground">{t('ai.config.fields.statusLabel')}</span>
             {config?.configured ? (
               <Badge variant="default" className="bg-green-600">
-                <CheckCircle2 className="h-3 w-3 mr-1" /> 已配置
+                <CheckCircle2 className="h-3 w-3 mr-1" /> {t('ai.config.fields.configured')}
               </Badge>
             ) : (
               <Badge variant="secondary">
-                <AlertCircle className="h-3 w-3 mr-1" /> 未配置
+                <AlertCircle className="h-3 w-3 mr-1" /> {t('ai.config.fields.notConfigured')}
               </Badge>
             )}
             {config?.updatedAt && (
               <span className="text-xs text-muted-foreground">
-                · 上次更新 {new Date(config.updatedAt).toLocaleString()}
-                {config.updatedByName && ` · by ${config.updatedByName}`}
+                · {config.updatedByName
+                  ? t('ai.config.fields.lastUpdatedBy', { date: new Date(config.updatedAt).toLocaleString(), name: config.updatedByName })
+                  : t('ai.config.fields.lastUpdated', { date: new Date(config.updatedAt).toLocaleString() })}
               </span>
             )}
           </div>
 
           {/* Endpoint URL */}
           <div className="space-y-1.5">
-            <Label htmlFor="endpointUrl">Endpoint URL *</Label>
+            <Label htmlFor="endpointUrl">{t('ai.config.fields.endpointUrl')}</Label>
             <Input
               id="endpointUrl"
               value={endpointUrl}
               onChange={(e) => setEndpointUrl(e.target.value)}
-              placeholder="https://api.openai.com/v1"
+              placeholder={t('ai.config.fields.endpointUrlPlaceholder')}
               autoComplete="off"
             />
             <p className="text-xs text-muted-foreground">
-              必須係 http(s) URL。例如 OpenAI = <code>https://api.openai.com/v1</code>,OpenRouter = <code>https://openrouter.ai/api/v1</code>,自建 vLLM = <code>http://localhost:8000/v1</code>。
+              <Trans
+                i18nKey="ai.config.fields.endpointUrlHint"
+                values={{
+                  openai: 'https://api.openai.com/v1',
+                  openrouter: 'https://openrouter.ai/api/v1',
+                  vllm: 'http://localhost:8000/v1',
+                }}
+                components={{
+                  openai: <code />,
+                  openrouter: <code />,
+                  vllm: <code />,
+                }}
+              />
             </p>
           </div>
 
           {/* API Key */}
           <div className="space-y-1.5">
-            <Label htmlFor="apiKey">API Key *</Label>
+            <Label htmlFor="apiKey">{t('ai.config.apiKey')} *</Label>
             <div className="flex gap-2">
               <div className="relative flex-1">
                 <Input
@@ -181,7 +195,9 @@ export function AiConfigPage() {
                   type={showKey ? 'text' : 'password'}
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
-                  placeholder={config?.hasApiKey ? `現時 key: ${config.apiKeyMasked} (輸入新 key 覆寫)` : '輸入 API key'}
+                  placeholder={config?.hasApiKey
+                    ? t('ai.config.fields.apiKeyCurrentHint', { mask: config.apiKeyMasked })
+                    : t('ai.config.fields.apiKeyPlaceholder')}
                   autoComplete="off"
                   className="pr-10 font-mono"
                 />
@@ -190,44 +206,44 @@ export function AiConfigPage() {
                   onClick={() => setShowKey(!showKey)}
                   className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground"
                   tabIndex={-1}
-                  aria-label={showKey ? '隱藏 API key' : '顯示 API key'}
+                  aria-label={showKey ? t('ai.config.fields.hideKey') : t('ai.config.fields.showKey')}
                 >
                   {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
             </div>
             <p className="text-xs text-muted-foreground">
-              每次儲存都要重新輸入 — 不會預填,也不會在 client 持久化。
+              {t('ai.config.fields.apiKeyHint')}
             </p>
           </div>
 
           {/* Model Name */}
           <div className="space-y-1.5">
-            <Label htmlFor="modelName">Model Name *</Label>
+            <Label htmlFor="modelName">{t('ai.config.fields.modelName')}</Label>
             <Input
               id="modelName"
               value={modelName}
               onChange={(e) => setModelName(e.target.value)}
-              placeholder="gpt-4o"
+              placeholder={t('ai.config.fields.modelNamePlaceholder')}
               autoComplete="off"
             />
             <p className="text-xs text-muted-foreground">
-              Provider 支援的 model identifier。常見:gpt-4o、gpt-4o-mini、claude-3-5-sonnet-20241022、llama-3.1-70b。
+              {t('ai.config.fields.modelNameHint')}
             </p>
           </div>
 
           {/* System Prompt (optional) */}
           <div className="space-y-1.5">
-            <Label htmlFor="systemPrompt">System Prompt (可選)</Label>
+            <Label htmlFor="systemPrompt">{t('ai.config.fields.systemPromptLabel')}</Label>
             <Textarea
               id="systemPrompt"
               value={systemPrompt}
               onChange={(e) => setSystemPrompt(e.target.value)}
-              placeholder="留空使用 packages/ai/src/prompts.ts 的 default prompt。"
+              placeholder={t('ai.config.fields.systemPromptPlaceholder')}
               rows={6}
             />
             <p className="text-xs text-muted-foreground">
-              覆寫 default system prompt。支援多行,留白會用 default。
+              {t('ai.config.fields.systemPromptHint')}
             </p>
           </div>
 
@@ -247,7 +263,7 @@ export function AiConfigPage() {
               )}
               <span>
                 {testResult.message}
-                {testResult.latencyMs !== undefined && ` (${testResult.latencyMs}ms)`}
+                {testResult.latencyMs !== undefined && t('ai.config.fields.latency', { ms: testResult.latencyMs })}
               </span>
             </div>
           )}
@@ -260,7 +276,7 @@ export function AiConfigPage() {
               ) : (
                 <Save className="h-4 w-4 mr-2" />
               )}
-              儲存
+              {t('ai.config.save')}
             </Button>
             <Button
               variant="outline"
@@ -272,16 +288,16 @@ export function AiConfigPage() {
               ) : (
                 <TestTube2 className="h-4 w-4 mr-2" />
               )}
-              測試連線
+              {t('ai.config.test')}
             </Button>
             {saveMutation.isSuccess && (
               <span className="text-sm text-green-700 flex items-center gap-1">
-                <CheckCircle2 className="h-4 w-4" /> 已儲存
+                <CheckCircle2 className="h-4 w-4" /> {t('ai.config.saved')}
               </span>
             )}
             {saveMutation.isError && (
               <span className="text-sm text-red-700 flex items-center gap-1">
-                <AlertCircle className="h-4 w-4" /> {(saveMutation.error as Error).message}
+                <AlertCircle className="h-4 w-4" /> {t('ai.config.errors.saveFailedWithMessage', { message: (saveMutation.error as Error).message })}
               </span>
             )}
           </div>

@@ -24,6 +24,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { StickyNote, Phone, Mail, Calendar, Paperclip, Trash2, Send, X, FileText, Download, Loader2, Pencil } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -34,29 +35,35 @@ import { activitiesApi, attachmentsApi, type Activity, type ActivityType, type A
 import { downloadAttachment } from '@/lib/attachment-download';
 import { useAuth } from '@/lib/auth';
 
-const TYPE_META: Record<ActivityType, { icon: typeof StickyNote; label: string; color: string }> = {
-  NOTE:    { icon: StickyNote, label: '備註',     color: 'text-slate-500' },
-  CALL:    { icon: Phone,      label: '電話',     color: 'text-emerald-500' },
-  EMAIL:   { icon: Mail,       label: 'Email',   color: 'text-blue-500' },
-  MEETING: { icon: Calendar,   label: '會議',     color: 'text-amber-500' },
+// Icon + color stay as constant exports (they're not user-visible).
+// Labels are computed via t('status.activity.<TYPE>') inside consumers
+// so they pick up the active locale.
+const TYPE_META: Record<ActivityType, { icon: typeof StickyNote; color: string }> = {
+  NOTE:    { icon: StickyNote, color: 'text-slate-500' },
+  CALL:    { icon: Phone,      color: 'text-emerald-500' },
+  EMAIL:   { icon: Mail,       color: 'text-blue-500' },
+  MEETING: { icon: Calendar,   color: 'text-amber-500' },
 };
-// 2026-06-30: re-export the labels for sibling components (e.g.
-// DealActivityDialog) so the "新增 Activity" picker on deal cards
-// and the Companies detail composer stay in lock-step with the
-// edit dialog's dropdown — single source of truth for type labels.
+// 2026-06-30: re-export the icon/color table for sibling components
+// (e.g. DealActivityDialog) so the "新增 Activity" picker on deal
+// cards stays in lock-step with the edit dialog's dropdown. The
+// labels are sourced from t('status.activity.<TYPE>') directly —
+// kept in lock-step via the shared status namespace.
 export const ACTIVITY_TYPE_META = TYPE_META;
 
-function relativeTime(iso: string): string {
+/** Format an ISO timestamp as a short relative-time label.
+ *  Pure of API calls — output respects the active locale. */
+function relativeTime(iso: string, t: (key: string, opts?: Record<string, unknown>) => string): string {
   const ms = Date.now() - new Date(iso).getTime();
   const sec = Math.floor(ms / 1000);
-  if (sec < 60) return '剛剛';
+  if (sec < 60) return t('activity.time.justNow');
   const min = Math.floor(sec / 60);
-  if (min < 60) return `${min} 分鐘前`;
+  if (min < 60) return t('activity.time.minutesAgo', { count: min });
   const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr} 小時前`;
+  if (hr < 24) return t('activity.time.hoursAgo', { count: hr });
   const day = Math.floor(hr / 24);
-  if (day < 7) return `${day} 天前`;
-  return new Date(iso).toLocaleDateString('zh-HK');
+  if (day < 7) return t('activity.time.daysAgo', { count: day });
+  return new Date(iso).toLocaleDateString();
 }
 
 function formatBytes(n: number): string {
@@ -83,8 +90,9 @@ export function ActivityFeed({
   dealId,
   limit = 50,
   readOnly = false,
-  title = 'Activity',
+  title,
 }: ActivityFeedProps) {
+  const { t } = useTranslation();
   const queryKey = companyId
     ? ['activities', { companyId, limit }]
     : dealId
@@ -96,6 +104,7 @@ export function ActivityFeed({
     queryFn: () => activitiesApi.list({ companyId, dealId, limit }),
   });
   const items = data?.items ?? [];
+  const resolvedTitle = title ?? t('activity.title');
 
   if (readOnly) {
     return <ActivityList items={items} isLoading={isLoading} />;
@@ -103,7 +112,7 @@ export function ActivityFeed({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{title} ({items.length})</CardTitle>
+        <CardTitle>{resolvedTitle} ({items.length})</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         <Composer companyId={companyId} dealId={dealId} queryKey={queryKey} />
@@ -116,13 +125,14 @@ export function ActivityFeed({
 /** Read-only list renderer — shared between the full feed and the
  *  Dashboard's "recent" widget so styling stays consistent. */
 function ActivityList({ items, isLoading }: { items: Activity[]; isLoading: boolean }) {
+  const { t } = useTranslation();
   if (isLoading) {
-    return <p className="text-sm text-muted-foreground p-2">載入中...</p>;
+    return <p className="text-sm text-muted-foreground p-2">{t('common.loading')}</p>;
   }
   if (items.length === 0) {
     return (
       <p className="text-sm text-muted-foreground text-center py-6">
-        仍未有 Activity 記錄
+        {t('activity.empty.noRecords')}
       </p>
     );
   }
@@ -151,6 +161,7 @@ export function ActivityItem({
   activity: Activity;
   variant?: 'card' | 'plain';
 }) {
+  const { t } = useTranslation();
   const meta = TYPE_META[activity.type] ?? TYPE_META.NOTE;
   const Icon = meta.icon;
   // 2026-06-27: own-activity edit/delete affordances. The buttons
@@ -231,7 +242,7 @@ export function ActivityItem({
     try {
       await downloadAttachment(att);
     } catch (e) {
-      setErrors((prev) => ({ ...prev, [att.id]: e instanceof Error ? e.message : '下載失敗' }));
+      setErrors((prev) => ({ ...prev, [att.id]: e instanceof Error ? e.message : t('activity.error.downloadFailed') }));
     } finally {
       setBusy((b) => ({ ...b, [att.id]: false }));
     }
@@ -248,14 +259,14 @@ export function ActivityItem({
       </div>
       <div className="flex-1 min-w-0 space-y-1.5">
         <div className="flex items-center gap-2 flex-wrap text-xs">
-          <Badge variant="outline" className="text-[10px]">{meta.label}</Badge>
+          <Badge variant="outline" className="text-[10px]">{t(`status.activity.${activity.type}`)}</Badge>
           {activity.author && (
             <span className="font-medium text-foreground">
               {activity.author.name}
             </span>
           )}
           <span className="text-muted-foreground">
-            {relativeTime(activity.createdAt)}
+            {relativeTime(activity.createdAt, t)}
           </span>
           {/* 2026-06-29: deal / company context. Only the /activities/recent
               endpoint includes the joined deal/company objects, so this
@@ -281,8 +292,8 @@ export function ActivityItem({
             <div className="ml-auto inline-flex items-center gap-1 shrink-0">
               <button
                 type="button"
-                aria-label="編輯 activity"
-                title="編輯"
+                aria-label={t('common.edit')}
+                title={t('common.edit')}
                 onClick={() => {
                   setEditType(activity.type);
                   setEditContent(activity.content);
@@ -295,10 +306,10 @@ export function ActivityItem({
               </button>
               <button
                 type="button"
-                aria-label="刪除 activity"
-                title="刪除"
+                aria-label={t('common.delete')}
+                title={t('common.delete')}
                 onClick={() => {
-                  if (!confirm('確定刪除這個 activity?')) return;
+                  if (!confirm(t('activity.delete.confirm'))) return;
                   deleteActivity.mutate(activity.id);
                 }}
                 disabled={deleteActivity.isPending}
@@ -327,7 +338,7 @@ export function ActivityItem({
                   type="button"
                   onClick={() => handleDownload(att)}
                   disabled={!!busy[att.id]}
-                  title={`下載 ${att.fileName}`}
+                  title={t('activity.attachment.download', { name: att.fileName })}
                   className="inline-flex items-center gap-1 text-xs bg-muted px-2 py-1 rounded hover:bg-muted/70 transition-colors disabled:opacity-50"
                 >
                   {busy[att.id] ? (
@@ -357,24 +368,24 @@ export function ActivityItem({
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>編輯 activity</DialogTitle>
+            <DialogTitle>{t('activity.edit.title')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div>
-              <label className="text-xs text-muted-foreground">類型</label>
+              <label className="text-xs text-muted-foreground">{t('activity.type')}</label>
               <select
                 value={editType}
                 onChange={(e) => setEditType(e.target.value as ActivityType)}
                 className="w-full h-9 rounded border bg-background px-2 text-sm mt-1"
                 data-testid="activity-edit-type"
               >
-                {(['NOTE', 'CALL', 'EMAIL', 'MEETING'] as ActivityType[]).map((t) => (
-                  <option key={t} value={t}>{TYPE_META[t].label}</option>
+                {(['NOTE', 'CALL', 'EMAIL', 'MEETING'] as ActivityType[]).map((tt) => (
+                  <option key={tt} value={tt}>{t(`status.activity.${tt}`)}</option>
                 ))}
               </select>
             </div>
             <div>
-              <label className="text-xs text-muted-foreground">內容</label>
+              <label className="text-xs text-muted-foreground">{t('activity.content')}</label>
               <Textarea
                 value={editContent}
                 onChange={(e) => setEditContent(e.target.value)}
@@ -386,7 +397,7 @@ export function ActivityItem({
             <div>
               <div className="flex items-center justify-between">
                 <label className="text-xs text-muted-foreground">
-                  附件 ({(activity.attachments ?? []).length})
+                  {t('activity.edit.attachments', { count: (activity.attachments ?? []).length })}
                 </label>
                 <Button
                   type="button"
@@ -396,7 +407,7 @@ export function ActivityItem({
                   disabled={uploadingFiles.some((u) => u.status === 'uploading')}
                   data-testid="activity-edit-add-attachment"
                 >
-                  <Paperclip className="h-3.5 w-3.5 mr-1" /> 加附件
+                  <Paperclip className="h-3.5 w-3.5 mr-1" /> {t('activity.attachment.add')}
                 </Button>
                 <input
                   ref={editFileInputRef}
@@ -419,8 +430,8 @@ export function ActivityItem({
                       <span className="text-muted-foreground shrink-0">{formatBytes(att.sizeBytes)}</span>
                       <button
                         type="button"
-                        aria-label={`下載 ${att.fileName}`}
-                        title="下載"
+                        aria-label={t('activity.attachment.download', { name: att.fileName })}
+                        title={t('activity.attachment.download', { name: att.fileName })}
                         onClick={() => handleDownload(att as Attachment)}
                         disabled={!!busy[att.id]}
                         className="text-muted-foreground hover:text-foreground p-0.5 disabled:opacity-50"
@@ -429,10 +440,10 @@ export function ActivityItem({
                       </button>
                       <button
                         type="button"
-                        aria-label={`移除 ${att.fileName}`}
-                        title="移除"
+                        aria-label={t('activity.attachment.remove', { name: att.fileName })}
+                        title={t('activity.attachment.remove', { name: att.fileName })}
                         onClick={() => {
-                          if (!confirm(`確定移除附件「${att.fileName}」?`)) return;
+                          if (!confirm(t('activity.attachment.removeConfirm', { name: att.fileName }))) return;
                           removeAttachment.mutate(att.id);
                         }}
                         disabled={removeAttachment.isPending}
@@ -457,12 +468,12 @@ export function ActivityItem({
                       {u.status === 'uploading' ? (
                         <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
                       ) : (
-                        <span className="text-destructive text-[10px]" title={u.error}>失敗</span>
+                        <span className="text-destructive text-[10px]" title={u.error}>{t('activity.upload.failed')}</span>
                       )}
                       {u.status === 'error' && (
                         <button
                           type="button"
-                          aria-label={`移除 ${u.name}`}
+                          aria-label={t('activity.attachment.remove', { name: u.name })}
                           onClick={() => setUploadingFiles((prev) => prev.filter((p) => p.key !== u.key))}
                           className="text-muted-foreground hover:text-destructive p-0.5"
                         >
@@ -481,7 +492,7 @@ export function ActivityItem({
             )}
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setEditOpen(false)} disabled={updateActivity.isPending}>取消</Button>
+            <Button variant="ghost" onClick={() => setEditOpen(false)} disabled={updateActivity.isPending}>{t('common.cancel')}</Button>
             <Button
               onClick={() => updateActivity.mutate({ type: editType, content: editContent })}
               disabled={updateActivity.isPending || editContent.trim().length === 0}
@@ -490,9 +501,9 @@ export function ActivityItem({
               {updateActivity.isPending ? (
                 <>
                   <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
-                  儲存中
+                  {t('common.save')}…
                 </>
-              ) : '儲存'}
+              ) : t('common.save')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -514,12 +525,13 @@ function Composer({
   dealId?: string;
   queryKey: readonly unknown[];
 }) {
+  const { t } = useTranslation();
   const qc = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   // 2026-06-30: let the rep pick the activity type up-front instead
   // of having to log everything as NOTE then change it via the edit
   // dialog. Default NOTE preserves the common case. Labels come from
-  // the shared TYPE_META table above so this stays in lock-step with
+  // the shared status.activity.* keys so this stays in lock-step with
   // the edit dialog + DealActivityDialog.
   const [type, setType] = useState<ActivityType>('NOTE');
   const [content, setContent] = useState('');
@@ -539,7 +551,7 @@ function Composer({
     mutationFn: async () => {
       const trimmed = content.trim();
       if (!trimmed && files.length === 0) {
-        throw new Error('請輸入內容或加入附件');
+        throw new Error(t('activity.error.contentOrAttachmentRequired'));
       }
       const act = await activitiesApi.create({
         type,
@@ -572,7 +584,7 @@ function Composer({
   return (
     <div className="space-y-2 border rounded-lg p-3 bg-muted/30">
       <div>
-        <label className="text-xs text-muted-foreground" htmlFor="activity-composer-type">類型</label>
+        <label className="text-xs text-muted-foreground" htmlFor="activity-composer-type">{t('activity.type')}</label>
         <select
           id="activity-composer-type"
           value={type}
@@ -580,14 +592,14 @@ function Composer({
           className="w-full h-9 rounded border bg-background px-2 text-sm mt-1"
           data-testid="activity-composer-type"
         >
-          {(['NOTE', 'CALL', 'EMAIL', 'MEETING'] as ActivityType[]).map((t) => (
-            <option key={t} value={t}>{TYPE_META[t].label}</option>
+          {(['NOTE', 'CALL', 'EMAIL', 'MEETING'] as ActivityType[]).map((tt) => (
+            <option key={tt} value={tt}>{t(`status.activity.${tt}`)}</option>
           ))}
         </select>
       </div>
       <Textarea
         id="activity-composer"
-        placeholder="寫下 follow-up 進度、客戶 reply、打咗電話的 outcome…"
+        placeholder={t('activity.composer.placeholder')}
         value={content}
         onChange={(e) => setContent(e.target.value)}
         rows={2}
@@ -605,7 +617,7 @@ function Composer({
               <span className="text-muted-foreground">{formatBytes(f.size)}</span>
               <button
                 type="button"
-                aria-label={`移除 ${f.name}`}
+                aria-label={t('activity.attachment.remove', { name: f.name })}
                 onClick={() => setFiles((prev) => prev.filter((_, j) => j !== i))}
                 className="text-muted-foreground hover:text-destructive"
               >
@@ -626,7 +638,7 @@ function Composer({
           onClick={() => fileInputRef.current?.click()}
           disabled={submit.isPending}
         >
-          <Paperclip className="h-3.5 w-3.5 mr-1" /> 加附件
+          <Paperclip className="h-3.5 w-3.5 mr-1" /> {t('activity.attachment.add')}
         </Button>
         <input
           ref={fileInputRef}
@@ -642,7 +654,7 @@ function Composer({
           disabled={submit.isPending || (!content.trim() && files.length === 0)}
         >
           <Send className="h-3.5 w-3.5 mr-1" />
-          {submit.isPending ? '儲存中…' : '新增'}
+          {submit.isPending ? t('common.loading') : t('activity.composer.saveButton')}
         </Button>
       </div>
     </div>
@@ -654,6 +666,7 @@ function Composer({
  * global /activities/recent endpoint and renders read-only.
  */
 export function RecentActivitiesWidget({ limit = 10 }: { limit?: number }) {
+  const { t } = useTranslation();
   const { data, isLoading } = useQuery({
     queryKey: ['activities', { recent: true, limit }],
     queryFn: () => activitiesApi.recent({ limit }),
@@ -662,7 +675,7 @@ export function RecentActivitiesWidget({ limit = 10 }: { limit?: number }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>最近 Activity</CardTitle>
+        <CardTitle>{t('activity.panel.title')}</CardTitle>
       </CardHeader>
       <CardContent>
         <ActivityList items={items} isLoading={isLoading} />
@@ -684,15 +697,16 @@ export function useDeleteActivity() {
 /* Internal helper for the "remove this activity" affordance. Currently
  * not mounted in the read-only list (kept for future admin tools). */
 export function DeleteActivityButton({ id, onDone }: { id: string; onDone?: () => void }) {
+  const { t } = useTranslation();
   const del = useDeleteActivity();
   return (
     <Button
       type="button"
       variant="ghost"
       size="icon"
-      aria-label="刪除 activity"
+      aria-label={t('common.delete')}
       onClick={() => {
-        if (!confirm('確定刪除這個 activity?')) return;
+        if (!confirm(t('activity.delete.confirm'))) return;
         del.mutate(id, { onSuccess: onDone });
       }}
       disabled={del.isPending}

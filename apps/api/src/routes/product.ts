@@ -6,6 +6,7 @@ import { Elysia, t } from 'elysia';
 import { prisma } from '@crm/db';
 import { authContext } from '../lib/context';
 import { logEvent } from '../middleware/audit';
+import { tApi } from '../lib/i18n';
 
 export const productRoutes = new Elysia({ prefix: '/products', tags: ['products'] })
   .use(authContext)
@@ -34,12 +35,12 @@ export const productRoutes = new Elysia({ prefix: '/products', tags: ['products'
       orderBy: { name: 'asc' },
     });
   })
-  .get('/:id', async ({ params, set }) => {
+  .get('/:id', async ({ params, set, locale }) => {
     const p = await prisma.product.findUnique({
       where: { id: params.id },
       include: { quotationItems: { take: 10 } },
     });
-    if (!p) { set.status = 404; return { error: 'Not found' }; }
+    if (!p) { set.status = 404; return { error: tApi(locale, 'PRODUCT_NOT_FOUND') }; }
     return p;
   })
   .post('/', async ({ body, set, userId, request }) => {

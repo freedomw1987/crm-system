@@ -14,6 +14,7 @@
  *     the parent decides which id field to use.
  */
 import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { MultiAutocomplete } from './multi-autocomplete';
 import { usersApi, type UserSummary } from '@/lib/api';
 
@@ -37,11 +38,12 @@ export function MultiUserAutocomplete({
   onChange,
   roleFilter = 'SALES',
   includeInactive = false,
-  label = '銷售員',
+  label,
   className,
   disabled,
-  placeholder = '搜尋銷售員...',
+  placeholder,
 }: MultiUserAutocompleteProps) {
+  const { t } = useTranslation();
   const { data, isLoading } = useQuery({
     queryKey: ['users', { role: roleFilter }],
     queryFn: () => usersApi.list({ role: roleFilter, limit: 200 }),
@@ -58,11 +60,11 @@ export function MultiUserAutocomplete({
       getSubLabel={(u) => u.email}
       value={value}
       onChange={onChange}
-      label={label}
+      label={label ?? t('user.label')}
       className={className}
       disabled={disabled || isLoading}
-      placeholder={placeholder}
-      emptyText={isLoading ? '載入中...' : '找不到'}
+      placeholder={placeholder ?? t('user.searchPlaceholder')}
+      emptyText={isLoading ? t('user.loading') : t('user.noResults')}
     />
   );
 }

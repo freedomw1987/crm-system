@@ -3,6 +3,7 @@ import { prisma } from '@crm/db';
 import { getCurrencyConfig } from '@crm/db';
 import { getUserIdFromRequest, requirePermission } from '../middleware/rbac';
 import { logEvent } from '../middleware/audit';
+import { tApi } from '../lib/i18n';
 
 // ===================================================================
 // P2 multi-currency (2026-06-29): Default currency + exchange rates
@@ -81,11 +82,11 @@ export const settingsRoutes = new Elysia({ prefix: '/settings', tags: ['settings
   .use(requirePermission('settings:update'))
   .post(
     '/pipelines/stages',
-    async ({ body, set, request }) => {
+    async ({ body, set, request, locale }) => {
       const userId = await getUserIdFromRequest(request);
       if (!userId) {
         set.status = 401;
-        return { error: 'Unauthorized' };
+        return { error: tApi(locale, 'UNAUTHORIZED') };
       }
 
       const { name, probability, color, pipelineId } = body as {
@@ -101,7 +102,7 @@ export const settingsRoutes = new Elysia({ prefix: '/settings', tags: ['settings
         : await prisma.pipeline.findFirst({ where: { isDefault: true } });
       if (!pipeline) {
         set.status = 404;
-        return { error: 'Pipeline not found' };
+        return { error: tApi(locale, 'PIPELINE_NOT_FOUND') };
       }
 
       // 2) Compute next position
@@ -147,18 +148,18 @@ export const settingsRoutes = new Elysia({ prefix: '/settings', tags: ['settings
   // Admin only. Position reorders must be unique within a pipeline (DB constraint).
   .patch(
     '/pipelines/stages/:id',
-    async ({ params, body, set, request }) => {
+    async ({ params, body, set, request, locale }) => {
       const userId = await getUserIdFromRequest(request);
       if (!userId) {
         set.status = 401;
-        return { error: 'Unauthorized' };
+        return { error: tApi(locale, 'UNAUTHORIZED') };
       }
 
       const { id } = params;
       const existing = await prisma.pipelineStage.findUnique({ where: { id } });
       if (!existing) {
         set.status = 404;
-        return { error: 'Stage not found' };
+        return { error: tApi(locale, 'STAGE_NOT_FOUND') };
       }
 
       const updates = body as {
@@ -227,11 +228,11 @@ export const settingsRoutes = new Elysia({ prefix: '/settings', tags: ['settings
   // Admin only. Blocked if any deal currently uses this stage (must reassign first).
   .delete(
     '/pipelines/stages/:id',
-    async ({ params, set, request }) => {
+    async ({ params, set, request, locale }) => {
       const userId = await getUserIdFromRequest(request);
       if (!userId) {
         set.status = 401;
-        return { error: 'Unauthorized' };
+        return { error: tApi(locale, 'UNAUTHORIZED') };
       }
 
       const { id } = params;
@@ -241,7 +242,7 @@ export const settingsRoutes = new Elysia({ prefix: '/settings', tags: ['settings
       });
       if (!existing) {
         set.status = 404;
-        return { error: 'Stage not found' };
+        return { error: tApi(locale, 'STAGE_NOT_FOUND') };
       }
 
       if (existing._count.deals > 0) {
@@ -320,11 +321,11 @@ export const settingsRoutes = new Elysia({ prefix: '/settings', tags: ['settings
   .use(requirePermission('settings:update'))
   .put(
     '/tax',
-    async ({ body, set, request }) => {
+    async ({ body, set, request, locale }) => {
       const userId = await getUserIdFromRequest(request);
       if (!userId) {
         set.status = 401;
-        return { error: 'Unauthorized' };
+        return { error: tApi(locale, 'UNAUTHORIZED') };
       }
 
       const { rate } = body as { rate: number };
@@ -420,11 +421,11 @@ export const settingsRoutes = new Elysia({ prefix: '/settings', tags: ['settings
   .use(requirePermission('settings:update'))
   .put(
     '/maintenance-fee',
-    async ({ body, set, request }) => {
+    async ({ body, set, request, locale }) => {
       const userId = await getUserIdFromRequest(request);
       if (!userId) {
         set.status = 401;
-        return { error: 'Unauthorized' };
+        return { error: tApi(locale, 'UNAUTHORIZED') };
       }
 
       const { rate } = body as { rate: number };
@@ -540,11 +541,11 @@ export const settingsRoutes = new Elysia({ prefix: '/settings', tags: ['settings
   .use(requirePermission('settings:update'))
   .put(
     '/currency',
-    async ({ body, set, request }) => {
+    async ({ body, set, request, locale }) => {
       const userId = await getUserIdFromRequest(request);
       if (!userId) {
         set.status = 401;
-        return { error: 'Unauthorized' };
+        return { error: tApi(locale, 'UNAUTHORIZED') };
       }
 
       const { default: newDefault, rates: newRates } = body as {

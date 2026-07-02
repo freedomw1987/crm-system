@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Loader2, Save, AlertTriangle, History, Receipt } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -26,6 +27,7 @@ import { formatDateTime } from '@/lib/utils';
  * below filters to that resource id (`default_tax_rate`).
  */
 export function SettingsTaxPage() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { data, isLoading, error } = useQuery({
     queryKey: ['settings', 'tax'],
@@ -48,7 +50,7 @@ export function SettingsTaxPage() {
     mutationFn: () => {
       const n = Number(draftRate);
       if (!Number.isFinite(n) || n < 0 || n > 100) {
-        throw new Error('稅率必須係 0–100 之間的數字');
+        throw new Error(t('settings.tax.errors.rateInvalid'));
       }
       return settingsApi.putTax({ rate: n });
     },
@@ -66,7 +68,7 @@ export function SettingsTaxPage() {
   function handleSave() {
     const n = Number(draftRate);
     if (draftRate === '' || !Number.isFinite(n) || n < 0 || n > 100) {
-      setValidationError('稅率必須係 0–100 之間的數字');
+      setValidationError(t('settings.tax.errors.rateInvalid'));
       return;
     }
     saveMutation.mutate();
@@ -75,7 +77,7 @@ export function SettingsTaxPage() {
   if (isLoading) {
     return (
       <div className="flex items-center gap-2 text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" /> Loading tax config…
+        <Loader2 className="h-4 w-4 animate-spin" /> {t('settings.tax.loading')}
       </div>
     );
   }
@@ -83,7 +85,7 @@ export function SettingsTaxPage() {
     return (
       <Card>
         <CardContent className="pt-6 text-sm text-destructive">
-          Failed to load tax rate: {(error as Error).message}
+          {t('settings.tax.loadFailed', { message: (error as Error).message })}
         </CardContent>
       </Card>
     );
@@ -98,18 +100,17 @@ export function SettingsTaxPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Receipt className="h-5 w-5" />
-            <span>Default Tax Rate</span>
+            <span>{t('settings.tax.title')}</span>
           </CardTitle>
           <CardDescription>
-            設定新建報價 (Quotation) 的預設稅率(%)。已存在的報價會保留佢哋自己的
-            tax rate 不受影響;銷售和事建立新報價時可以逐張覆寫。
+            {t('settings.tax.description')}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-end gap-3">
             <div className="space-y-1.5 flex-1 max-w-xs">
               <label htmlFor="tax-rate" className="text-sm font-medium">
-                稅率 (%)
+                {t('settings.tax.rate')}
               </label>
               <div className="flex items-center gap-2">
                 <Input
@@ -142,7 +143,7 @@ export function SettingsTaxPage() {
               ) : (
                 <Save className="h-4 w-4 mr-1" />
               )}
-              Save
+              {saveMutation.isPending ? t('settings.tax.saving') : t('settings.tax.save')}
             </Button>
           </div>
 
@@ -155,17 +156,17 @@ export function SettingsTaxPage() {
 
           <div className="text-xs text-muted-foreground border-t pt-3 space-y-1">
             <div>
-              <span className="font-medium">當前生效值:</span>{' '}
+              <span className="font-medium">{t('settings.tax.currentValue')}</span>{' '}
               <span className="font-mono">{currentRate}%</span>
             </div>
             {data?.updatedAt && (
               <div>
-                <span className="font-medium">最後更新:</span>{' '}
+                <span className="font-medium">{t('settings.tax.lastUpdated')}</span>{' '}
                 {formatDateTime(data.updatedAt)}
                 {data.updatedBy && (
                   <>
                     {' '}
-                    by <span className="font-medium">{data.updatedBy.name}</span>
+                    {t('common.by')} <span className="font-medium">{data.updatedBy.name}</span>
                     {data.updatedBy.email && (
                       <span className="text-muted-foreground/70"> ({data.updatedBy.email})</span>
                     )}
@@ -175,7 +176,7 @@ export function SettingsTaxPage() {
             )}
             {savedAt && (
               <div className="text-green-600 dark:text-green-400">
-                ✓ Saved at {formatDateTime(savedAt)}
+                {t('settings.tax.savedAt', { when: formatDateTime(savedAt) })}
               </div>
             )}
           </div>
@@ -186,11 +187,10 @@ export function SettingsTaxPage() {
         <CardHeader>
           <CardTitle className="text-sm font-medium flex items-center gap-2">
             <History className="h-4 w-4" />
-            Audit Trail
+            {t('settings.tax.auditTrailTitle')}
           </CardTitle>
           <CardDescription className="text-xs">
-            每次 save 會寫一條 <code className="font-mono">SYSTEM_CONFIG_UPDATED</code>{' '}
-            audit event,記錄舊值和新值(12 個月 retention)。
+            {t('settings.tax.auditNote')}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -199,7 +199,7 @@ export function SettingsTaxPage() {
             className="text-sm text-primary hover:underline inline-flex items-center gap-1"
           >
             <History className="h-3.5 w-3.5" />
-            View audit log for this setting →
+            {t('settings.tax.auditTrailLink')}
           </Link>
         </CardContent>
       </Card>

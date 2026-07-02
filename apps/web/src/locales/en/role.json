@@ -1,0 +1,65 @@
+{
+  "ADMIN": "Administrator",
+  "SALES": "Sales",
+  "VIEWER": "Viewer",
+  "title": "Role Management",
+  "subtitle": "Manage system roles and permissions (RBAC)",
+  "subtitleCount_one": "{{count}} role",
+  "subtitleCount_other": "{{count}} roles",
+  "newRole": "New Custom Role",
+  "loading": "Loading…",
+  "empty": "No roles yet",
+  "systemBadge": "System",
+  "system": "System",
+  "editPermissions": "Edit Permissions",
+  "deleteRole": "Delete role",
+  "deleteConfirm": "Delete role \"{{name}}\"?",
+  "permissionCount_one": "{{granted}} / {{total}} permission",
+  "permissionCount_other": "{{granted}} / {{total}} permissions",
+  "userCount_one": "{{count}} user",
+  "userCount_other": "{{count}} users",
+  "dialog": {
+    "createTitle": "New Custom Role",
+    "editTitle": "Edit Role",
+    "name": "Role Name *",
+    "namePlaceholder": "e.g. Senior Sales",
+    "description": "Description",
+    "permissions": "Permissions",
+    "permissionsHint": "Select the actions this role can perform",
+    "cancel": "Cancel",
+    "create": "Create",
+    "creating": "Creating…",
+    "save": "Save",
+    "saving": "Saving…",
+    "matrix": {
+      "selectedCount": "Permissions ({{selected}} / {{total}})",
+      "selectAll": "Select All",
+      "someSelected": "Some"
+    },
+    "errors": {
+      "nameRequired": "Please enter a role name",
+      "saveFailed": "Save failed: {{message}}",
+      "createFailed": "Create failed: {{message}}"
+    }
+  },
+  "matrix": {
+    "group": {
+      "user": { "label": "User Management", "description": "Manage users, roles, and permissions" },
+      "role": { "label": "Roles", "description": "Manage roles + permission matrix" },
+      "audit": { "label": "Audit Log", "description": "View system operation records" },
+      "settings": { "label": "System Settings", "description": "Global settings (tax, currency, maintenance fee, pipeline)" },
+      "aiConfig": { "label": "AI Configuration", "description": "Manage LLM connection (endpoint, API key, model)" },
+      "manDayRole": { "label": "Man-Day Roles", "description": "Man-day role catalogue (Senior Engineer, etc.)" },
+      "region": { "label": "Regions", "description": "Region catalogue (HK / MO / CN / OTHER)" },
+      "company": { "label": "Companies", "description": "Customer/company records" },
+      "contact": { "label": "Contacts", "description": "Customer contacts" },
+      "product": { "label": "Products", "description": "Product catalogue" },
+      "service": { "label": "Services", "description": "Service catalogue (SOW + man-days)" },
+      "quotation": { "label": "Quotations", "description": "Quotation management" },
+      "deal": { "label": "Deals", "description": "Sales deal pipeline" },
+      "activity": { "label": "Activity Logs", "description": "Activity timeline (call/email/meeting/note)" },
+      "attachment": { "label": "Attachments", "description": "File attachments" },
+      "chat": { "label": "AI Assistant", "description": "Use the AI assistant" }
+    }
+  }
+}

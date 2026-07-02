@@ -1,0 +1,65 @@
+{
+  "ADMIN": "管理員",
+  "SALES": "業務",
+  "VIEWER": "檢視者",
+  "title": "角色管理",
+  "subtitle": "管理系統角色與權限 (RBAC)",
+  "subtitleCount_one": "{{count}} 個角色",
+  "subtitleCount_other": "{{count}} 個角色",
+  "newRole": "新增自訂角色",
+  "loading": "載入中…",
+  "empty": "尚未建立任何角色",
+  "systemBadge": "System",
+  "system": "系統",
+  "editPermissions": "編輯權限",
+  "deleteRole": "刪除角色",
+  "deleteConfirm": "確定刪除角色「{{name}}」?",
+  "permissionCount_one": "{{granted}} / {{total}} 個權限",
+  "permissionCount_other": "{{granted}} / {{total}} 個權限",
+  "userCount_one": "{{count}} 個用戶",
+  "userCount_other": "{{count}} 個用戶",
+  "dialog": {
+    "createTitle": "新增自訂角色",
+    "editTitle": "編輯角色",
+    "name": "角色名稱 *",
+    "namePlaceholder": "例如:Senior Sales",
+    "description": "描述",
+    "permissions": "權限",
+    "permissionsHint": "勾選該角色可以執行的操作",
+    "cancel": "取消",
+    "create": "建立",
+    "creating": "建立中…",
+    "save": "儲存",
+    "saving": "儲存中…",
+    "matrix": {
+      "selectedCount": "權限 ({{selected}} / {{total}})",
+      "selectAll": "全選",
+      "someSelected": "部分"
+    },
+    "errors": {
+      "nameRequired": "請填角色名稱",
+      "saveFailed": "儲存失敗：{{message}}",
+      "createFailed": "建立失敗：{{message}}"
+    }
+  },
+  "matrix": {
+    "group": {
+      "user": { "label": "用戶管理", "description": "管理系統用戶、角色、權限" },
+      "role": { "label": "角色", "description": "管理角色 + 權限矩陣" },
+      "audit": { "label": "審計日誌", "description": "查看系統操作記錄" },
+      "settings": { "label": "系統設置", "description": "稅率、貨幣、維護費用、Pipeline 等全域設定" },
+      "aiConfig": { "label": "AI 配置", "description": "管理 LLM 連接 (endpoint、API key、model)" },
+      "manDayRole": { "label": "人天角色", "description": "人天角色 catalogue(Senior Engineer 等)" },
+      "region": { "label": "地區", "description": "地區目錄 (HK / MO / CN / OTHER)" },
+      "company": { "label": "公司", "description": "客戶/公司資料" },
+      "contact": { "label": "聯絡人", "description": "客戶聯絡人" },
+      "product": { "label": "產品", "description": "產品目錄" },
+      "service": { "label": "服務", "description": "服務目錄 (SOW + 人天)" },
+      "quotation": { "label": "報價單", "description": "報價單管理" },
+      "deal": { "label": "Deal", "description": "銷售 deal pipeline" },
+      "activity": { "label": "活動記錄", "description": "Activity timeline (call/email/meeting/note)" },
+      "attachment": { "label": "附件", "description": "檔案附件" },
+      "chat": { "label": "AI 助手", "description": "使用 AI 助手" }
+    }
+  }
+}

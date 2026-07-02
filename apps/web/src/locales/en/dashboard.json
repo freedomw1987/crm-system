@@ -1,0 +1,18 @@
+{
+  "title": "Dashboard",
+  "welcomeBack": "Welcome back. Here's today's overview.",
+  "kpi": {
+    "companies": "Companies",
+    "companiesHint": "All active companies",
+    "quotations": "Quotations",
+    "openDeals": "Open Deals",
+    "openDealsHint": "{{value}} pipeline",
+    "winRate": "Win Rate",
+    "winRateHint": "Won / Total"
+  },
+  "recentQuotations": "Recent Quotations",
+  "noQuotations": "No quotations yet",
+  "recentDeals": "Recent Deals",
+  "noDeals": "No deals yet",
+  "noStage": "No stage"
+}

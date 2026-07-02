@@ -55,6 +55,7 @@ export const ADMIN_PERMISSIONS: ReadonlySet<string> = new Set(
 import { Elysia } from 'elysia';
 import { jwt } from '@elysiajs/jwt';
 import { prisma } from '@crm/db';
+import { parseAcceptLanguage, tApi } from '../lib/i18n';
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -139,15 +140,23 @@ export function requirePermission(permission: string) {
     { as: 'scoped' },
     async (ctx: { request: Request; set: { status?: number } }) => {
       const { request, set } = ctx;
+      // P3-i18n (2026-07-02): resolve the locale from the Accept-Language
+      // header directly — we're inside onBeforeHandle (pre-route), so
+      // localeContext hasn't populated ctx yet for unauthenticated probes.
+      // Mirrors the priority in middleware/locale.ts but skips the DB
+      // step (we don't know the user yet at the 401 site).
+      const locale = parseAcceptLanguage(request.headers.get('accept-language'));
       const userId = await getUserIdFromRequest(request);
       if (!userId) {
         set.status = 401;
-        return { error: 'Unauthorized' };
+        return { error: tApi(locale, 'UNAUTHORIZED') };
       }
       const allowed = await userHasPermission(userId, permission);
       if (!allowed) {
         set.status = 403;
-        return { error: `Forbidden: missing permission '${permission}'` };
+        // The permission key reads cleanly to admins in en; for zh
+        // the catalog wraps it: "權限不足: 缺少「<perm>」權限".
+        return { error: tApi(locale, 'FORBIDDEN', { permission }) };
       }
     }
   );
@@ -161,16 +170,19 @@ export function requireAnyPermission(...permissions: string[]) {
     { as: 'scoped' },
     async (ctx: { request: Request; set: { status?: number } }) => {
       const { request, set } = ctx;
+      const locale = parseAcceptLanguage(request.headers.get('accept-language'));
       const userId = await getUserIdFromRequest(request);
       if (!userId) {
         set.status = 401;
-        return { error: 'Unauthorized' };
+        return { error: tApi(locale, 'UNAUTHORIZED') };
       }
       for (const perm of permissions) {
         if (await userHasPermission(userId, perm)) return;
       }
       set.status = 403;
-      return { error: `Forbidden: need one of [${permissions.join(', ')}]` };
+      return {
+        error: tApi(locale, 'FORBIDDEN_ANY', { permissions: permissions.join(', ') }),
+      };
     }
   );
 }

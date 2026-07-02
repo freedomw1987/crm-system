@@ -35,6 +35,7 @@ import {
   buildSseFrame,
   CHAT_SSE_EVENT_TYPES,
   isChatSseEventType,
+  makeSafeStreamController,
 } from '../chat-sse';
 
 // ============================================================================
@@ -206,5 +207,107 @@ describe('buildChatPrecheckError (RG-002)', () => {
     const e2 = buildChatPrecheckError();
     expect(e1).not.toBe(e2);
     expect(e1.body).not.toBe(e2.body);
+  });
+});
+
+// ============================================================================
+// makeSafeStreamController — guards against the "Invalid state: Controller
+// is already closed" TypeError that crashes /chat/send when the client
+// disconnects mid-stream. (Day 30 regression — see apps/api/src/routes/chat.ts
+// start(controller) handler.)
+// ============================================================================
+
+describe('makeSafeStreamController', () => {
+  // Helper: build a real ReadableStream and grab its controller so we
+  // exercise the same code path as the route. We capture the reader
+  // too so the test can drain / cancel without trying to acquire a
+  // second reader on a locked stream.
+  function captureController() {
+    let captured: ReadableStreamDefaultController<Uint8Array> | null = null;
+    const stream = new ReadableStream<Uint8Array>({
+      start(c) {
+        captured = c;
+      },
+    });
+    const reader = stream.getReader();
+    // Read one chunk (will queue a microtask) so the start() callback
+    // fires and the controller is assigned.
+    reader.read().catch(() => {});
+    if (!captured) throw new Error('test setup: controller not captured');
+    return { controller: captured, reader };
+  }
+
+  it('enqueues successfully while the underlying controller is open', () => {
+    const { controller, reader } = captureController();
+    const safe = makeSafeStreamController(controller);
+    const r = safe.enqueue(new TextEncoder().encode('hello'));
+    expect(r.ok).toBe(true);
+    expect(r.closed).toBe(false);
+    expect(safe.isClosed()).toBe(false);
+    reader.cancel().catch(() => {});
+  });
+
+  it('returns ok=false when the underlying controller has been closed', () => {
+    const { controller, reader } = captureController();
+    const safe = makeSafeStreamController(controller);
+    // Simulate the runtime auto-closing the controller (client
+    // disconnect, abort signal, etc.) by closing it directly.
+    controller.close();
+    const r = safe.enqueue(new TextEncoder().encode('hello'));
+    expect(r.ok).toBe(false);
+    expect(r.closed).toBe(true);
+    expect(safe.isClosed()).toBe(true);
+    // Subsequent enqueues also short-circuit (no throw).
+    const r2 = safe.enqueue(new TextEncoder().encode('hello'));
+    expect(r2.ok).toBe(false);
+    expect(r2.closed).toBe(true);
+    reader.cancel().catch(() => {});
+  });
+
+  it('marks itself closed after a single failing enqueue, even if close was not called', () => {
+    // This is the critical regression: previously the route did
+    // `controller.enqueue(...)` inside the for-await loop and let
+    // the TypeError propagate, which crashed the SSE stream.
+    const { controller, reader } = captureController();
+    const safe = makeSafeStreamController(controller);
+    // Force the runtime to throw on next enqueue by closing early.
+    controller.close();
+    safe.enqueue(new TextEncoder().encode('a')); // returns ok=false, no throw
+    // The loop body would normally continue; with the safe wrapper
+    // it sees ok=false and breaks out cleanly.
+    expect(safe.isClosed()).toBe(true);
+    reader.cancel().catch(() => {});
+  });
+
+  it('close() is idempotent — calling twice does not throw', () => {
+    const { controller, reader } = captureController();
+    const safe = makeSafeStreamController(controller);
+    safe.close();
+    expect(() => safe.close()).not.toThrow();
+    expect(safe.isClosed()).toBe(true);
+    reader.cancel().catch(() => {});
+  });
+
+  it('close() swallows "Invalid state: already closed" runtime errors', () => {
+    // If the runtime auto-closed between our enqueue and our close
+    // call, the close() call itself would throw the same TypeError
+    // that started this bug. The wrapper catches that.
+    const { controller, reader } = captureController();
+    const safe = makeSafeStreamController(controller);
+    // Race the runtime close() before ours.
+    controller.close();
+    expect(() => safe.close()).not.toThrow();
+    reader.cancel().catch(() => {});
+  });
+
+  it('isClosed() reflects state accurately through enqueue + close cycles', () => {
+    const { controller, reader } = captureController();
+    const safe = makeSafeStreamController(controller);
+    expect(safe.isClosed()).toBe(false);
+    safe.enqueue(new TextEncoder().encode('a'));
+    expect(safe.isClosed()).toBe(false);
+    safe.close();
+    expect(safe.isClosed()).toBe(true);
+    reader.cancel().catch(() => {});
   });
 });

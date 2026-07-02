@@ -33,6 +33,7 @@
 
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input, Textarea } from '@/components/ui/input';
@@ -55,6 +56,7 @@ type ServiceStatus = 'ACTIVE' | 'ARCHIVED' | 'DRAFT';
 export function QuickCreateServiceDialog({
   open, onOpenChange, defaultName = '', onCreated,
 }: QuickCreateServiceDialogProps) {
+  const { t } = useTranslation();
   const [name, setName] = useState(defaultName);
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('');
@@ -103,7 +105,7 @@ export function QuickCreateServiceDialog({
   async function submit() {
     setError(null);
     if (!name.trim()) {
-      setError('請填服務名稱');
+      setError(t('service.createDialog.errors.nameRequired'));
       return;
     }
     setSubmitting(true);
@@ -119,7 +121,7 @@ export function QuickCreateServiceDialog({
       });
       onCreated(created);
     } catch (e) {
-      setError(e instanceof Error ? e.message : '建立失敗');
+      setError(e instanceof Error ? e.message : t('service.createDialog.errors.createFailed'));
     } finally {
       setSubmitting(false);
     }
@@ -129,7 +131,7 @@ export function QuickCreateServiceDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>新增服務</DialogTitle>
+          <DialogTitle>{t('service.createDialog.title')}</DialogTitle>
         </DialogHeader>
 
         <form
@@ -139,51 +141,51 @@ export function QuickCreateServiceDialog({
           {error && <p className="text-sm text-destructive">{error}</p>}
 
           <div className="space-y-1.5">
-            <Label htmlFor="qcs-name">服務名稱 *</Label>
+            <Label htmlFor="qcs-name">{t('service.createDialog.name')}</Label>
             <Input
               id="qcs-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Consulting Service"
+              placeholder={t('service.createDialog.namePlaceholder')}
               required
             />
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="qcs-sow">服務 SOW</Label>
+            <Label htmlFor="qcs-sow">{t('service.createDialog.sow')}</Label>
             <Textarea
               id="qcs-sow"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Statement of Work — 詳細描述服務範圍..."
+              placeholder={t('service.createDialog.sowPlaceholder')}
               rows={4}
             />
           </div>
 
           <div className="grid grid-cols-3 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="qcs-category">分類</Label>
+              <Label htmlFor="qcs-category">{t('service.createDialog.category')}</Label>
               <Input
                 id="qcs-category"
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
-                placeholder="e.g. Consulting"
+                placeholder={t('service.createDialog.categoryPlaceholder')}
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="qcs-status">狀態</Label>
+              <Label htmlFor="qcs-status">{t('service.createDialog.status')}</Label>
               <Select
                 id="qcs-status"
                 value={status}
                 onChange={(e) => setStatus(e.target.value as ServiceStatus)}
               >
-                <option value="ACTIVE">Active</option>
-                <option value="ARCHIVED">Archived</option>
-                <option value="DRAFT">Draft</option>
+                <option value="ACTIVE">{t('service.status.ACTIVE')}</option>
+                <option value="ARCHIVED">{t('service.status.ARCHIVED')}</option>
+                <option value="DRAFT">{t('service.status.DRAFT')}</option>
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="qcs-currency">貨幣</Label>
+              <Label htmlFor="qcs-currency">{t('service.createDialog.currency')}</Label>
               <Select
                 id="qcs-currency"
                 value={currency}
@@ -197,19 +199,19 @@ export function QuickCreateServiceDialog({
                     in /settings/currency). USD/EUR/GBP/legacy CNY left
                     in as fallbacks for services priced in a non-system
                     currency. */}
-                <option value="RMB">人民幣 (RMB)</option>
-                <option value="HKD">港幣 (HKD)</option>
-                <option value="MOP">澳門幣 (MOP)</option>
-                <option value="USD">美元 (USD)</option>
-                <option value="CNY">CNY</option>
-                <option value="EUR">EUR</option>
-                <option value="GBP">GBP</option>
+                <option value="RMB">{t('service.currency.RMB')}</option>
+                <option value="HKD">{t('service.currency.HKD')}</option>
+                <option value="MOP">{t('service.currency.MOP')}</option>
+                <option value="USD">{t('service.currency.USD')}</option>
+                <option value="CNY">{t('service.currency.CNY')}</option>
+                <option value="EUR">{t('service.currency.EUR')}</option>
+                <option value="GBP">{t('service.currency.GBP')}</option>
               </Select>
             </div>
           </div>
 
           <div className="space-y-1.5">
-            <Label>總價 (auto)</Label>
+            <Label>{t('service.createDialog.totalAuto')}</Label>
             <div className="px-3 py-2 rounded-md border bg-muted/30 text-sm font-semibold">
               {new Intl.NumberFormat('zh-HK', { style: 'currency', currency }).format(total)}
             </div>
@@ -219,7 +221,7 @@ export function QuickCreateServiceDialog({
             rows={manDays}
             onChange={setManDays}
             currency={currency}
-            label="人天結構"
+            label={t('service.manDayEditor.label')}
           />
 
           <DialogFooter>
@@ -229,11 +231,11 @@ export function QuickCreateServiceDialog({
               onClick={() => onOpenChange(false)}
               disabled={submitting}
             >
-              取消
+              {t('service.createDialog.cancel')}
             </Button>
             <Button type="submit" disabled={submitting}>
               {submitting && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
-              建立
+              {t('service.createDialog.create')}
             </Button>
           </DialogFooter>
         </form>

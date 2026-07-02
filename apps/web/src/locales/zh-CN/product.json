@@ -1,0 +1,67 @@
+{
+  "title": "产品",
+  "subtitle": "产品目录 — 管理产品名称、描述、售价、库存",
+  "newProduct": "新增产品",
+  "search": "搜索",
+  "searchPlaceholder": "产品名 / SKU...",
+  "filter": {
+    "category": "分类",
+    "allCategories": "全部分类",
+    "status": "状态",
+    "allStatuses": "全部状态"
+  },
+  "card": {
+    "price": "售价",
+    "stock": "库存: ",
+    "lowStockWarning": "(低于 {{threshold}} 警示)",
+    "edit": "编辑",
+    "delete": "删除"
+  },
+  "deleteConfirm": "确定删除「{{name}}」?此操作无法撤销。",
+  "loading": "载入中...",
+  "empty": "尚未创建任何产品",
+  "dialog": {
+    "createTitle": "新增产品",
+    "editTitle": "编辑产品",
+    "sku": "SKU *",
+    "skuPlaceholder": "e.g. HW-MON-001",
+    "name": "产品名称 *",
+    "namePlaceholder": "e.g. 27\" 4K Monitor",
+    "description": "产品描述",
+    "descriptionPlaceholder": "产品规格、特点、用途...",
+    "category": "分类",
+    "categoryPlaceholder": "e.g. Hardware",
+    "status": "状态",
+    "price": "售价 *",
+    "cost": "成本",
+    "currency": "货币",
+    "trackInventory": "追踪库存",
+    "stock": "现有库存",
+    "lowStock": "低库存警示",
+    "lowStockPlaceholder": "0 = 不警示",
+    "totalAuto": "总价 (auto)",
+    "cancel": "取消",
+    "save": "保存",
+    "create": "建立",
+    "errors": {
+      "skuAndNameRequired": "请填 SKU 和产品名称",
+      "priceNegative": "售价不可为负",
+      "skuConflict": "SKU 冲突,选另一个 SKU",
+      "saveFailed": "保存失败"
+    }
+  },
+  "status": {
+    "ACTIVE": "Active",
+    "ARCHIVED": "Archived",
+    "OUT_OF_STOCK": "Out of Stock"
+  },
+  "currency": {
+    "RMB": "人民币 (RMB)",
+    "HKD": "港币 (HKD)",
+    "MOP": "澳门币 (MOP)",
+    "USD": "美元 (USD)",
+    "CNY": "CNY",
+    "EUR": "EUR",
+    "GBP": "GBP"
+  }
+}

@@ -34,6 +34,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, Label } from '@/components/ui/select';
 import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { manDayRolesApi, type ServiceManDay, type ManDayRole } from '@/lib/api';
 import { formatCurrency } from '@/lib/utils';
 
@@ -93,9 +94,13 @@ export function ManDayEditor({
   rows,
   onChange,
   currency,
-  label = '人天結構',
+  label,
   hint,
 }: ManDayEditorProps) {
+  const { t } = useTranslation();
+  // Resolve the default label via t() so the editor stays in sync with
+  // the active locale even when the parent does not pass a label.
+  const resolvedLabel = label ?? t('service.manDayEditor.label');
   // Active catalogue. The backend route doesn't support ?activeOnly, so
   // we filter client-side. The catalogue is small (< 50 rows in practice)
   // and shared with the Man-day Roles admin page, so a single fetch with
@@ -160,19 +165,19 @@ export function ManDayEditor({
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <div>
-          <Label>{label}</Label>
+          <Label>{resolvedLabel}</Label>
           {hint && <p className="text-xs text-muted-foreground mt-1">{hint}</p>}
         </div>
         <Button type="button" variant="outline" size="sm" onClick={addRow}>
-          <Plus className="h-3 w-3 mr-1" /> 加一行
+          <Plus className="h-3 w-3 mr-1" /> {t('service.manDayEditor.addRow')}
         </Button>
       </div>
 
       <div className="space-y-2">
         <div className="grid grid-cols-12 gap-2 text-xs font-medium text-muted-foreground px-1">
-          <div className="col-span-5">Role</div>
-          <div className="col-span-3 text-right">Day rate</div>
-          <div className="col-span-3 text-right">Days</div>
+          <div className="col-span-5">{t('service.manDayEditor.colRole')}</div>
+          <div className="col-span-3 text-right">{t('service.manDayEditor.colDayRate')}</div>
+          <div className="col-span-3 text-right">{t('service.manDayEditor.colDays')}</div>
           <div className="col-span-1"></div>
         </div>
         {rows.map((m, idx) => (
@@ -181,26 +186,26 @@ export function ManDayEditor({
               className="col-span-5"
               value={m.manDayRoleId ?? ''}
               onChange={(e) => onPickRole(idx, e.target.value)}
-              title={m.role ? `已選: ${m.role}${m.dayRateDirty ? ' (day rate 已自訂)' : ''}` : undefined}
+              title={m.role ? `${t('service.manDayEditor.titleSelected', { name: m.role })}${m.dayRateDirty ? t('service.manDayEditor.titleDirty') : ''}` : undefined}
             >
-              <option value="">— 自訂 role —</option>
+              <option value="">{t('service.manDayEditor.customRole')}</option>
               {allRoles.map((r) => (
                 <option key={r.id} value={r.id}>
-                  {r.name} · ¥{Number(r.price).toLocaleString()}/天
+                  {t('service.manDayEditor.priceRowFormat', { name: r.name, price: Number(r.price).toLocaleString() })}
                 </option>
               ))}
             </Select>
             <Input
               className="col-span-3 text-right"
               type="number"
-              placeholder="Day rate"
+              placeholder={t('service.manDayEditor.placeholderDayRate')}
               value={m.dayRate || ''}
               onChange={(e) => onChangeDayRate(idx, Number(e.target.value))}
             />
             <Input
               className="col-span-3 text-right"
               type="number"
-              placeholder="Days"
+              placeholder={t('service.manDayEditor.placeholderDays')}
               value={m.days || ''}
               onChange={(e) => updateRow(idx, { days: Number(e.target.value) })}
             />
@@ -220,7 +225,7 @@ export function ManDayEditor({
 
       <div className="pt-3 border-t flex items-center justify-between">
         <span className="text-sm text-muted-foreground">
-          {rows.length} role · {totalDays} days
+          {t('service.manDayEditor.totalLabel', { count: rows.length, days: totalDays })}
         </span>
         {currency && (
           <span className="text-lg font-bold">{formatCurrency(total, currency)}</span>

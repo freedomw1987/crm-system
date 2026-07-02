@@ -1,0 +1,62 @@
+{
+  "title": "Activity",
+  "type": "类型",
+  "content": "内容",
+  "composer": {
+    "placeholder": "写下 follow-up 进度、客户 reply、打了电话的 outcome…",
+    "saveButton": "新增"
+  },
+  "panel": {
+    "title": "最新跟进 (Activity)",
+    "salesRep": "销售员",
+    "time": "时间",
+    "from": "由",
+    "to": "至",
+    "reset": "重设",
+    "noRecords": "这段时间未有 Activity 记录"
+  },
+  "timeWindow": {
+    "thisWeek": "本周",
+    "lastWeek": "上周",
+    "thisMonth": "本月",
+    "custom": "自定义",
+    "all": "全部"
+  },
+  "time": {
+    "justNow": "刚刚",
+    "minutesAgo": "{{count}} 分钟前",
+    "hoursAgo": "{{count}} 小时前",
+    "daysAgo": "{{count}} 天前",
+    "minutesAgo_one": "{{count}} 分钟前",
+    "hoursAgo_one": "{{count}} 小时前",
+    "daysAgo_one": "{{count}} 天前"
+  },
+  "edit": {
+    "title": "编辑 activity",
+    "attachments": "附件 ({{count}})"
+  },
+  "delete": {
+    "confirm": "确定删除这个 activity?"
+  },
+  "attachment": {
+    "add": "加附件",
+    "remove": "移除 {{name}}",
+    "download": "下载 {{name}}",
+    "removeConfirm": "确定移除附件「{{name}}」?"
+  },
+  "dialog": {
+    "title": "新增 Activity",
+    "titleWithDeal": "新增 Activity · {{deal}}"
+  },
+  "empty": {
+    "noRecords": "仍未有 Activity 记录"
+  },
+  "error": {
+    "contentOrAttachmentRequired": "请输入内容或加入附件",
+    "saveFailed": "保存失败",
+    "downloadFailed": "下载失败"
+  },
+  "upload": {
+    "failed": "失败"
+  }
+}

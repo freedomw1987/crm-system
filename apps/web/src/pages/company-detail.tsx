@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { ArrowLeft, Building2, Mail, Phone, Globe, Plus, User, Star, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -17,15 +18,18 @@ import { AttachmentList } from '@/components/attachment-list';
 // Day 9: CompanyDetailRegionMeta is the fallback used while /api/regions
 // is still in flight (or if the request fails for offline browsing). It
 // only needs to be large enough to render the company badge without
-// flickering; the real catalogue comes from the API.
-const CompanyDetailRegionMeta: Record<string, { flag: string; label: string }> = {
-  HK: { flag: '🇭🇰', label: '香港' },
-  MO: { flag: '🇲🇴', label: '澳門' },
-  CN: { flag: '🇨🇳', label: '中國' },
-  OTHER: { flag: '🌏', label: '其他' },
+// flickering; the real catalogue comes from the API. The label here is
+// a stable seed used only when the API hasn't returned yet — localized
+// versions live in the `region.*` namespace.
+const CompanyDetailRegionMeta: Record<string, { flag: string }> = {
+  HK: { flag: '🇭🇰' },
+  MO: { flag: '🇲🇴' },
+  CN: { flag: '🇨🇳' },
+  OTHER: { flag: '🌏' },
 };
 
 export function CompanyDetailPage() {
+  const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const qc = useQueryClient();
   const [contactDialogOpen, setContactDialogOpen] = useState(false);
@@ -61,8 +65,8 @@ export function CompanyDetailPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['company', id] }),
   });
 
-  if (isLoading) return <p>載入中...</p>;
-  if (!company) return <p>找不到這間公司</p>;
+  if (isLoading) return <p>{t('company.detail.loading')}</p>;
+  if (!company) return <p>{t('company.detail.notFound')}</p>;
 
   // Day 9: company.region is now a Region object (FK include). Fall back
   // to a hard-coded label for the four base regions when the object is
@@ -73,7 +77,7 @@ export function CompanyDetailPage() {
   const regionMeta = CompanyDetailRegionMeta[regionCode] ?? CompanyDetailRegionMeta.OTHER;
   const regionLabel = regionCode === 'OTHER' && company.customRegion
     ? company.customRegion
-    : region?.name ?? regionMeta.label;
+    : region?.name ?? t(`company.region.${regionCode}`);
 
   return (
     <div className="space-y-6">
@@ -145,23 +149,23 @@ export function CompanyDetailPage() {
               summary card on the left is always visible. */}
           <div className="flex items-center gap-1 border-b">
             {([
-              { key: 'contacts',    label: '聯絡人', },
-              { key: 'deals',       label: 'Deals', },
-              { key: 'quotation',   label: 'Quotation', },
-              { key: 'activity',    label: 'Activity', },
-              { key: 'attachments', label: '附件', },
-            ] as const).map((t) => (
+              { key: 'contacts',    label: t('company.detail.tabs.contacts') },
+              { key: 'deals',       label: t('company.detail.tabs.deals') },
+              { key: 'quotation',   label: t('company.detail.tabs.quotation') },
+              { key: 'activity',    label: t('company.detail.tabs.activity') },
+              { key: 'attachments', label: t('company.detail.tabs.attachments') },
+            ] as const).map((tabDef) => (
               <button
-                key={t.key}
+                key={tabDef.key}
                 type="button"
-                onClick={() => setTab(t.key)}
+                onClick={() => setTab(tabDef.key)}
                 className={`px-3 py-2 text-sm border-b-2 -mb-px transition-colors ${
-                  tab === t.key
+                  tab === tabDef.key
                     ? 'border-primary text-foreground font-medium'
                     : 'border-transparent text-muted-foreground hover:text-foreground'
                 }`}
               >
-                {t.label}
+                {tabDef.label}
               </button>
             ))}
           </div>
@@ -171,7 +175,7 @@ export function CompanyDetailPage() {
               company={company}
               onAdd={() => setContactDialogOpen(true)}
               onDelete={(cid) => {
-                if (confirm('刪除這個聯絡人?')) deleteContact.mutate(cid);
+                if (confirm(t('company.detail.deleteContactConfirm'))) deleteContact.mutate(cid);
               }}
             />
           )}
@@ -188,7 +192,7 @@ export function CompanyDetailPage() {
             /* Activity feed stays in its own tab. The composer and
                attachment upload still work the same way (they read
                companyId from the props). */
-            <ActivityFeed companyId={id} title="公司 Activity" />
+            <ActivityFeed companyId={id} title={t('company.detail.activityTitle')} />
           )}
 
           {tab === 'attachments' && (
@@ -229,18 +233,19 @@ function ContactsCard({
   onAdd: () => void;
   onDelete: (id: string) => void;
 }) {
+  const { t } = useTranslation();
   const contacts = company.contacts ?? [];
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle>聯絡人 ({contacts.length})</CardTitle>
+        <CardTitle>{t('company.detail.tabs.contacts')} ({contacts.length})</CardTitle>
         <Button size="sm" onClick={onAdd}>
-          <Plus className="h-3 w-3 mr-1" /> 新增聯絡人
+          <Plus className="h-3 w-3 mr-1" /> {t('company.detail.newContact')}
         </Button>
       </CardHeader>
       <CardContent className="p-0">
         {contacts.length === 0 ? (
-          <p className="text-sm text-muted-foreground p-6 text-center">仍未有聯絡人</p>
+          <p className="text-sm text-muted-foreground p-6 text-center">{t('company.detail.contactsEmpty')}</p>
         ) : (
           <ul className="divide-y">
             {contacts.map((contact) => (
@@ -291,20 +296,21 @@ function QuotationsCard({
   company: { id: string };
   quotations: QuoteRow[];
 }) {
+  const { t } = useTranslation();
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
         <CardTitle>Quotations ({quotations.length})</CardTitle>
         <Button asChild size="sm" variant="outline">
           <Link to={`/quotations?companyId=${company.id}`}>
-            <Plus className="h-3.5 w-3.5 mr-1" /> 新增 Quotation
+            <Plus className="h-3.5 w-3.5 mr-1" /> {t('company.detail.newQuotation')}
           </Link>
         </Button>
       </CardHeader>
       <CardContent className="p-0">
         {quotations.length === 0 ? (
           <p className="text-sm text-muted-foreground p-6 text-center">
-            仍未有報價單 · 按右上「新增 Quotation」開第一份
+            {t('company.detail.quotationsEmpty')}
           </p>
         ) : (
           <ul className="divide-y">
@@ -342,20 +348,21 @@ function DealsCard({
   company: { id: string };
   deals: DealRow[];
 }) {
+  const { t } = useTranslation();
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
         <CardTitle>Deals ({deals.length})</CardTitle>
         <Button asChild size="sm" variant="outline">
           <Link to={`/deals?companyId=${company.id}`}>
-            <Plus className="h-3.5 w-3.5 mr-1" /> 新增 Deal
+            <Plus className="h-3.5 w-3.5 mr-1" /> {t('company.detail.newDeal')}
           </Link>
         </Button>
       </CardHeader>
       <CardContent className="p-0">
         {deals.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-8">
-            暫未有 deal · 按右上「新增 Deal」開第一個
+            {t('company.detail.dealsEmpty')}
           </p>
         ) : (
           <ul className="divide-y">
@@ -399,6 +406,7 @@ function CreateContactDialog({
   companyId: string;
   onCreated: () => void;
 }) {
+  const { t } = useTranslation();
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [title, setTitle] = useState('');
@@ -437,42 +445,42 @@ function CreateContactDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>新增聯絡人</DialogTitle>
+          <DialogTitle>{t('company.detail.newContactTitle')}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <Label htmlFor="firstName">名 *</Label>
+              <Label htmlFor="firstName">{t('company.detail.newContactFirstName')}</Label>
               <Input id="firstName" value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
             </div>
             <div>
-              <Label htmlFor="lastName">姓 *</Label>
+              <Label htmlFor="lastName">{t('company.detail.newContactLastName')}</Label>
               <Input id="lastName" value={lastName} onChange={(e) => setLastName(e.target.value)} required />
             </div>
           </div>
           <div>
-            <Label htmlFor="title">職位</Label>
-            <Input id="title" placeholder="e.g. CEO, Procurement Manager" value={title} onChange={(e) => setTitle(e.target.value)} />
+            <Label htmlFor="title">{t('company.detail.newContactTitleLabel')}</Label>
+            <Input id="title" placeholder={t('company.detail.newContactTitlePlaceholder')} value={title} onChange={(e) => setTitle(e.target.value)} />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">{t('company.detail.newContactEmail')}</Label>
               <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
             </div>
             <div>
-              <Label htmlFor="phone">電話</Label>
+              <Label htmlFor="phone">{t('company.detail.newContactPhone')}</Label>
               <Input id="phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
             </div>
           </div>
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={isPrimary} onChange={(e) => setIsPrimary(e.target.checked)} />
-            <span>設為主要聯絡人 (Primary)</span>
+            <span>{t('company.detail.newContactIsPrimary')}</span>
           </label>
           {error && <p className="text-sm text-destructive">{error}</p>}
           <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>取消</Button>
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>{t('company.detail.contactDialog.cancel')}</Button>
             <Button type="submit" disabled={submitting || !firstName || !lastName}>
-              {submitting ? '建立中...' : '建立'}
+              {submitting ? t('company.detail.contactDialog.submitCreating') : t('company.detail.contactDialog.submitCreate')}
             </Button>
           </DialogFooter>
         </form>

@@ -39,6 +39,11 @@ model User {
   avatarUrl    String?
   isActive     Boolean   @default(true)
   lastLoginAt  DateTime?
+  // i18n (Phase 1): user's UI locale preference. Plain String (not enum)
+  // so adding new locales in the future doesn't require a DDL migration —
+  // same convention as QuotationItem.itemType (see that model's note).
+  // Validated server-side via Zod enum on PATCH /auth/me/preferences.
+  locale       String    @default("en") // 'en' | 'zh-TW' | 'zh-CN'
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 

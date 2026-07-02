@@ -33,6 +33,7 @@
 
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { Filter, X } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, Label } from '@/components/ui/select';
@@ -92,6 +93,7 @@ function dateInputToUntil(yyyyMmDd: string): string {
 }
 
 export function DealsActivityPanel() {
+  const { t } = useTranslation();
   const [authorId, setAuthorId] = useState<string>('');
   const [window, setWindow] = useState<TimeWindow>('week');
   // 2026-06-29: custom date range. Held in <input type="date">
@@ -146,19 +148,19 @@ export function DealsActivityPanel() {
       <CardHeader className="flex flex-row items-center justify-between gap-2 flex-wrap space-y-0">
         <div className="flex items-center gap-2">
           <Filter className="h-4 w-4 text-muted-foreground" />
-          <CardTitle>最新跟進 (Activity)</CardTitle>
+          <CardTitle>{t('activity.panel.title')}</CardTitle>
           <span className="text-xs text-muted-foreground">({items.length})</span>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-1">
-            <Label htmlFor="activity-author" className="text-xs text-muted-foreground whitespace-nowrap">銷售員</Label>
+            <Label htmlFor="activity-author" className="text-xs text-muted-foreground whitespace-nowrap">{t('activity.panel.salesRep')}</Label>
             <Select
               id="activity-author"
               value={authorId}
               onChange={(e) => setAuthorId(e.target.value)}
               className="h-8 text-xs min-w-[120px]"
             >
-              <option value="">全部</option>
+              <option value="">{t('common.all')}</option>
               {users.map((u) => (
                 <option key={u.id} value={u.id}>
                   {u.name ?? u.email}
@@ -167,18 +169,18 @@ export function DealsActivityPanel() {
             </Select>
           </div>
           <div className="flex items-center gap-1">
-            <Label htmlFor="activity-window" className="text-xs text-muted-foreground whitespace-nowrap">時間</Label>
+            <Label htmlFor="activity-window" className="text-xs text-muted-foreground whitespace-nowrap">{t('activity.panel.time')}</Label>
             <Select
               id="activity-window"
               value={window}
               onChange={(e) => setWindow(e.target.value as TimeWindow)}
               className="h-8 text-xs min-w-[100px]"
             >
-              <option value="week">本週</option>
-              <option value="last-week">上週</option>
-              <option value="month">本月</option>
-              <option value="custom">自訂</option>
-              <option value="all">全部</option>
+              <option value="week">{t('activity.timeWindow.thisWeek')}</option>
+              <option value="last-week">{t('activity.timeWindow.lastWeek')}</option>
+              <option value="month">{t('activity.timeWindow.thisMonth')}</option>
+              <option value="custom">{t('activity.timeWindow.custom')}</option>
+              <option value="all">{t('activity.timeWindow.all')}</option>
             </Select>
           </div>
           {/* 2026-06-29: when the user picks 自訂, surface two native
@@ -189,7 +191,7 @@ export function DealsActivityPanel() {
               future day (a logged activity can't be in the future). */}
           {window === 'custom' && (
             <div className="flex items-center gap-1">
-              <Label htmlFor="activity-from" className="text-xs text-muted-foreground whitespace-nowrap">由</Label>
+              <Label htmlFor="activity-from" className="text-xs text-muted-foreground whitespace-nowrap">{t('activity.panel.from')}</Label>
               <input
                 id="activity-from"
                 type="date"
@@ -199,7 +201,7 @@ export function DealsActivityPanel() {
                 className="h-8 text-xs rounded border bg-background px-2"
                 data-testid="activity-from"
               />
-              <Label htmlFor="activity-to" className="text-xs text-muted-foreground whitespace-nowrap">至</Label>
+              <Label htmlFor="activity-to" className="text-xs text-muted-foreground whitespace-nowrap">{t('activity.panel.to')}</Label>
               <input
                 id="activity-to"
                 type="date"
@@ -218,17 +220,17 @@ export function DealsActivityPanel() {
               onClick={resetFilters}
               className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
             >
-              <X className="h-3 w-3" /> 重設
+              <X className="h-3 w-3" /> {t('activity.panel.reset')}
             </button>
           )}
         </div>
       </CardHeader>
       <CardContent className="p-0">
         {isLoading ? (
-          <p className="text-sm text-muted-foreground p-6 text-center">載入中...</p>
+          <p className="text-sm text-muted-foreground p-6 text-center">{t('common.loading')}</p>
         ) : items.length === 0 ? (
           <p className="text-sm text-muted-foreground p-6 text-center">
-            這段時間未有 Activity 記錄
+            {t('activity.panel.noRecords')}
           </p>
         ) : (
           <ul className="divide-y">

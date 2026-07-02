@@ -1,0 +1,124 @@
+{
+  "title": "Services",
+  "subtitle": "Services catalogue — each service can define a man-day structure (SOW) and pricing.",
+  "newService": "New Service",
+  "searchPlaceholder": "Service name…",
+  "loading": "Loading…",
+  "empty": "No services yet",
+  "card": {
+    "total": "Total",
+    "manDayRoles_one": "{{count}} man-day role",
+    "manDayRoles_other": "{{count}} man-day roles",
+    "daysTotal_one": "{{count}} day total",
+    "daysTotal_other": "{{count}} days total",
+    "edit": "Edit",
+    "delete": "Delete"
+  },
+  "deleteConfirm": "Delete \"{{name}}\"? This cannot be undone.",
+  "status": {
+    "ACTIVE": "Active",
+    "ARCHIVED": "Archived",
+    "DRAFT": "Draft"
+  },
+  "detail": {
+    "loading": "Loading…",
+    "notFound": "Service not found",
+    "back": "Back",
+    "save": "Save",
+    "saving": "Saving…",
+    "saved": "Saved",
+    "cancel": "Cancel",
+    "name": "Service name *",
+    "sow": "Service SOW",
+    "currency": "Currency",
+    "status": "Status",
+    "manDayStructure": "Man-day structure (SOW breakdown)",
+    "manDayHint": "Editing here updates the service total live; legacy quotations still preserve their original snapshot.",
+    "errors": {
+      "nameRequired": "Service name is required",
+      "saveFailed": "Couldn't save service"
+    }
+  },
+  "createDialog": {
+    "title": "New Service",
+    "name": "Service name *",
+    "namePlaceholder": "Consulting Service",
+    "sow": "Service SOW",
+    "sowPlaceholder": "Statement of Work — describe the scope in detail…",
+    "category": "Category",
+    "categoryPlaceholder": "e.g. Consulting",
+    "status": "Status",
+    "currency": "Currency",
+    "totalAuto": "Total (auto)",
+    "cancel": "Cancel",
+    "create": "Create",
+    "creating": "Creating…",
+    "errors": {
+      "nameRequired": "Service name is required",
+      "createFailed": "Couldn't create service"
+    }
+  },
+  "manDayEditor": {
+    "label": "Man-day structure",
+    "addRow": "Add row",
+    "customRole": "— Custom role —",
+    "colRole": "Role",
+    "colDayRate": "Day rate",
+    "colDays": "Days",
+    "placeholderDayRate": "Day rate",
+    "placeholderDays": "Days",
+    "titleSelected": "Selected: {{name}}",
+    "titleDirty": " (day rate customised)",
+    "priceRowFormat": "{{name}} · ¥{{price}}/day",
+    "pricePerDay": "/day",
+    "totalLabel_one": "{{count}} role · {{days}} day",
+    "totalLabel_other": "{{count}} roles · {{days}} days"
+  },
+  "manDayRoles": {
+    "title": "Man-day Roles",
+    "subtitle_one": "{{count}} role · man-day rates and costs used by quotations",
+    "subtitle_other": "{{count}} roles · man-day rates and costs used by quotations",
+    "add": "New Man-day Role",
+    "empty": "No man-day roles yet. Click \"New Man-day Role\" to add the first — e.g. \"Senior Engineer\" ¥2000/¥1200.",
+    "notAdmin": "This page is admin-only. Sales reps should pick a man-day role from the Service form dropdown.",
+    "card": {
+      "inactive": "Inactive",
+      "sortOrder": "Sort order {{n}}",
+      "createdAt": "Created {{date}}",
+      "edit": "Edit",
+      "delete": "Delete",
+      "priceCny": "Price (CNY)",
+      "costCny": "Cost (CNY)",
+      "margin": "Margin",
+      "activate": "Activate (isActive)",
+      "deactivate": "Deactivate (isActive)"
+    },
+    "deleteConfirm": "Delete \"{{name}}\"? This cannot be undone.",
+    "dialog": {
+      "createTitle": "New Man-day Role",
+      "editTitle": "Edit Man-day Role",
+      "name": "Role name *",
+      "namePlaceholder": "e.g. Senior Engineer",
+      "price": "Price / day (CNY) *",
+      "pricePlaceholder": "2000",
+      "cost": "Cost / day (CNY)",
+      "costPlaceholder": "1200",
+      "currencyHint": "Currency is fixed to Renminbi. Margin % is computed automatically.",
+      "sortOrder": "Sort order",
+      "status": "Status",
+      "saving": "Saving…",
+      "cancel": "Cancel",
+      "save": "Save",
+      "create": "Create"
+    }
+  },
+  "currency": {
+    "RMB": "Renminbi (RMB)",
+    "HKD": "Hong Kong Dollar (HKD)",
+    "MOP": "Macau Pataca (MOP)",
+    "USD": "US Dollar (USD)",
+    "CNY": "CNY",
+    "EUR": "EUR",
+    "GBP": "GBP"
+  }
+}

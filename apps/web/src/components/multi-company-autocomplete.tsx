@@ -8,6 +8,7 @@
  * `companies` prop to skip the fetch.
  */
 import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { MultiAutocomplete } from './multi-autocomplete';
 import { companiesApi, type Company } from '@/lib/api';
 
@@ -25,11 +26,14 @@ export function MultiCompanyAutocomplete({
   companies: companiesProp,
   value,
   onChange,
-  label = '公司',
+  label,
   className,
   disabled,
-  placeholder = '搜尋公司名...',
+  placeholder,
 }: MultiCompanyAutocompleteProps) {
+  const { t } = useTranslation();
+  const resolvedLabel = label ?? t('company.label');
+  const resolvedPlaceholder = placeholder ?? t('company.searchPlaceholder');
   const { data: fetched = [] } = useQuery({
     queryKey: ['companies-all'],
     queryFn: () => companiesApi.list({ limit: 200 }),
@@ -45,10 +49,10 @@ export function MultiCompanyAutocomplete({
       getSubLabel={(c) => (c.region?.name ?? c.region?.code ?? null) || null}
       value={value}
       onChange={onChange}
-      label={label}
+      label={resolvedLabel}
       className={className}
       disabled={disabled}
-      placeholder={placeholder}
+      placeholder={resolvedPlaceholder}
     />
   );
 }

@@ -18,6 +18,7 @@ import { prisma } from '@crm/db';
 import { authContext } from '../lib/context';
 import { requirePermission } from '../middleware/rbac';
 import { logEvent } from '../middleware/audit';
+import { tApi } from '../lib/i18n';
 
 export const regionRoutes = new Elysia({ prefix: '/regions', tags: ['regions'] })
   .use(authContext)
@@ -35,12 +36,12 @@ export const regionRoutes = new Elysia({ prefix: '/regions', tags: ['regions'] }
       include: { _count: { select: { companies: true } } },
     });
   })
-  .get('/:id', async ({ params, set }) => {
+  .get('/:id', async ({ params, set, locale }) => {
     const r = await prisma.region.findUnique({
       where: { id: params.id },
       include: { _count: { select: { companies: true } } },
     });
-    if (!r) { set.status = 404; return { error: 'Region not found' }; }
+    if (!r) { set.status = 404; return { error: tApi(locale, 'REGION_NOT_FOUND') }; }
     return r;
   })
   // Admin-only mutations.
@@ -81,11 +82,11 @@ export const regionRoutes = new Elysia({ prefix: '/regions', tags: ['regions'] }
     return r;
   })
   .use(requirePermission('region:delete'))
-  .delete('/:id', async ({ params, set, userId, request }) => {
+  .delete('/:id', async ({ params, set, userId, request, locale }) => {
     const refs = await prisma.company.count({ where: { regionId: params.id } });
     if (refs > 0) {
       set.status = 409;
-      return { error: `Region is referenced by ${refs} company/companies`, referencedCount: refs };
+      return { error: tApi(locale, 'REGION_IN_USE', { count: refs }), referencedCount: refs };
     }
     await prisma.region.delete({ where: { id: params.id } });
     await logEvent({

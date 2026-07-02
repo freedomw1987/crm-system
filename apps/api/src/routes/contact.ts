@@ -4,6 +4,7 @@ import { logEvent } from '../middleware/audit';
 import { authContext } from '../lib/context';
 import { requirePermission } from '../middleware/rbac';
 import { withAuditDelete } from '../lib/with-audit';
+import { tApi } from '../lib/i18n';
 
 // P0-2 (2026-06-07 review): all 4 contact endpoints (GET list/detail,
 // POST, PATCH, DELETE) were public. Now gated.
@@ -35,7 +36,7 @@ export const contactRoutes = new Elysia({ prefix: '/contacts', tags: ['contacts'
     });
   })
   .use(requirePermission('contact:read'))
-  .get('/:id', async ({ params, set }) => {
+  .get('/:id', async ({ params, set, locale }) => {
     const c = await prisma.contact.findUnique({
       where: { id: params.id },
       // P1-1 (2026-06-08): drop `activities` from the include. The
@@ -48,7 +49,7 @@ export const contactRoutes = new Elysia({ prefix: '/contacts', tags: ['contacts'
       // Company (via `?companyId=` filter) or Deal instead.
       include: { company: true, addresses: true },
     });
-    if (!c) { set.status = 404; return { error: 'Not found' }; }
+    if (!c) { set.status = 404; return { error: tApi(locale, 'CONTACT_NOT_FOUND') }; }
     return c;
   })
   .use(requirePermission('contact:create'))

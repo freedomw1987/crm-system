@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { Plus, Pencil, Trash2, X, UserCog, ToggleLeft, ToggleRight } from 'lucide-react';
 import { manDayRolesApi, type ManDayRole } from '@/lib/api';
 import { Card, CardContent } from '@/components/ui/card';
@@ -21,6 +22,7 @@ import { useAuth } from '@/lib/auth';
  * a currency field in the form.
  */
 export function ManDayRolesPage() {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<ManDayRole | null>(null);
@@ -47,7 +49,7 @@ export function ManDayRolesPage() {
       <Card>
         <CardContent className="p-8 text-center text-muted-foreground">
           <UserCog className="h-8 w-8 mx-auto mb-2 opacity-50" />
-          <p>此頁面只供管理員使用。Sales rep 請透過 Service 表單的下拉選單選人天角色。</p>
+          <p>{t('service.manDayRoles.notAdmin')}</p>
         </CardContent>
       </Card>
     );
@@ -57,23 +59,23 @@ export function ManDayRolesPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold">人天結構</h1>
+          <h1 className="text-2xl md:text-3xl font-bold">{t('service.manDayRoles.title')}</h1>
           <p className="text-muted-foreground">
-            {roles.length} 個角色 · 報價用的人天單價和成本
+            {t('service.manDayRoles.subtitle', { count: roles.length })}
           </p>
         </div>
         <Button onClick={() => setCreating(true)}>
-          <Plus className="h-4 w-4 mr-1" /> 新增人天角色
+          <Plus className="h-4 w-4 mr-1" /> {t('service.manDayRoles.add')}
         </Button>
       </div>
 
       {isLoading ? (
-        <p className="text-sm text-muted-foreground">載入中...</p>
+        <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
       ) : roles.length === 0 ? (
         <Card>
           <CardContent className="p-8 text-center text-muted-foreground">
             <UserCog className="h-8 w-8 mx-auto mb-2 opacity-50" />
-            <p>仍未有人天角色。Click 「新增人天角色」加第一個 — 例如 "Senior Engineer" ¥2000/¥1200。</p>
+            <p>{t('service.manDayRoles.empty')}</p>
           </CardContent>
         </Card>
       ) : (
@@ -84,7 +86,7 @@ export function ManDayRolesPage() {
               role={r}
               onEdit={() => setEditing(r)}
               onDelete={() => {
-                if (confirm(`確定刪除「${r.name}」?`)) removeMutation.mutate(r.id);
+                if (confirm(t('service.manDayRoles.deleteConfirm', { name: r.name }))) removeMutation.mutate(r.id);
               }}
               onToggleActive={() => toggleActiveMutation.mutate(r)}
             />
@@ -115,6 +117,7 @@ function ManDayRoleCard({
   onDelete: () => void;
   onToggleActive: () => void;
 }) {
+  const { t } = useTranslation();
   const margin = role.price - role.cost;
   const marginPct = role.price > 0 ? Math.round((margin / role.price) * 100) : 0;
   return (
@@ -124,19 +127,19 @@ function ManDayRoleCard({
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <h3 className="font-semibold truncate">{role.name}</h3>
-              {!role.isActive && <Badge variant="secondary">Inactive</Badge>}
+              {!role.isActive && <Badge variant="secondary">{t('service.manDayRoles.card.inactive')}</Badge>}
             </div>
             <p className="text-xs text-muted-foreground mt-0.5">
-              排序 {role.sortOrder} · 創建 {new Date(role.createdAt).toLocaleDateString('zh-HK')}
+              {t('service.manDayRoles.card.sortOrder', { n: role.sortOrder })} · {t('service.manDayRoles.card.createdAt', { date: new Date(role.createdAt).toLocaleDateString('zh-HK') })}
             </p>
           </div>
           <div className="flex items-center gap-1 shrink-0">
-            <Button size="icon" variant="ghost" onClick={onEdit} aria-label="編輯">
+            <Button size="icon" variant="ghost" onClick={onEdit} aria-label={t('common.edit')}>
               <Pencil className="h-4 w-4" />
             </Button>
             <Button
               size="icon" variant="ghost" onClick={onDelete}
-              aria-label="刪除"
+              aria-label={t('common.delete')}
             >
               <Trash2 className="h-4 w-4 text-destructive" />
             </Button>
@@ -145,15 +148,15 @@ function ManDayRoleCard({
 
         <div className="grid grid-cols-3 gap-2 text-sm">
           <div>
-            <div className="text-xs text-muted-foreground">售價 (CNY)</div>
+            <div className="text-xs text-muted-foreground">{t('service.manDayRoles.card.priceCny')}</div>
             <div className="font-semibold tabular-nums">¥{role.price.toLocaleString()}</div>
           </div>
           <div>
-            <div className="text-xs text-muted-foreground">成本 (CNY)</div>
+            <div className="text-xs text-muted-foreground">{t('service.manDayRoles.card.costCny')}</div>
             <div className="font-semibold tabular-nums">¥{role.cost.toLocaleString()}</div>
           </div>
           <div>
-            <div className="text-xs text-muted-foreground">毛利</div>
+            <div className="text-xs text-muted-foreground">{t('service.manDayRoles.card.margin')}</div>
             <div className={`font-semibold tabular-nums ${marginPct >= 40 ? 'text-green-600' : marginPct >= 20 ? 'text-amber-600' : 'text-red-600'}`}>
               {marginPct}%
             </div>
@@ -166,8 +169,8 @@ function ManDayRoleCard({
           className="w-full justify-start text-xs"
         >
           {role.isActive
-            ? <><ToggleRight className="h-3.5 w-3.5 mr-1" /> 停用 (isActive)</>
-            : <><ToggleLeft className="h-3.5 w-3.5 mr-1" /> 啟用 (isActive)</>}
+            ? <><ToggleRight className="h-3.5 w-3.5 mr-1" /> {t('service.manDayRoles.card.deactivate')}</>
+            : <><ToggleLeft className="h-3.5 w-3.5 mr-1" /> {t('service.manDayRoles.card.activate')}</>}
         </Button>
       </CardContent>
     </Card>
@@ -184,6 +187,7 @@ function ManDayRoleDialog({
   open: boolean;
   onOpenChange: (v: boolean) => void;
 }) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
   const [price, setPrice] = useState<string>('');
@@ -244,22 +248,22 @@ function ManDayRoleDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{mode === 'edit' ? '編輯人天角色' : '新增人天角色'}</DialogTitle>
+          <DialogTitle>{mode === 'edit' ? t('service.manDayRoles.dialog.editTitle') : t('service.manDayRoles.dialog.createTitle')}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <Label htmlFor="name">角色名稱 *</Label>
+            <Label htmlFor="name">{t('service.manDayRoles.dialog.name')}</Label>
             <Input
               id="name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="例如: Senior Engineer"
+              placeholder={t('service.manDayRoles.dialog.namePlaceholder')}
               required
             />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <Label htmlFor="price">售價 / 人天 (CNY) *</Label>
+              <Label htmlFor="price">{t('service.manDayRoles.dialog.price')}</Label>
               <Input
                 id="price"
                 type="number"
@@ -267,12 +271,12 @@ function ManDayRoleDialog({
                 step="0.01"
                 value={price}
                 onChange={(e) => setPrice(e.target.value)}
-                placeholder="2000"
+                placeholder={t('service.manDayRoles.dialog.pricePlaceholder')}
                 required
               />
             </div>
             <div>
-              <Label htmlFor="cost">成本 / 人天 (CNY)</Label>
+              <Label htmlFor="cost">{t('service.manDayRoles.dialog.cost')}</Label>
               <Input
                 id="cost"
                 type="number"
@@ -280,16 +284,16 @@ function ManDayRoleDialog({
                 step="0.01"
                 value={cost}
                 onChange={(e) => setCost(e.target.value)}
-                placeholder="1200"
+                placeholder={t('service.manDayRoles.dialog.costPlaceholder')}
               />
             </div>
           </div>
           <p className="text-xs text-muted-foreground -mt-2">
-            幣種固定為人民幣。毛利 % 會自動計算。
+            {t('service.manDayRoles.dialog.currencyHint')}
           </p>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <Label htmlFor="sortOrder">排序</Label>
+              <Label htmlFor="sortOrder">{t('service.manDayRoles.dialog.sortOrder')}</Label>
               <Input
                 id="sortOrder"
                 type="number"
@@ -298,15 +302,15 @@ function ManDayRoleDialog({
               />
             </div>
             <div>
-              <Label htmlFor="isActive">狀態</Label>
+              <Label htmlFor="isActive">{t('service.manDayRoles.dialog.status')}</Label>
               <select
                 id="isActive"
                 value={isActive ? 'active' : 'inactive'}
                 onChange={(e) => setIsActive(e.target.value === 'active')}
                 className="w-full h-9 px-3 rounded-md border border-input bg-background text-sm"
               >
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
+                <option value="active">{t('product.status.ACTIVE')}</option>
+                <option value="inactive">{t('service.manDayRoles.card.inactive')}</option>
               </select>
             </div>
           </div>
@@ -317,9 +321,9 @@ function ManDayRoleDialog({
             </div>
           )}
           <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>取消</Button>
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>{t('service.manDayRoles.dialog.cancel')}</Button>
             <Button type="submit" disabled={submitting || !name || price === ''}>
-              {submitting ? '儲存中...' : (mode === 'edit' ? '儲存' : '建立')}
+              {submitting ? t('service.manDayRoles.dialog.saving') : (mode === 'edit' ? t('service.manDayRoles.dialog.save') : t('service.manDayRoles.dialog.create'))}
             </Button>
           </DialogFooter>
         </form>

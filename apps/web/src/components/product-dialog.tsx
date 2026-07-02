@@ -24,6 +24,7 @@
 
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input, Textarea } from '@/components/ui/input';
@@ -53,6 +54,7 @@ interface ProductDialogProps {
 export function ProductDialog({
   product, open, onOpenChange, defaultName = '', onSaved,
 }: ProductDialogProps) {
+  const { t } = useTranslation();
   const isEdit = !!product;
   const [sku, setSku] = useState(product?.sku ?? '');
   const [name, setName] = useState(product?.name ?? defaultName);
@@ -118,11 +120,11 @@ export function ProductDialog({
   async function submit() {
     setError(null);
     if (!sku.trim() || !name.trim()) {
-      setError('請填 SKU 和產品名稱');
+      setError(t('product.dialog.errors.skuAndNameRequired'));
       return;
     }
     if (unitPrice < 0) {
-      setError('售價不可為負');
+      setError(t('product.dialog.errors.priceNegative'));
       return;
     }
     setSubmitting(true);
@@ -153,10 +155,10 @@ export function ProductDialog({
         setError(
           (e.body && typeof e.body === 'object' && 'error' in e.body
             ? (e.body as { error: string }).error
-            : null) ?? 'SKU 衝突,選另一個 SKU'
+            : null) ?? t('product.dialog.errors.skuConflict')
         );
       } else {
-        setError(e instanceof Error ? e.message : '儲存失敗');
+        setError(e instanceof Error ? e.message : t('product.dialog.errors.saveFailed'));
       }
     } finally {
       setSubmitting(false);
@@ -167,7 +169,7 @@ export function ProductDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{isEdit ? '編輯產品' : '新增產品'}</DialogTitle>
+          <DialogTitle>{isEdit ? t('product.dialog.editTitle') : t('product.dialog.createTitle')}</DialogTitle>
         </DialogHeader>
 
         <form
@@ -178,65 +180,65 @@ export function ProductDialog({
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="pd-sku">SKU *</Label>
+              <Label htmlFor="pd-sku">{t('product.dialog.sku')}</Label>
               <Input
                 id="pd-sku"
                 value={sku}
                 onChange={(e) => setSku(e.target.value.toUpperCase())}
-                placeholder="e.g. HW-MON-001"
+                placeholder={t('product.dialog.skuPlaceholder')}
                 required
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="pd-name">產品名稱 *</Label>
+              <Label htmlFor="pd-name">{t('product.dialog.name')}</Label>
               <Input
                 id="pd-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder='e.g. 27" 4K Monitor'
+                placeholder={t('product.dialog.namePlaceholder')}
                 required
               />
             </div>
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="pd-desc">產品描述</Label>
+            <Label htmlFor="pd-desc">{t('product.dialog.description')}</Label>
             <Textarea
               id="pd-desc"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="產品規格、特點、用途..."
+              placeholder={t('product.dialog.descriptionPlaceholder')}
               rows={3}
             />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="pd-cat">分類</Label>
+              <Label htmlFor="pd-cat">{t('product.dialog.category')}</Label>
               <Input
                 id="pd-cat"
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
-                placeholder="e.g. Hardware"
+                placeholder={t('product.dialog.categoryPlaceholder')}
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="pd-status">狀態</Label>
+              <Label htmlFor="pd-status">{t('product.dialog.status')}</Label>
               <Select
                 id="pd-status"
                 value={status}
                 onChange={(e) => setStatus(e.target.value as Product['status'])}
               >
-                <option value="ACTIVE">Active</option>
-                <option value="ARCHIVED">Archived</option>
-                <option value="OUT_OF_STOCK">Out of Stock</option>
+                <option value="ACTIVE">{t('product.status.ACTIVE')}</option>
+                <option value="ARCHIVED">{t('product.status.ARCHIVED')}</option>
+                <option value="OUT_OF_STOCK">{t('product.status.OUT_OF_STOCK')}</option>
               </Select>
             </div>
           </div>
 
           <div className="grid grid-cols-3 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="pd-price">售價 *</Label>
+              <Label htmlFor="pd-price">{t('product.dialog.price')}</Label>
               <Input
                 id="pd-price"
                 type="number"
@@ -248,7 +250,7 @@ export function ProductDialog({
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="pd-cost">成本</Label>
+              <Label htmlFor="pd-cost">{t('product.dialog.cost')}</Label>
               <Input
                 id="pd-cost"
                 type="number"
@@ -259,7 +261,7 @@ export function ProductDialog({
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="pd-cur">貨幣</Label>
+              <Label htmlFor="pd-cur">{t('product.dialog.currency')}</Label>
               <Select
                 id="pd-cur"
                 value={currency}
@@ -273,13 +275,13 @@ export function ProductDialog({
                     in /settings/currency). USD/EUR/GBP/legacy CNY left
                     in as fallbacks for products priced in a non-system
                     currency. */}
-                <option value="RMB">人民幣 (RMB)</option>
-                <option value="HKD">港幣 (HKD)</option>
-                <option value="MOP">澳門幣 (MOP)</option>
-                <option value="USD">美元 (USD)</option>
-                <option value="CNY">CNY</option>
-                <option value="EUR">EUR</option>
-                <option value="GBP">GBP</option>
+                <option value="RMB">{t('product.currency.RMB')}</option>
+                <option value="HKD">{t('product.currency.HKD')}</option>
+                <option value="MOP">{t('product.currency.MOP')}</option>
+                <option value="USD">{t('product.currency.USD')}</option>
+                <option value="CNY">{t('product.currency.CNY')}</option>
+                <option value="EUR">{t('product.currency.EUR')}</option>
+                <option value="GBP">{t('product.currency.GBP')}</option>
               </Select>
             </div>
           </div>
@@ -292,12 +294,12 @@ export function ProductDialog({
                 onChange={(e) => setTrackInventory(e.target.checked)}
                 className="rounded"
               />
-              追蹤庫存
+              {t('product.dialog.trackInventory')}
             </label>
             {trackInventory && (
               <div className="grid grid-cols-2 gap-3 pl-6">
                 <div className="space-y-1.5">
-                  <Label htmlFor="pd-stock">現有庫存</Label>
+                  <Label htmlFor="pd-stock">{t('product.dialog.stock')}</Label>
                   <Input
                     id="pd-stock"
                     type="number"
@@ -307,14 +309,14 @@ export function ProductDialog({
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="pd-low">低庫存警示</Label>
+                  <Label htmlFor="pd-low">{t('product.dialog.lowStock')}</Label>
                   <Input
                     id="pd-low"
                     type="number"
                     min={0}
                     value={lowStockThreshold}
                     onChange={(e) => setLowStockThreshold(Number(e.target.value))}
-                    placeholder="0 = 不警示"
+                    placeholder={t('product.dialog.lowStockPlaceholder')}
                   />
                 </div>
               </div>
@@ -328,11 +330,11 @@ export function ProductDialog({
               onClick={() => onOpenChange(false)}
               disabled={submitting}
             >
-              取消
+              {t('product.dialog.cancel')}
             </Button>
             <Button type="submit" disabled={submitting}>
               {submitting && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
-              {isEdit ? '儲存' : '建立'}
+              {isEdit ? t('product.dialog.save') : t('product.dialog.create')}
             </Button>
           </DialogFooter>
         </form>

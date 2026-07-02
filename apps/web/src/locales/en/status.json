@@ -1,0 +1,27 @@
+{
+  "quotation": {
+    "DRAFT": "Draft",
+    "SENT": "Sent",
+    "VIEWED": "Viewed",
+    "ACCEPTED": "Accepted",
+    "REJECTED": "Rejected",
+    "EXPIRED": "Expired",
+    "INVOICED": "Invoiced"
+  },
+  "deal": {
+    "OPEN": "Open",
+    "WON": "Won",
+    "LOST": "Lost"
+  },
+  "activity": {
+    "NOTE": "Note",
+    "CALL": "Call",
+    "EMAIL": "Email",
+    "MEETING": "Meeting"
+  },
+  "service": {
+    "ACTIVE": "Active",
+    "ARCHIVED": "Archived",
+    "DRAFT": "Draft"
+  }
+}

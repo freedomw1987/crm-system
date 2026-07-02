@@ -1,0 +1,17 @@
+{
+  "NOT_FOUND": "未找到",
+  "UNAUTHORIZED": "未授权",
+  "FORBIDDEN": "禁止访问",
+  "NETWORK_ERROR": "网络错误，请检查您的连接后再试一次。",
+  "UNKNOWN_ERROR": "发生意外错误，请再试一次。",
+  "TIMEOUT": "请求超时，请再试一次。",
+  "SERVER_ERROR": "服务器错误，请稍后再试。",
+  "VALIDATION_FAILED": "部分字段需要修正。",
+  "OFFLINE": "您当前处于离线状态。",
+  "COPIED": "已复制",
+  "SAVED": "已保存",
+  "DELETED": "已删除",
+  "REVERTED": "已恢复",
+  "EXPORTED": "已导出",
+  "IMPORTED": "已导入"
+}

@@ -95,6 +95,72 @@ export interface ChatSendPrecheckError {
   };
 }
 
+/**
+ * Result returned by `safeEnqueue`. Callers should check `ok` and
+ * bail out of the stream loop if `false` — the controller is gone
+ * (client disconnect, runtime teardown, etc.) and any further
+ * `enqueue` / `close` calls would throw `Invalid state: Controller
+ * is already closed`.
+ */
+export interface SafeEnqueueResult {
+  ok: boolean;
+  /** True when the underlying controller has been torn down. */
+  closed: boolean;
+}
+
+/**
+ * Wraps a ReadableStreamDefaultController so the route can survive
+ * mid-stream client disconnects without throwing
+ * `TypeError: Invalid state: Controller is already closed`.
+ *
+ * Bun's runtime auto-closes the controller when the response stream
+ * is torn down (client tab close, network drop, AbortController
+ * cancel). The agent loop's `for await` may still be yielding
+ * events after that point; calling `controller.enqueue(...)` on a
+ * closed controller throws. This wrapper tracks the closed state
+ * via the `closed` flag and returns a non-throwing result so the
+ * route handler can break out cleanly.
+ *
+ * Why not just try/catch around `enqueue`: the catch block in the
+ * route would also try to `enqueue` (to surface the error), which
+ * would throw again and propagate up — the runtime logs it as an
+ * unhandled error in the stream. The wrapper short-circuits all
+ * downstream calls so the `finally { close() }` is also safe.
+ */
+export function makeSafeStreamController(controller: ReadableStreamDefaultController<Uint8Array>): {
+  enqueue: (chunk: Uint8Array) => SafeEnqueueResult;
+  close: () => void;
+  isClosed: () => boolean;
+} {
+  let closed = false;
+  return {
+    enqueue(chunk: Uint8Array): SafeEnqueueResult {
+      if (closed) return { ok: false, closed: true };
+      try {
+        controller.enqueue(chunk);
+        return { ok: true, closed: false };
+      } catch {
+        // Most likely "Invalid state: Controller is already closed".
+        // Mark closed so subsequent calls short-circuit; the stream
+        // is gone, nothing useful can be written to it.
+        closed = true;
+        return { ok: false, closed: true };
+      }
+    },
+    close(): void {
+      if (closed) return;
+      closed = true;
+      try {
+        controller.close();
+      } catch {
+        // Double-close guard. The runtime may have already torn down
+        // the controller between our `enqueue` and `close`.
+      }
+    },
+    isClosed: () => closed,
+  };
+}
+
 export function buildChatPrecheckError(): ChatSendPrecheckError {
   return {
     status: 503,

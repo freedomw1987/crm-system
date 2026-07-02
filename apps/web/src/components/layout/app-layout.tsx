@@ -5,22 +5,30 @@ import {
   Sparkles, Package, Briefcase,
 } from 'lucide-react';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+
 import { useAuth } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { RoleBadge } from '@/components/role-badge';
 
 // Day 9: reordered to mirror the sales funnel — Dashboard (overview) →
 // Companies (accounts) → Deals (pipeline opportunities) → Quotations
 // (proposals) → Products / Services (catalogue). AI Assistant was moved
 // out of the nav and into a global FAB at the bottom-right of the page
 // (see AiFab below) so it's always one tap away from any screen.
+//
+// P3-i18n: `label` is now resolved via i18n at render time. The
+// `labelKey` (NS + path) is the source of truth — keep these flat
+// so grep'ing "nav.dashboard" finds both the call site and the
+// catalog entry.
 const navItems = [
-  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/companies', label: 'Companies', icon: Building2 },
-  { to: '/deals', label: 'Deals', icon: KanbanSquare },
-  { to: '/quotations', label: 'Quotation', icon: FileText },
-  { to: '/products', label: 'Product', icon: Package },
-  { to: '/services', label: 'Service', icon: Briefcase },
+  { to: '/dashboard', labelKey: 'nav.dashboard', icon: LayoutDashboard },
+  { to: '/companies', labelKey: 'nav.companies', icon: Building2 },
+  { to: '/deals', labelKey: 'nav.deals', icon: KanbanSquare },
+  { to: '/quotations', labelKey: 'nav.quotations', icon: FileText },
+  { to: '/products', labelKey: 'nav.products', icon: Package },
+  { to: '/services', labelKey: 'nav.services', icon: Briefcase },
 ];
 
 // Day 14.7 Step 10 — collapsed 5 separate admin links (Users / Roles /
@@ -32,12 +40,13 @@ const navItems = [
 // "System Settings" surface. Audit log is reachable via the Tax tab's
 // "View audit log" link (or by navigating /settings/audit directly).
 const adminNavItems = [
-  { to: '/settings', label: '系統設置', icon: Settings, adminOnly: true },
+  { to: '/settings', labelKey: 'nav.settings', icon: Settings, adminOnly: true },
 ];
 
 export function AppLayout() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
 
   function handleLogout() {
@@ -67,7 +76,7 @@ export function AppLayout() {
             <div className="h-8 w-8 rounded bg-primary text-primary-foreground flex items-center justify-center font-bold">
               C
             </div>
-            <span className="font-semibold">CRM</span>
+            <span className="font-semibold">{t('nav.appName')}</span>
           </div>
           <Button
             variant="ghost"
@@ -95,13 +104,13 @@ export function AppLayout() {
               }
             >
               <item.icon className="h-4 w-4" />
-              {item.label}
+              {t(item.labelKey)}
             </NavLink>
           ))}
           {user?.role === 'ADMIN' && (
             <>
               <div className="px-3 pt-4 pb-1 text-xs uppercase tracking-wider text-muted-foreground font-semibold">
-                Admin
+                {t('nav.admin')}
               </div>
               {adminNavItems.map((item) => (
                 <NavLink
@@ -118,7 +127,7 @@ export function AppLayout() {
                   }
                 >
                   <item.icon className="h-4 w-4" />
-                  {item.label}
+                  {t(item.labelKey)}
                 </NavLink>
               ))}
             </>
@@ -132,12 +141,14 @@ export function AppLayout() {
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-sm font-medium truncate">{user?.name}</div>
-              <div className="text-xs text-muted-foreground truncate">{user?.role}</div>
+              <div className="mt-0.5">
+                {user?.role && <RoleBadge role={user.role} />}
+              </div>
             </div>
           </div>
           <Button variant="outline" size="sm" className="w-full" onClick={handleLogout}>
             <LogOut className="h-4 w-4 mr-2" />
-            登出
+            {t('nav.signOut')}
           </Button>
         </div>
       </aside>
@@ -148,7 +159,7 @@ export function AppLayout() {
           <Button variant="ghost" size="icon" onClick={() => setOpen(true)}>
             <Menu className="h-5 w-5" />
           </Button>
-          <span className="ml-3 font-semibold">CRM</span>
+          <span className="ml-3 font-semibold">{t('nav.appName')}</span>
         </header>
         <main className="flex-1 overflow-auto">
           <div className="p-4 md:p-6 lg:p-8 max-w-7xl mx-auto">
@@ -182,6 +193,7 @@ export function AppLayout() {
 function AiFab() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { t } = useTranslation();
   const [showLabel, setShowLabel] = useState(false);
   // Hide the FAB when the user is already on the AI chat page — it's
   // distracting and would just cover the chat composer.
@@ -194,7 +206,7 @@ function AiFab() {
       onMouseLeave={() => setShowLabel(false)}
       onFocus={() => setShowLabel(true)}
       onBlur={() => setShowLabel(false)}
-      aria-label="開 AI Assistant"
+      aria-label={t('nav.aiAssistantOpen')}
       className={cn(
         'group fixed bottom-6 right-6 z-50',
         'h-14 w-14 rounded-full',
@@ -217,7 +229,7 @@ function AiFab() {
         )}
         aria-hidden="true"
       >
-        AI Assistant
+        {t('nav.aiAssistant')}
       </span>
     </button>
   );

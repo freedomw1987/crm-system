@@ -1,0 +1,17 @@
+{
+  "NOT_FOUND": "找不到",
+  "UNAUTHORIZED": "未授權",
+  "FORBIDDEN": "禁止存取",
+  "NETWORK_ERROR": "網路錯誤，請檢查您的連線後再試一次。",
+  "UNKNOWN_ERROR": "發生未預期的錯誤，請再試一次。",
+  "TIMEOUT": "請求逾時，請再試一次。",
+  "SERVER_ERROR": "伺服器錯誤，請稍後再試。",
+  "VALIDATION_FAILED": "部分欄位需要修正。",
+  "OFFLINE": "您目前處於離線狀態。",
+  "COPIED": "已複製",
+  "SAVED": "已儲存",
+  "DELETED": "已刪除",
+  "REVERTED": "已復原",
+  "EXPORTED": "已匯出",
+  "IMPORTED": "已匯入"
+}

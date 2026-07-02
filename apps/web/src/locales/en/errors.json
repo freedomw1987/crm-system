@@ -1,0 +1,17 @@
+{
+  "NOT_FOUND": "Not found",
+  "UNAUTHORIZED": "Unauthorized",
+  "FORBIDDEN": "Forbidden",
+  "NETWORK_ERROR": "Network error. Please check your connection and try again.",
+  "UNKNOWN_ERROR": "Something went wrong. Please try again.",
+  "TIMEOUT": "Request timed out. Please try again.",
+  "SERVER_ERROR": "Server error. Please try again later.",
+  "VALIDATION_FAILED": "Some fields need attention.",
+  "OFFLINE": "You appear to be offline.",
+  "COPIED": "Copied to clipboard",
+  "SAVED": "Saved",
+  "DELETED": "Deleted",
+  "REVERTED": "Reverted",
+  "EXPORTED": "Exported",
+  "IMPORTED": "Imported"
+}

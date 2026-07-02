@@ -23,6 +23,7 @@
  * filter against existing records.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/select';
@@ -52,13 +53,16 @@ export function MultiAutocomplete<T>({
   getSubLabel,
   value,
   onChange,
-  placeholder = '搜尋...',
-  emptyText = '找不到',
+  placeholder,
+  emptyText,
   label,
   className,
   disabled,
   maxItems = 10,
 }: MultiAutocompleteProps<T>) {
+  const { t } = useTranslation();
+  const resolvedPlaceholder = placeholder ?? t('common.autocomplete.searchPlaceholder');
+  const resolvedEmptyText = emptyText ?? t('common.autocomplete.noResults');
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
@@ -155,7 +159,7 @@ export function MultiAutocomplete<T>({
                   onClick={() => remove(k)}
                   disabled={disabled}
                   className="rounded hover:bg-primary/20 p-0.5"
-                  aria-label={`移除 ${getLabel(it)}`}
+                  aria-label={t('common.autocomplete.removeItem', { name: getLabel(it) })}
                 >
                   <X className="h-3 w-3" />
                 </button>
@@ -167,7 +171,7 @@ export function MultiAutocomplete<T>({
             onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
             onFocus={() => setOpen(true)}
             onKeyDown={onKeyDown}
-            placeholder={selectedItems.length === 0 ? placeholder : ''}
+            placeholder={selectedItems.length === 0 ? resolvedPlaceholder : ''}
             disabled={disabled}
             autoComplete="off"
             className="flex-1 min-w-[8ch] border-0 p-0 h-7 shadow-none focus-visible:ring-0"
@@ -178,8 +182,8 @@ export function MultiAutocomplete<T>({
             {filtered.length === 0 ? (
               <div className="p-2 text-sm text-muted-foreground text-center">
                 {selectedItems.length > 0 && items.length > 0 && selectedSet.size === items.length
-                  ? '已選晒所有項目'
-                  : emptyText}
+                  ? t('common.autocomplete.allSelected')
+                  : resolvedEmptyText}
               </div>
             ) : (
               filtered.map((it, idx) => {

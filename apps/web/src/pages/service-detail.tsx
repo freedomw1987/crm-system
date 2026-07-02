@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { ArrowLeft, Loader2, Save } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -12,6 +13,7 @@ import { ManDayEditor, type ManDayRow, toWireRows } from '@/components/man-day-e
 import { formatCurrency } from '@/lib/utils';
 
 export function ServiceDetailPage() {
+  const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -85,13 +87,13 @@ export function ServiceDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['services'] });
       setError(null);
     },
-    onError: (e) => setError(e instanceof Error ? e.message : '儲存失敗'),
+    onError: (e) => setError(e instanceof Error ? e.message : t('service.detail.errors.saveFailed')),
   });
 
   async function save() {
     setError(null);
     if (!name.trim()) {
-      setError('請填服務名稱');
+      setError(t('service.detail.errors.nameRequired'));
       return;
     }
     setSaving(true);
@@ -103,10 +105,10 @@ export function ServiceDetailPage() {
   }
 
   if (isLoading) {
-    return <p className="text-sm text-muted-foreground">載入中...</p>;
+    return <p className="text-sm text-muted-foreground">{t('service.detail.loading')}</p>;
   }
   if (!service) {
-    return <p className="text-sm text-destructive">找不到該服務</p>;
+    return <p className="text-sm text-destructive">{t('service.detail.notFound')}</p>;
   }
 
   return (
@@ -115,12 +117,12 @@ export function ServiceDetailPage() {
         <Button asChild variant="ghost" size="sm">
           <Link to="/services">
             <ArrowLeft className="h-4 w-4 mr-1" />
-            返回
+            {t('service.detail.back')}
           </Link>
         </Button>
         <h1 className="text-2xl md:text-3xl font-bold flex-1 truncate">{service.name}</h1>
         <Badge variant={status === 'ACTIVE' ? 'success' : status === 'ARCHIVED' ? 'secondary' : 'outline'}>
-          {status === 'ACTIVE' ? 'Active' : status === 'ARCHIVED' ? 'Archived' : 'Draft'}
+          {status === 'ACTIVE' ? t('service.status.ACTIVE') : status === 'ARCHIVED' ? t('service.status.ARCHIVED') : t('service.status.DRAFT')}
         </Badge>
       </div>
 
@@ -129,12 +131,12 @@ export function ServiceDetailPage() {
       <Card>
         <CardContent className="p-6 space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="name">服務名稱 *</Label>
+            <Label htmlFor="name">{t('service.detail.name')}</Label>
             <Input id="name" value={name} onChange={(e) => setName(e.target.value)} />
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="sow">服務 SOW</Label>
+            <Label htmlFor="sow">{t('service.detail.sow')}</Label>
             <Textarea
               id="sow"
               value={description}
@@ -145,32 +147,32 @@ export function ServiceDetailPage() {
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="currency">貨幣</Label>
+              <Label htmlFor="currency">{t('service.detail.currency')}</Label>
               <Select id="currency" value={currency} onChange={(e) => setCurrency(e.target.value)}>
                 {/* P2 multi-currency (2026-06-29): RMB/HKD/MOP are the
                     three system-currencies (admin-configurable in
                     /settings/currency). USD/EUR/GBP left in as legacy
                     fallbacks for any service priced in a non-system
                     currency. */}
-                <option value="RMB">人民幣 (RMB)</option>
-                <option value="HKD">港幣 (HKD)</option>
-                <option value="MOP">澳門幣 (MOP)</option>
-                <option value="USD">美元 (USD)</option>
-                <option value="CNY">CNY</option>
-                <option value="EUR">EUR</option>
-                <option value="GBP">GBP</option>
+                <option value="RMB">{t('service.currency.RMB')}</option>
+                <option value="HKD">{t('service.currency.HKD')}</option>
+                <option value="MOP">{t('service.currency.MOP')}</option>
+                <option value="USD">{t('service.currency.USD')}</option>
+                <option value="CNY">{t('service.currency.CNY')}</option>
+                <option value="EUR">{t('service.currency.EUR')}</option>
+                <option value="GBP">{t('service.currency.GBP')}</option>
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="status">狀態</Label>
+              <Label htmlFor="status">{t('service.detail.status')}</Label>
               <Select
                 id="status"
                 value={status}
                 onChange={(e) => setStatus(e.target.value as 'ACTIVE' | 'ARCHIVED' | 'DRAFT')}
               >
-                <option value="ACTIVE">Active</option>
-                <option value="ARCHIVED">Archived</option>
-                <option value="DRAFT">Draft</option>
+                <option value="ACTIVE">{t('service.status.ACTIVE')}</option>
+                <option value="ARCHIVED">{t('service.status.ARCHIVED')}</option>
+                <option value="DRAFT">{t('service.status.DRAFT')}</option>
               </Select>
             </div>
           </div>
@@ -183,17 +185,17 @@ export function ServiceDetailPage() {
             rows={manDays}
             onChange={setManDays}
             currency={currency}
-            label="人天結構 (SOW breakdown)"
-            hint="修改此處會即時更新服務總價;舊報價仍保留原 snapshot"
+            label={t('service.detail.manDayStructure')}
+            hint={t('service.detail.manDayHint')}
           />
         </CardContent>
       </Card>
 
       <div className="flex justify-end gap-2">
-        <Button variant="outline" onClick={() => navigate('/services')}>取消</Button>
+        <Button variant="outline" onClick={() => navigate('/services')}>{t('service.detail.cancel')}</Button>
         <Button onClick={save} disabled={saving}>
           {saving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}
-          儲存
+          {t('service.detail.save')}
         </Button>
       </div>
     </div>

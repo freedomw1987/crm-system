@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { ArrowLeft, Trash2, KeyRound, Save, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -15,6 +16,7 @@ import { usersApi, type UserSummary } from '@/lib/api';
 import { formatDate, formatDateTime } from '@/lib/utils';
 
 export function UserDetailPage() {
+  const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -64,8 +66,8 @@ export function UserDetailPage() {
     },
   });
 
-  if (isLoading) return <p>載入中...</p>;
-  if (!user) return <p>找不到這個用戶</p>;
+  if (isLoading) return <p>{t('user.detail.loading')}</p>;
+  if (!user) return <p>{t('user.detail.notFound')}</p>;
 
   const isSelf = me?.id === user.id;
   const dirty = name !== user.name || role !== user.role || isActive !== user.isActive;
@@ -90,39 +92,39 @@ export function UserDetailPage() {
           <h1 className="text-2xl font-bold">{user.name}</h1>
           <p className="text-muted-foreground text-sm">{user.email}</p>
         </div>
-        {isSelf && <Badge variant="info">你這個帳號</Badge>}
+        {isSelf && <Badge variant="info">{t('user.detail.currentAccount')}</Badge>}
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>基本資料</CardTitle>
+          <CardTitle>{t('user.detail.personalInfo')}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="name">姓名</Label>
+              <Label htmlFor="name">{t('user.detail.name')}</Label>
               <Input id="name" value={name ?? ''} onChange={(e) => setName(e.target.value)} />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="role">角色</Label>
+              <Label htmlFor="role">{t('user.detail.role')}</Label>
               <Select id="role" value={role ?? ''} onChange={(e) => setRole(e.target.value as UserSummary['role'])}>
-                <option value="ADMIN">管理員</option>
-                <option value="SALES">銷售</option>
-                <option value="VIEWER">檢視者</option>
+                <option value="ADMIN">{t('role.ADMIN')}</option>
+                <option value="SALES">{t('role.SALES')}</option>
+                <option value="VIEWER">{t('role.VIEWER')}</option>
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="active">狀態</Label>
+              <Label htmlFor="active">{t('user.detail.status')}</Label>
               <Select
                 id="active"
                 value={isActive ? 'true' : 'false'}
                 onChange={(e) => setIsActive(e.target.value === 'true')}
                 disabled={isSelf}
               >
-                <option value="true">啟用</option>
-                <option value="false">停用</option>
+                <option value="true">{t('user.active')}</option>
+                <option value="false">{t('user.inactive')}</option>
               </Select>
-              {isSelf && <p className="text-xs text-muted-foreground">不可停用自己</p>}
+              {isSelf && <p className="text-xs text-muted-foreground">{t('user.detail.cannotDeactivateSelf')}</p>}
             </div>
           </div>
         </CardContent>
@@ -130,15 +132,15 @@ export function UserDetailPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>帳號資訊</CardTitle>
+          <CardTitle>{t('user.detail.accountInfo')}</CardTitle>
         </CardHeader>
         <CardContent className="text-sm space-y-1">
-          <p><span className="text-muted-foreground">建立:</span> {formatDateTime(user.createdAt)}</p>
+          <p><span className="text-muted-foreground">{t('user.detail.created')}:</span> {formatDateTime(user.createdAt)}</p>
           {user.lastLoginAt && (
-            <p><span className="text-muted-foreground">最後登入:</span> {formatDateTime(user.lastLoginAt)}</p>
+            <p><span className="text-muted-foreground">{t('user.detail.lastLogin')}:</span> {formatDateTime(user.lastLoginAt)}</p>
           )}
           {user.updatedAt && (
-            <p><span className="text-muted-foreground">更新:</span> {formatDate(user.updatedAt)}</p>
+            <p><span className="text-muted-foreground">{t('user.detail.updated')}:</span> {formatDate(user.updatedAt)}</p>
           )}
         </CardContent>
       </Card>
@@ -147,11 +149,11 @@ export function UserDetailPage() {
         <div className="flex gap-2">
           <Button onClick={save} disabled={!dirty || update.isPending}>
             {update.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
-            儲存改動
+            {t('user.detail.saveChanges')}
           </Button>
           <Button variant="outline" onClick={() => setResetOpen(true)}>
             <KeyRound className="h-4 w-4 mr-2" />
-            重設密碼
+            {t('user.detail.resetPassword')}
           </Button>
         </div>
         {!isSelf && (
@@ -159,12 +161,12 @@ export function UserDetailPage() {
             variant="outline"
             className="text-destructive hover:text-destructive"
             onClick={() => {
-              if (window.confirm(`確定刪除 ${user.email}?`)) remove.mutate();
+              if (window.confirm(t('user.detail.deleteConfirm', { email: user.email }))) remove.mutate();
             }}
             disabled={remove.isPending}
           >
             <Trash2 className="h-4 w-4 mr-2" />
-            刪除用戶
+            {t('user.detail.deleteUser')}
           </Button>
         )}
       </div>
@@ -172,20 +174,20 @@ export function UserDetailPage() {
       <Dialog open={resetOpen} onOpenChange={setResetOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>重設 {user.email} 的密碼</DialogTitle>
+            <DialogTitle>{t('user.detail.resetDialog.title', { email: user.email })}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
-            <Label htmlFor="npw">新密碼 (至少 8 字)</Label>
+            <Label htmlFor="npw">{t('user.detail.resetDialog.label')}</Label>
             <Input id="npw" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setResetOpen(false)}>取消</Button>
+            <Button variant="outline" onClick={() => setResetOpen(false)}>{t('user.detail.resetDialog.cancel')}</Button>
             <Button
               onClick={() => resetPw.mutate(newPassword)}
               disabled={newPassword.length < 8 || resetPw.isPending}
             >
               {resetPw.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              重設
+              {t('user.detail.resetDialog.submit')}
             </Button>
           </DialogFooter>
         </DialogContent>

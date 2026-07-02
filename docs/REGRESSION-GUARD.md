@@ -1435,3 +1435,83 @@ test('GET /users/:id requires user:read', ...)
 
 ---
 
+## RG-031-CHAT-SSE-CONTROLLER-CLOSED — `Invalid state: Controller is already closed` crashes /chat/send
+
+- **Discovered:** 2026-07-02 (Day 21, AI Draft Quotation flow)
+- **File:** `apps/api/src/routes/chat.ts:149` (`start(controller)` of the SSE `ReadableStream`)
+- **Status:** 🟢 CLOSED (Day 21)
+
+### Root cause
+
+When the client disconnects mid-stream (browser tab close, network
+drop, `AbortController` cancel), Bun's runtime auto-closes the
+underlying `ReadableStreamDefaultController`. The agent loop's
+`for await (const event of runAgentStream(...))` is still yielding
+events; each subsequent `controller.enqueue(...)` throws
+`TypeError: Invalid state: Controller is already closed`. The
+catch block attempted to enqueue an `error` SSE event (also threw),
+then `finally { controller.close() }` ran on an already-closed
+controller (threw again). All three throws propagated as unhandled
+errors in the stream.
+
+### Invariant
+
+> **`/chat/send` MUST survive client disconnects without throwing.**
+>
+> Two parts:
+>
+> 1. Every `controller.enqueue(...)` and `controller.close()` call
+>    in the SSE handler MUST go through `makeSafeStreamController`
+>    (`apps/api/src/lib/chat-sse.ts`) so a torn-down controller
+>    short-circuits instead of throwing. The route MUST check
+>    `r.ok` on every enqueue and break out of the loop when
+>    `false`.
+> 2. `runAgentStream` MUST receive `request.signal` so the agent
+>    loop throws `AiAbortError` at the next checkpoint when the
+>    client is gone — preventing wasted LLM tokens on a stream
+>    nobody is listening to.
+
+A future refactor that inlines `controller.enqueue(...)` again,
+or removes the `signal` plumbing, re-introduces the bug.
+
+### Fix shape
+
+```ts
+// apps/api/src/routes/chat.ts (post-fix)
+const safe = makeSafeStreamController(controller);
+try {
+  for await (const event of runAgentStream({
+    userId, message, conversationId,
+    confirmationController: wrappedController,
+    signal: request.signal,
+  })) {
+    const r = safe.enqueue(encoder.encode(sseFrame(event)));
+    if (!r.ok) break; // client gone — stop yielding
+  }
+} catch (err) {
+  if (err instanceof AiAbortError) { /* silent close */ }
+  else if (!safe.isClosed()) { /* emit error event */ }
+} finally {
+  safe.close();
+}
+```
+
+### Suggested test port
+
+Pinned by:
+
+- `apps/api/src/lib/__tests__/chat-sse.test.ts` — 6 tests for
+  `makeSafeStreamController` (enqueue/close idempotency, closed-
+  state tracking, swallow-on-runtime-error)
+- `packages/ai/src/__tests__/abort.test.ts` — 4 tests pinning the
+  `AiAbortError` public contract (`name === 'AbortError'`,
+  `instanceof Error`, distinguishable from `AiNotConfiguredError`)
+
+The full route-level integration (client aborts mid-stream,
+server stops without throwing) is a manual smoke step: open
+`/ai`, start "Draft a quotation for ...", close the tab while
+tokens are streaming, watch the api container logs — must show
+**no** `Invalid state: Controller is already closed` line.
+
+---
+

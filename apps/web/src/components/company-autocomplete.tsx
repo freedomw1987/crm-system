@@ -15,6 +15,7 @@
  */
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { Autocomplete } from './autocomplete';
 import { CompanyFormDialog } from '@/pages/companies';
 import { companiesApi, regionsApi, type Company } from '@/lib/api';
@@ -39,8 +40,11 @@ interface CompanyAutocompleteProps {
 
 export function CompanyAutocomplete({
   companies: companiesProp, value, onChange, onCreated,
-  label = '公司', className, disabled, placeholder = '搜尋公司名...', allowCreate = true,
+  label, className, disabled, placeholder, allowCreate = true,
 }: CompanyAutocompleteProps) {
+  const { t } = useTranslation();
+  const resolvedLabel = label ?? t('company.label');
+  const resolvedPlaceholder = placeholder ?? t('company.searchPlaceholder');
   const [createOpen, setCreateOpen] = useState(false);
   const [prefillName, setPrefillName] = useState('');
   const qc = useQueryClient();
@@ -74,10 +78,10 @@ export function CompanyAutocomplete({
         getSubLabel={(c) => (c.region?.name ?? c.region?.code ?? null) || null}
         value={value}
         onChange={onChange}
-        label={label}
+        label={resolvedLabel}
         className={className}
         disabled={disabled}
-        placeholder={placeholder}
+        placeholder={resolvedPlaceholder}
         onCreate={allowCreate ? (q) => { setPrefillName(q); setCreateOpen(true); } : undefined}
       />
       {allowCreate && (

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import {
   DndContext,
   closestCenter,
@@ -48,6 +49,7 @@ interface StageDraft {
 const DEFAULT_COLOR = '#3b82f6'; // tailwind blue-500
 
 export default function SettingsPage() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { data: pipelines, isLoading, error } = useQuery({
     queryKey: ['settings', 'pipelines'],
@@ -214,7 +216,7 @@ export default function SettingsPage() {
             )}
           </CardTitle>
           <CardDescription>
-            Drag rows to reorder. 改 name / probability / color 然後點擊 Save 或 Tab 走個 focus 即 save。
+            {t('settings.pipelineHelp')}
           </CardDescription>
         </CardHeader>
         <CardContent>

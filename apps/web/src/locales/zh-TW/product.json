@@ -1,0 +1,67 @@
+{
+  "title": "產品",
+  "subtitle": "產品目錄 — 管理產品名稱、描述、售價、庫存",
+  "newProduct": "新增產品",
+  "search": "搜尋",
+  "searchPlaceholder": "產品名 / SKU...",
+  "filter": {
+    "category": "分類",
+    "allCategories": "全部分類",
+    "status": "狀態",
+    "allStatuses": "全部狀態"
+  },
+  "card": {
+    "price": "售價",
+    "stock": "庫存: ",
+    "lowStockWarning": "(低於 {{threshold}} 警示)",
+    "edit": "編輯",
+    "delete": "刪除"
+  },
+  "deleteConfirm": "確定刪除「{{name}}」?此動作無法復原。",
+  "loading": "載入中...",
+  "empty": "尚未建立任何產品",
+  "dialog": {
+    "createTitle": "新增產品",
+    "editTitle": "編輯產品",
+    "sku": "SKU *",
+    "skuPlaceholder": "e.g. HW-MON-001",
+    "name": "產品名稱 *",
+    "namePlaceholder": "e.g. 27\" 4K Monitor",
+    "description": "產品描述",
+    "descriptionPlaceholder": "產品規格、特點、用途...",
+    "category": "分類",
+    "categoryPlaceholder": "e.g. Hardware",
+    "status": "狀態",
+    "price": "售價 *",
+    "cost": "成本",
+    "currency": "貨幣",
+    "trackInventory": "追蹤庫存",
+    "stock": "現有庫存",
+    "lowStock": "低庫存警示",
+    "lowStockPlaceholder": "0 = 不警示",
+    "totalAuto": "總價 (auto)",
+    "cancel": "取消",
+    "save": "儲存",
+    "create": "建立",
+    "errors": {
+      "skuAndNameRequired": "請填 SKU 和產品名稱",
+      "priceNegative": "售價不可為負",
+      "skuConflict": "SKU 衝突,選另一個 SKU",
+      "saveFailed": "儲存失敗"
+    }
+  },
+  "status": {
+    "ACTIVE": "Active",
+    "ARCHIVED": "Archived",
+    "OUT_OF_STOCK": "Out of Stock"
+  },
+  "currency": {
+    "RMB": "人民幣 (RMB)",
+    "HKD": "港幣 (HKD)",
+    "MOP": "澳門幣 (MOP)",
+    "USD": "美元 (USD)",
+    "CNY": "CNY",
+    "EUR": "EUR",
+    "GBP": "GBP"
+  }
+}

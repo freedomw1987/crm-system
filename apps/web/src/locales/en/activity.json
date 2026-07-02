@@ -1,0 +1,62 @@
+{
+  "title": "Activity",
+  "type": "Type",
+  "content": "Content",
+  "composer": {
+    "placeholder": "Log follow-up progress, customer reply, call outcome…",
+    "saveButton": "Add"
+  },
+  "panel": {
+    "title": "Recent Follow-ups (Activity)",
+    "salesRep": "Rep",
+    "time": "Time",
+    "from": "From",
+    "to": "To",
+    "reset": "Reset",
+    "noRecords": "No activity records in this period"
+  },
+  "timeWindow": {
+    "thisWeek": "This week",
+    "lastWeek": "Last week",
+    "thisMonth": "This month",
+    "custom": "Custom",
+    "all": "All"
+  },
+  "time": {
+    "justNow": "just now",
+    "minutesAgo": "{{count}} min ago",
+    "hoursAgo": "{{count}} hr ago",
+    "daysAgo": "{{count}} days ago",
+    "minutesAgo_one": "{{count}} min ago",
+    "hoursAgo_one": "{{count}} hr ago",
+    "daysAgo_one": "{{count}} day ago"
+  },
+  "edit": {
+    "title": "Edit activity",
+    "attachments": "Attachments ({{count}})"
+  },
+  "delete": {
+    "confirm": "Delete this activity?"
+  },
+  "attachment": {
+    "add": "Add attachment",
+    "remove": "Remove {{name}}",
+    "download": "Download {{name}}",
+    "removeConfirm": "Remove attachment \"{{name}}\"?"
+  },
+  "dialog": {
+    "title": "New Activity",
+    "titleWithDeal": "New Activity · {{deal}}"
+  },
+  "empty": {
+    "noRecords": "No activity records yet"
+  },
+  "error": {
+    "contentOrAttachmentRequired": "Please enter content or add an attachment",
+    "saveFailed": "Failed to save",
+    "downloadFailed": "Failed to download"
+  },
+  "upload": {
+    "failed": "Failed"
+  }
+}

@@ -19,6 +19,7 @@ import { authContext } from '../lib/context';
 import { logEvent } from '../middleware/audit';
 import { requirePermission, clearRoleCache } from '../middleware/rbac';
 import { ALL_PERMISSIONS, type Permission } from '@crm/shared';
+import { tApi } from '../lib/i18n';
 
 export const roleRoutes = new Elysia({ prefix: '/roles', tags: ['roles'] })
   .use(authContext)
@@ -57,29 +58,29 @@ export const roleRoutes = new Elysia({ prefix: '/roles', tags: ['roles'] })
   })
 
   // Get a single role with its permissions
-  .get('/:id', async ({ params, set }) => {
+  .get('/:id', async ({ params, set, locale }) => {
     const role = await prisma.role.findUnique({
       where: { id: params.id },
       include: { permissions: { select: { permission: true } } },
     });
-    if (!role) { set.status = 404; return { error: 'Role not found' }; }
+    if (!role) { set.status = 404; return { error: tApi(locale, 'ROLE_NOT_FOUND') }; }
     return { ...role, permissions: role.permissions.map((p) => p.permission) };
   })
 
   // Create a custom role
-  .post('/', async ({ body, set, userId, request }) => {
+  .post('/', async ({ body, set, userId, request, locale }) => {
     const data = body as { name: string; displayName: string; description?: string; permissions?: Permission[] };
     if (data.name !== data.name.toUpperCase()) {
       set.status = 400;
-      return { error: 'Role name must be uppercase (e.g., "SENIOR_SALES")' };
+      return { error: tApi(locale, 'ROLE_NAME_FORMAT') };
     }
     // Disallow creating a system role by name
     if (['ADMIN', 'SALES', 'VIEWER'].includes(data.name)) {
       set.status = 400;
-      return { error: 'Cannot create a system role by name — those are reserved' };
+      return { error: tApi(locale, 'ROLE_SYSTEM_RESERVED') };
     }
     const existing = await prisma.role.findUnique({ where: { name: data.name } });
-    if (existing) { set.status = 409; return { error: 'A role with this name already exists' }; }
+    if (existing) { set.status = 409; return { error: tApi(locale, 'ROLE_NAME_EXISTS') }; }
 
     const role = await prisma.role.create({
       data: {
@@ -112,10 +113,10 @@ export const roleRoutes = new Elysia({ prefix: '/roles', tags: ['roles'] })
   })
 
   // Update a role (display name, description, or replace permission set)
-  .patch('/:id', async ({ params, body, set, userId, request }) => {
+  .patch('/:id', async ({ params, body, set, userId, request, locale }) => {
     const data = body as { displayName?: string; description?: string | null; permissions?: Permission[] };
     const role = await prisma.role.findUnique({ where: { id: params.id } });
-    if (!role) { set.status = 404; return { error: 'Role not found' }; }
+    if (!role) { set.status = 404; return { error: tApi(locale, 'ROLE_NOT_FOUND') }; }
     // System role name is locked; we allow permission edits and display name edits
     if (role.isSystem && data.permissions) {
       // Allowed — admin can fine-tune a system role's permissions (per clarify A)
@@ -159,16 +160,16 @@ export const roleRoutes = new Elysia({ prefix: '/roles', tags: ['roles'] })
   })
 
   // Delete a custom role
-  .delete('/:id', async ({ params, set, userId, request }) => {
+  .delete('/:id', async ({ params, set, userId, request, locale }) => {
     const role = await prisma.role.findUnique({ where: { id: params.id } });
-    if (!role) { set.status = 404; return { error: 'Role not found' }; }
+    if (!role) { set.status = 404; return { error: tApi(locale, 'ROLE_NOT_FOUND') }; }
     if (role.isSystem) {
       set.status = 400;
-      return { error: 'System roles cannot be deleted' };
+      return { error: tApi(locale, 'ROLE_SYSTEM_DELETE') };
     }
     // Reassign any users on this role to the default VIEWER role
     const viewer = await prisma.role.findUnique({ where: { name: 'VIEWER' } });
-    if (!viewer) { set.status = 500; return { error: 'Default VIEWER role missing' }; }
+    if (!viewer) { set.status = 500; return { error: tApi(locale, 'ROLE_DEFAULT_VIEWER_MISSING') }; }
     await prisma.$transaction([
       prisma.user.updateMany({ where: { roleId: params.id }, data: { roleId: viewer.id } }),
       prisma.role.delete({ where: { id: params.id } }),

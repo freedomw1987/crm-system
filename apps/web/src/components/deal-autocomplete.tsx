@@ -20,6 +20,7 @@
  */
 import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { Autocomplete } from './autocomplete';
 import { DealDialog } from '@/pages/deals';
 import { companiesApi, dealsApi, type Company, type Deal, type PipelineStage } from '@/lib/api';
@@ -64,10 +65,13 @@ export function DealAutocomplete({
   companyId,
   allowCreate = true,
   disabled,
-  placeholder = '搜尋 deal 名...',
-  label = '關聯 Deal (可選)',
+  placeholder,
+  label,
   className,
 }: DealAutocompleteProps) {
+  const { t } = useTranslation();
+  const resolvedLabel = label ?? t('deal.label');
+  const resolvedPlaceholder = placeholder ?? t('deal.searchPlaceholder');
   const qc = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [prefillTitle, setPrefillTitle] = useState('');
@@ -135,11 +139,11 @@ export function DealAutocomplete({
         getMeta={(d) => (d.status ? d.status : null)}
         value={value}
         onChange={onChange}
-        label={label}
+        label={resolvedLabel}
         className={className}
         disabled={disabled || !companyId}
-        placeholder={companyId ? placeholder : '請先選客戶'}
-        emptyText={companyId ? '這個客戶未有任何 deal' : '請先選客戶'}
+        placeholder={companyId ? resolvedPlaceholder : t('deal.pleaseSelectCustomer')}
+        emptyText={companyId ? t('deal.noDealsForCustomer') : t('deal.pleaseSelectCustomer')}
         onCreate={
           allowCreate && companyId
             ? (q) => {

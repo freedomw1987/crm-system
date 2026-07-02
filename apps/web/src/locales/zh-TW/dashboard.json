@@ -1,0 +1,18 @@
+{
+  "title": "儀表板",
+  "welcomeBack": "歡迎回來，看一下今日的概況。",
+  "kpi": {
+    "companies": "公司",
+    "companiesHint": "全部啟用的公司",
+    "quotations": "報價單",
+    "openDeals": "進行中的商機",
+    "openDealsHint": "{{value}} 潛在商機",
+    "winRate": "成交率",
+    "winRateHint": "成交 / 全部"
+  },
+  "recentQuotations": "最近的報價單",
+  "noQuotations": "尚未有報價單",
+  "recentDeals": "最近的商機",
+  "noDeals": "尚未有商機",
+  "noStage": "未分階段"
+}

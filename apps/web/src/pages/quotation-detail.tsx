@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useParams, Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTranslation, Trans } from 'react-i18next';
 import { ArrowLeft, Sparkles, User, Printer, Edit, Send, Check, X, Trash2, FileDown, FileText, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -12,6 +13,7 @@ import { quotationsApi, type Quotation, type QuotationStatus } from '@/lib/api';
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils';
 
 export function QuotationDetailPage() {
+  const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const isPrintMode = searchParams.get('print') === '1';
@@ -54,8 +56,8 @@ export function QuotationDetailPage() {
     }
   }
 
-  if (isLoading) return <p>載入中...</p>;
-  if (!quotation) return <p>找不到這張報價單</p>;
+  if (isLoading) return <p>{t('quotation.detail.loading')}</p>;
+  if (!quotation) return <p>{t('quotation.detail.notFound')}</p>;
 
   async function transition(status: QuotationStatus) {
     if (!id) return;
@@ -71,13 +73,13 @@ export function QuotationDetailPage() {
 
   async function handleDelete() {
     if (!id) return;
-    if (!window.confirm('確定刪除這張報價單?')) return;
+    if (!window.confirm(t('quotation.detail.deleteConfirm'))) return;
     try {
       await quotationsApi.remove(id);
       queryClient.invalidateQueries({ queryKey: ['quotations'] });
       window.history.back();
     } catch (err) {
-      window.alert(`刪除失敗: ${(err as Error).message}`);
+      window.alert(t('quotation.detail.deleteFailed', { message: (err as Error).message }));
     }
   }
 
@@ -104,7 +106,7 @@ export function QuotationDetailPage() {
       queryClient.setQueryData(['quotation', newQuotation.id], newQuotation);
       navigate(`/quotations/${newQuotation.id}`);
     } catch (err) {
-      window.alert(`建立修訂失敗: ${(err as Error).message}`);
+      window.alert(t('quotation.detail.reviseFailed', { message: (err as Error).message }));
     } finally {
       setRevising(false);
     }
@@ -122,28 +124,28 @@ export function QuotationDetailPage() {
       <div className="bg-white text-black p-8 max-w-3xl mx-auto print:p-0">
         <div className="flex justify-between items-start border-b pb-4 mb-6">
           <div>
-            <h1 className="text-3xl font-bold">報價單 / Quotation</h1>
+            <h1 className="text-3xl font-bold">{t('quotation.detail.print.title')}</h1>
             <p className="font-mono text-sm text-gray-600 mt-1">
               {quotation.number}
               {/* P2 multi-currency (2026-06-29): show the chosen
                   currency on the printed quote header so the
                   customer knows what they're being billed in
                   before reading the totals block. */}
-              {' · 報價幣別 '}
+              {t('quotation.detail.print.currency')}
               <span className="font-semibold">{quotation.currency}</span>
             </p>
           </div>
           <div className="text-right text-sm">
-            <p><span className="text-gray-500">Issue date:</span> {formatDate(quotation.createdAt)}</p>
+            <p><span className="text-gray-500">{t('quotation.detail.print.issueDate')}</span> {formatDate(quotation.createdAt)}</p>
             {quotation.validUntil && (
-              <p><span className="text-gray-500">Valid until:</span> {formatDate(quotation.validUntil)}</p>
+              <p><span className="text-gray-500">{t('quotation.detail.print.validUntil')}</span> {formatDate(quotation.validUntil)}</p>
             )}
-            <p><span className="text-gray-500">Status:</span> {quotation.status}</p>
+            <p><span className="text-gray-500">{t('quotation.detail.print.status')}</span> {quotation.status}</p>
           </div>
         </div>
 
         <div className="mb-6">
-          <p className="text-xs text-gray-500 uppercase tracking-wide">To</p>
+          <p className="text-xs text-gray-500 uppercase tracking-wide">{t('quotation.detail.print.to')}</p>
           <p className="font-semibold text-lg">{quotation.company?.name}</p>
           {quotation.company?.email && <p className="text-sm">{quotation.company.email}</p>}
           {quotation.company?.phone && <p className="text-sm">{quotation.company.phone}</p>}
@@ -156,11 +158,11 @@ export function QuotationDetailPage() {
         <table className="w-full text-sm border-t border-b mb-4">
           <thead>
             <tr className="border-b text-left">
-              <th className="py-2">Item</th>
-              <th className="py-2 text-right">Qty</th>
-              <th className="py-2 text-right">Unit</th>
-              <th className="py-2 text-right">Disc</th>
-              <th className="py-2 text-right">Total</th>
+              <th className="py-2">{t('quotation.detail.table.item')}</th>
+              <th className="py-2 text-right">{t('quotation.detail.table.qty')}</th>
+              <th className="py-2 text-right">{t('quotation.detail.table.unit')}</th>
+              <th className="py-2 text-right">{t('quotation.detail.table.disc')}</th>
+              <th className="py-2 text-right">{t('quotation.detail.table.total')}</th>
             </tr>
           </thead>
           <tbody>
@@ -184,10 +186,10 @@ export function QuotationDetailPage() {
 
         <div className="flex justify-end">
           <div className="w-64 text-sm space-y-1">
-            <div className="flex justify-between"><span>Subtotal</span><span className="tabular-nums">{formatCurrency(quotation.subtotal, quotation.currency)}</span></div>
-            <div className="flex justify-between"><span>Tax ({quotation.taxRate}%)</span><span className="tabular-nums">{formatCurrency(quotation.taxAmount, quotation.currency)}</span></div>
+            <div className="flex justify-between"><span>{t('quotation.totals.subtotal', { currency: quotation.currency })}</span><span className="tabular-nums">{formatCurrency(quotation.subtotal, quotation.currency)}</span></div>
+            <div className="flex justify-between"><span>{t('quotation.totals.tax', { rate: quotation.taxRate })}</span><span className="tabular-nums">{formatCurrency(quotation.taxAmount, quotation.currency)}</span></div>
             <div className="flex justify-between border-t pt-2 mt-2 text-base font-bold">
-              <span>Total ({quotation.currency})</span>
+              <span>{t('quotation.totals.total', { currency: quotation.currency })}</span>
               <span className="tabular-nums">{formatCurrency(quotation.total, quotation.currency)}</span>
             </div>
             {/* P2 multi-currency (2026-06-29): print the HKD
@@ -198,7 +200,7 @@ export function QuotationDetailPage() {
                 reviewer can verify what was applied. */}
             {quotation.currency !== 'HKD' && Number(quotation.totalHKD ?? 0) > 0 && (
               <div className="flex justify-between text-xs text-gray-600 pt-1 mt-1 border-t border-dashed">
-                <span>≈ HKD (匯率 {Number(quotation.exchangeRateToHKD ?? 0).toFixed(4)})</span>
+                <span>{t('quotation.detail.print.equivalentHKD', { rate: Number(quotation.exchangeRateToHKD ?? 0).toFixed(4) })}</span>
                 <span className="tabular-nums">{formatCurrency(quotation.totalHKD ?? 0, 'HKD')}</span>
               </div>
             )}
@@ -208,7 +210,7 @@ export function QuotationDetailPage() {
                 default before the snapshot migration). */}
             {quotation.currency !== 'MOP' && Number(quotation.totalMOP ?? 0) > 0 && (
               <div className="flex justify-between text-xs text-gray-600 pt-1 mt-1 border-t border-dashed">
-                <span>≈ MOP (匯率 {Number(quotation.exchangeRateToMOP ?? 0).toFixed(4)})</span>
+                <span>{t('quotation.detail.print.equivalentMOP', { rate: Number(quotation.exchangeRateToMOP ?? 0).toFixed(4) })}</span>
                 <span className="tabular-nums">{formatCurrency(quotation.totalMOP ?? 0, 'MOP')}</span>
               </div>
             )}
@@ -217,7 +219,7 @@ export function QuotationDetailPage() {
 
         {quotation.notes && (
           <div className="mt-6 text-sm">
-            <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Notes</p>
+            <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">{t('quotation.detail.print.notes')}</p>
             <p className="whitespace-pre-wrap">{quotation.notes}</p>
           </div>
         )}
@@ -225,11 +227,11 @@ export function QuotationDetailPage() {
         <div className="mt-8 pt-4 border-t text-xs text-gray-500 flex justify-between print:hidden">
           <Button variant="outline" onClick={() => setSearchParams({})}>
             <ArrowLeft className="h-4 w-4 mr-2" />
-            返回
+            {t('quotation.detail.print.back')}
           </Button>
           <Button onClick={() => window.print()}>
             <Printer className="h-4 w-4 mr-2" />
-            列印
+            {t('quotation.detail.print.print')}
           </Button>
         </div>
       </div>
@@ -256,7 +258,7 @@ export function QuotationDetailPage() {
               {quotation.generatedByAi && (
                 <Badge variant="info">
                   <Sparkles className="h-3 w-3 mr-1" />
-                  AI Generated
+                  {t('quotation.detail.aiGenerated')}
                 </Badge>
               )}
               <QuotationStatusBadge status={quotation.status} />
@@ -269,7 +271,7 @@ export function QuotationDetailPage() {
               {quotation.parentQuotation && (
                 <Button asChild variant="outline" size="sm" className="h-6 px-2 text-xs" data-testid="quotation-revision-of">
                   <Link to={`/quotations/${quotation.parentQuotation.id}`}>
-                    修訂自 {quotation.parentQuotation.number}
+                    {t('quotation.detail.revisionOf', { number: quotation.parentQuotation.number })}
                   </Link>
                 </Button>
               )}
@@ -285,7 +287,7 @@ export function QuotationDetailPage() {
               )}
             </div>
             <p className="text-muted-foreground text-sm">
-              {quotation.company?.name} · 建立於 {formatDate(quotation.createdAt)}
+              {quotation.company?.name} · {t('quotation.detail.subtitle', { date: formatDate(quotation.createdAt) })}
               {quotation.title && ` · ${quotation.title}`}
             </p>
           </div>
@@ -294,7 +296,7 @@ export function QuotationDetailPage() {
         <div className="flex gap-2 flex-wrap">
           <Button variant="outline" size="sm" onClick={handlePrint}>
             <Printer className="h-4 w-4 mr-2" />
-            列印
+            {t('quotation.detail.print')}
           </Button>
           {/* 2026-06-07 (US-A5): Download as .xlsx — available for ALL statuses
               (DRAFT, SENT, ACCEPTED, ...) so sales can re-download historical
@@ -311,7 +313,7 @@ export function QuotationDetailPage() {
             ) : (
               <FileDown className="h-4 w-4 mr-2" />
             )}
-            下載 Excel
+            {t('quotation.detail.downloadExcel')}
           </Button>
           {excelError && (
             <p className="text-sm text-destructive self-center" role="alert">
@@ -322,15 +324,15 @@ export function QuotationDetailPage() {
             <>
               <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
                 <Edit className="h-4 w-4 mr-2" />
-                編輯
+                {t('quotation.detail.edit')}
               </Button>
               <Button size="sm" onClick={() => transition('SENT')} disabled={actionLoading === 'SENT'}>
                 <Send className="h-4 w-4 mr-2" />
-                發送
+                {t('quotation.detail.send')}
               </Button>
               <Button variant="outline" size="sm" onClick={handleDelete} className="text-destructive hover:text-destructive">
                 <Trash2 className="h-4 w-4 mr-2" />
-                刪除
+                {t('quotation.detail.delete')}
               </Button>
             </>
           )}
@@ -338,17 +340,17 @@ export function QuotationDetailPage() {
             <>
               <Button size="sm" onClick={() => transition('ACCEPTED')} disabled={actionLoading === 'ACCEPTED'}>
                 <Check className="h-4 w-4 mr-2" />
-                標記接受
+                {t('quotation.detail.markAccepted')}
               </Button>
               <Button variant="outline" size="sm" onClick={() => transition('REJECTED')} disabled={actionLoading === 'REJECTED'}>
                 <X className="h-4 w-4 mr-2" />
-                拒絕
+                {t('quotation.detail.markRejected')}
               </Button>
             </>
           )}
           {isAccepted && (
             <Button size="sm" onClick={() => transition('INVOICED')} disabled={actionLoading === 'INVOICED'}>
-              轉成發票
+              {t('quotation.detail.convertToInvoice')}
             </Button>
           )}
           {/* 2026-06-26: 建立修訂 button. Visible on every non-DRAFT
@@ -369,7 +371,7 @@ export function QuotationDetailPage() {
               ) : (
                 <FileText className="h-4 w-4 mr-2" />
               )}
-              建立修訂
+              {t('quotation.detail.createRevision')}
             </Button>
           )}
         </div>
@@ -379,17 +381,17 @@ export function QuotationDetailPage() {
         <div className="md:col-span-2 space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Line Items</CardTitle>
+              <CardTitle>{t('quotation.detail.lineItems')}</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
               <table className="w-full text-sm">
                 <thead className="bg-muted/50 border-b">
                   <tr className="text-left">
-                    <th className="px-4 py-3">Item</th>
-                    <th className="px-4 py-3 text-right">Qty</th>
-                    <th className="px-4 py-3 text-right">Unit</th>
-                    <th className="px-4 py-3 text-right">Disc</th>
-                    <th className="px-4 py-3 text-right">Total</th>
+                    <th className="px-4 py-3">{t('quotation.detail.table.item')}</th>
+                    <th className="px-4 py-3 text-right">{t('quotation.detail.table.qty')}</th>
+                    <th className="px-4 py-3 text-right">{t('quotation.detail.table.unit')}</th>
+                    <th className="px-4 py-3 text-right">{t('quotation.detail.table.disc')}</th>
+                    <th className="px-4 py-3 text-right">{t('quotation.detail.table.total')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -422,7 +424,7 @@ export function QuotationDetailPage() {
           {quotation.notes && (
             <Card>
               <CardHeader>
-                <CardTitle>Notes</CardTitle>
+                <CardTitle>{t('quotation.detail.notes')}</CardTitle>
               </CardHeader>
               <CardContent>
                 <p className="text-sm whitespace-pre-wrap">{quotation.notes}</p>
@@ -435,11 +437,11 @@ export function QuotationDetailPage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Sparkles className="h-4 w-4" />
-                  AI Audit Trail
+                  {t('quotation.detail.aiAuditTrail')}
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-xs text-muted-foreground mb-2">用戶 prompt:</p>
+                <p className="text-xs text-muted-foreground mb-2">{t('quotation.detail.aiPromptLabel')}</p>
                 <p className="text-sm bg-muted p-3 rounded italic">"{quotation.aiPrompt}"</p>
               </CardContent>
             </Card>
@@ -449,19 +451,19 @@ export function QuotationDetailPage() {
         <div className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Summary</CardTitle>
+              <CardTitle>{t('quotation.detail.summary')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2 text-sm">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Subtotal ({quotation.currency})</span>
+                <span className="text-muted-foreground">{t('quotation.totals.subtotal', { currency: quotation.currency })}</span>
                 <span className="tabular-nums">{formatCurrency(quotation.subtotal, quotation.currency)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Tax ({quotation.taxRate}%)</span>
+                <span className="text-muted-foreground">{t('quotation.totals.tax', { rate: quotation.taxRate })}</span>
                 <span className="tabular-nums">{formatCurrency(quotation.taxAmount, quotation.currency)}</span>
               </div>
               <div className="flex justify-between border-t pt-2 font-bold text-base">
-                <span>Total ({quotation.currency})</span>
+                <span>{t('quotation.totals.total', { currency: quotation.currency })}</span>
                 <span className="tabular-nums">{formatCurrency(quotation.total, quotation.currency)}</span>
               </div>
               {/* P2 multi-currency (2026-06-29): HKD equivalent under
@@ -471,8 +473,8 @@ export function QuotationDetailPage() {
                   Hidden for HKD rows to avoid HKD-on-HKD noise. */}
               {quotation.currency !== 'HKD' && Number(quotation.totalHKD ?? 0) > 0 && (
                 <div className="flex justify-between text-xs text-muted-foreground pt-1 mt-1 border-t border-dashed">
-                  <span title="在儲存時 snapshot,改系統匯率不會重寫">
-                    ≈ HKD (匯率 {Number(quotation.exchangeRateToHKD ?? 0).toFixed(4)})
+                  <span title={t('quotation.detail.print.equivalentTooltip')}>
+                    {t('quotation.totals.equivalentHKD', { rate: Number(quotation.exchangeRateToHKD ?? 0).toFixed(4) })}
                   </span>
                   <span className="tabular-nums">{formatCurrency(quotation.totalHKD ?? 0, 'HKD')}</span>
                 </div>
@@ -482,8 +484,8 @@ export function QuotationDetailPage() {
                   guard (`totalMOP > 0`). */}
               {quotation.currency !== 'MOP' && Number(quotation.totalMOP ?? 0) > 0 && (
                 <div className="flex justify-between text-xs text-muted-foreground pt-1 mt-1 border-t border-dashed">
-                  <span title="在儲存時 snapshot,改系統匯率不會重寫">
-                    ≈ MOP (匯率 {Number(quotation.exchangeRateToMOP ?? 0).toFixed(4)})
+                  <span title={t('quotation.detail.print.equivalentTooltip')}>
+                    {t('quotation.totals.equivalentMOP', { rate: Number(quotation.exchangeRateToMOP ?? 0).toFixed(4) })}
                   </span>
                   <span className="tabular-nums">{formatCurrency(quotation.totalMOP ?? 0, 'MOP')}</span>
                 </div>
@@ -495,7 +497,7 @@ export function QuotationDetailPage() {
             <CardContent className="p-4 text-sm space-y-2">
               <div className="flex items-center gap-2 text-muted-foreground">
                 <User className="h-3 w-3" />
-                <span>建立人: {quotation.createdBy?.name ?? '—'}</span>
+                <span>{t('quotation.detail.meta.createdBy')}: {quotation.createdBy?.name ?? '—'}</span>
               </div>
               {/* 2026-06-26: sales-rep row. The follow-up salesperson
                   is separate from the creator (e.g. a sales engineer
@@ -507,24 +509,24 @@ export function QuotationDetailPage() {
                 <span className="inline-block h-3 w-3 rounded-full bg-primary/20 text-primary text-[8px] font-semibold leading-3 text-center">
                   {(quotation.salesRep?.name ?? quotation.createdBy?.name ?? '—').slice(0, 1).toUpperCase()}
                 </span>
-                <span>銷售員: {quotation.salesRep?.name ?? quotation.createdBy?.name ?? '—'}</span>
+                <span>{t('quotation.detail.meta.salesRep')}: {quotation.salesRep?.name ?? quotation.createdBy?.name ?? '—'}</span>
               </div>
               {quotation.validUntil && (
                 <p className="text-xs text-muted-foreground">
-                  有效至: {formatDate(quotation.validUntil)}
+                  {t('quotation.detail.meta.validUntil')}: {formatDate(quotation.validUntil)}
                 </p>
               )}
               <p className="text-xs text-muted-foreground">
-                建立: {formatDateTime(quotation.createdAt)}
+                {t('quotation.detail.meta.createdAt')}: {formatDateTime(quotation.createdAt)}
               </p>
               {quotation.sentAt && (
                 <p className="text-xs text-muted-foreground">
-                  發送: {formatDateTime(quotation.sentAt)}
+                  {t('quotation.detail.meta.sentAt')}: {formatDateTime(quotation.sentAt)}
                 </p>
               )}
               {quotation.acceptedAt && (
                 <p className="text-xs text-muted-foreground">
-                  接受: {formatDateTime(quotation.acceptedAt)}
+                  {t('quotation.detail.meta.acceptedAt')}: {formatDateTime(quotation.acceptedAt)}
                 </p>
               )}
             </CardContent>
@@ -536,7 +538,7 @@ export function QuotationDetailPage() {
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>編輯報價單 {quotation.number}</DialogTitle>
+            <DialogTitle>{t('quotation.detail.editDialogTitle', { number: quotation.number })}</DialogTitle>
           </DialogHeader>
           <QuotationBuilder
             existing={quotation}
@@ -555,31 +557,37 @@ export function QuotationDetailPage() {
       <Dialog open={reviseConfirmOpen} onOpenChange={setReviseConfirmOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>建立 {quotation.number} 的修訂?</DialogTitle>
+            <DialogTitle>{t('quotation.detail.reviseDialog.title', { number: quotation.number })}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 text-sm">
-            <p>這個動作會：</p>
+            <p>{t('quotation.detail.reviseDialog.intro')}</p>
             <ul className="list-disc pl-5 space-y-1 text-muted-foreground">
-              <li>保留原本的 <span className="font-mono">{quotation.number}</span>（不會郁佢）</li>
-              <li>複製客戶、Deal、銷售和事、所有 line items（和 snapshot）</li>
-              <li>開一個新的 DRAFT 報價單給你改</li>
+              <li>
+                <Trans
+                  i18nKey="quotation.detail.reviseDialog.bullet1"
+                  values={{ number: quotation.number }}
+                  components={{ 1: <span className="font-mono" /> }}
+                />
+              </li>
+              <li>{t('quotation.detail.reviseDialog.bullet2')}</li>
+              <li>{t('quotation.detail.reviseDialog.bullet3')}</li>
             </ul>
             <p className="text-xs text-muted-foreground">
-              改好之後可以正常「發送」。原本的報價單和審計 log 會保留以供追溯。
+              {t('quotation.detail.reviseDialog.outro')}
             </p>
           </div>
           <div className="flex justify-end gap-2 mt-2">
             <Button variant="outline" onClick={() => setReviseConfirmOpen(false)} disabled={revising}>
-              取消
+              {t('quotation.detail.cancel')}
             </Button>
             <Button onClick={handleRevise} disabled={revising}>
               {revising ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  建立緊...
+                  {t('quotation.detail.reviseDialog.creating')}
                 </>
               ) : (
-                '建立修訂'
+                t('quotation.detail.createRevision')
               )}
             </Button>
           </div>
@@ -590,6 +598,7 @@ export function QuotationDetailPage() {
 }
 
 function QuotationStatusBadge({ status }: { status: string }) {
+  const { t } = useTranslation();
   const map: Record<string, 'default' | 'secondary' | 'info' | 'success' | 'warning' | 'destructive'> = {
     DRAFT: 'secondary',
     SENT: 'info',
@@ -599,5 +608,5 @@ function QuotationStatusBadge({ status }: { status: string }) {
     EXPIRED: 'warning',
     INVOICED: 'success',
   };
-  return <Badge variant={map[status] ?? 'default'}>{status}</Badge>;
+  return <Badge variant={map[status] ?? 'default'}>{t(`status.quotation.${status}`)}</Badge>;
 }

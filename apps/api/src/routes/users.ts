@@ -19,6 +19,7 @@ import { USER_ROLES, type UserRole } from '@crm/shared';
 import { authContext } from '../lib/context';
 import { requirePermission } from '../middleware/rbac';
 import { logEvent } from '../middleware/audit';
+import { tApi } from '../lib/i18n';
 
 export const userRoutes = new Elysia({ prefix: '/users', tags: ['users'] })
   .use(authContext)
@@ -61,7 +62,7 @@ export const userRoutes = new Elysia({ prefix: '/users', tags: ['users'] })
     ]);
     return { items, total, limit: Number(limit), offset: Number(offset) };
   })
-  .get('/:id', async ({ params, set }) => {
+  .get('/:id', async ({ params, set, locale }) => {
     const u = await prisma.user.findUnique({
       where: { id: params.id },
       select: {
@@ -75,10 +76,10 @@ export const userRoutes = new Elysia({ prefix: '/users', tags: ['users'] })
         updatedAt: true,
       },
     });
-    if (!u) { set.status = 404; return { error: 'User not found' }; }
+    if (!u) { set.status = 404; return { error: tApi(locale, 'USER_NOT_FOUND') }; }
     return u;
   })
-  .post('/', async ({ body, set, request, userId }) => {
+  .post('/', async ({ body, set, request, userId, locale }) => {
     const { email, name, role, password } = body as {
       email: string;
       name: string;
@@ -86,8 +87,8 @@ export const userRoutes = new Elysia({ prefix: '/users', tags: ['users'] })
       password: string;
     };
     const existing = await prisma.user.findUnique({ where: { email } });
-    if (existing) { set.status = 409; return { error: 'Email already exists' }; }
-    if (!USER_ROLES.includes(role)) { set.status = 400; return { error: 'Invalid role' }; }
+    if (existing) { set.status = 409; return { error: tApi(locale, 'EMAIL_ALREADY_EXISTS') }; }
+    if (!USER_ROLES.includes(role)) { set.status = 400; return { error: tApi(locale, 'INVALID_ROLE') }; }
     const passwordHash = await Bun.password.hash(password);
     const user = await prisma.user.create({
       data: { email, name, role, passwordHash },
@@ -113,26 +114,26 @@ export const userRoutes = new Elysia({ prefix: '/users', tags: ['users'] })
       password: t.String({ minLength: 8 }),
     }),
   })
-  .patch('/:id', async ({ params, body, set, request, userId }) => {
+  .patch('/:id', async ({ params, body, set, request, userId, locale }) => {
     const data = body as { name?: string; role?: UserRole; isActive?: boolean };
     const target = await prisma.user.findUnique({ where: { id: params.id } });
-    if (!target) { set.status = 404; return { error: 'User not found' }; }
+    if (!target) { set.status = 404; return { error: tApi(locale, 'USER_NOT_FOUND') }; }
 
     // Prevent admin from deactivating themselves
     if (data.isActive === false && target.id === userId) {
       set.status = 400;
-      return { error: 'Cannot deactivate your own account' };
+      return { error: tApi(locale, 'CANNOT_DEACTIVATE_SELF') };
     }
     // Prevent admin from demoting themselves if they are the last admin
     if (data.role && data.role !== 'ADMIN' && target.id === userId) {
       const adminCount = await prisma.user.count({ where: { role: 'ADMIN', isActive: true } });
       if (adminCount <= 1) {
         set.status = 400;
-        return { error: 'Cannot demote the last admin' };
+        return { error: tApi(locale, 'CANNOT_DEMOTE_LAST_ADMIN') };
       }
     }
     if (data.role && !USER_ROLES.includes(data.role)) {
-      set.status = 400; return { error: 'Invalid role' };
+      set.status = 400; return { error: tApi(locale, 'INVALID_ROLE') };
     }
 
     const before = { name: target.name, role: target.role, isActive: target.isActive };
@@ -160,18 +161,18 @@ export const userRoutes = new Elysia({ prefix: '/users', tags: ['users'] })
     });
     return updated;
   })
-  .delete('/:id', async ({ params, set, request, userId }) => {
+  .delete('/:id', async ({ params, set, request, userId, locale }) => {
     const target = await prisma.user.findUnique({ where: { id: params.id } });
-    if (!target) { set.status = 404; return { error: 'User not found' }; }
+    if (!target) { set.status = 404; return { error: tApi(locale, 'USER_NOT_FOUND') }; }
     if (target.id === userId) {
       set.status = 400;
-      return { error: 'Cannot delete your own account' };
+      return { error: tApi(locale, 'CANNOT_DELETE_SELF') };
     }
     if (target.role === 'ADMIN') {
       const adminCount = await prisma.user.count({ where: { role: 'ADMIN' } });
       if (adminCount <= 1) {
         set.status = 400;
-        return { error: 'Cannot delete the last admin' };
+        return { error: tApi(locale, 'CANNOT_DELETE_LAST_ADMIN') };
       }
     }
     await prisma.user.delete({ where: { id: params.id } });
@@ -185,10 +186,10 @@ export const userRoutes = new Elysia({ prefix: '/users', tags: ['users'] })
     });
     return { success: true };
   })
-  .post('/:id/reset-password', async ({ params, body, set, request, userId }) => {
+  .post('/:id/reset-password', async ({ params, body, set, request, userId, locale }) => {
     const { newPassword } = body as { newPassword: string };
     const target = await prisma.user.findUnique({ where: { id: params.id } });
-    if (!target) { set.status = 404; return { error: 'User not found' }; }
+    if (!target) { set.status = 404; return { error: tApi(locale, 'USER_NOT_FOUND') }; }
     const newHash = await Bun.password.hash(newPassword);
     await prisma.user.update({ where: { id: params.id }, data: { passwordHash: newHash } });
     await logEvent({

@@ -1,0 +1,124 @@
+{
+  "title": "服務",
+  "subtitle": "服務目錄,每個服務可設人天結構 (SOW) 與定價",
+  "newService": "新增服務",
+  "searchPlaceholder": "服務名稱...",
+  "loading": "載入中...",
+  "empty": "尚未建立任何服務",
+  "card": {
+    "total": "總價",
+    "manDayRoles_one": "{{count}} 個 man-day role",
+    "manDayRoles_other": "{{count}} 個 man-day role",
+    "daysTotal_one": "{{count}} day total",
+    "daysTotal_other": "{{count}} days total",
+    "edit": "編輯",
+    "delete": "刪除"
+  },
+  "deleteConfirm": "確定刪除「{{name}}」?此動作無法復原。",
+  "status": {
+    "ACTIVE": "Active",
+    "ARCHIVED": "Archived",
+    "DRAFT": "Draft"
+  },
+  "detail": {
+    "loading": "載入中...",
+    "notFound": "找不到該服務",
+    "back": "返回",
+    "save": "儲存",
+    "saving": "儲存中...",
+    "saved": "已儲存",
+    "cancel": "取消",
+    "name": "服務名稱 *",
+    "sow": "服務 SOW",
+    "currency": "貨幣",
+    "status": "狀態",
+    "manDayStructure": "人天結構 (SOW breakdown)",
+    "manDayHint": "修改此處會即時更新服務總價;舊報價仍保留原 snapshot",
+    "errors": {
+      "nameRequired": "請填服務名稱",
+      "saveFailed": "儲存失敗"
+    }
+  },
+  "createDialog": {
+    "title": "新增服務",
+    "name": "服務名稱 *",
+    "namePlaceholder": "Consulting Service",
+    "sow": "服務 SOW",
+    "sowPlaceholder": "Statement of Work — 詳細描述服務範圍...",
+    "category": "分類",
+    "categoryPlaceholder": "e.g. Consulting",
+    "status": "狀態",
+    "currency": "貨幣",
+    "totalAuto": "總價 (auto)",
+    "cancel": "取消",
+    "create": "建立",
+    "creating": "建立中...",
+    "errors": {
+      "nameRequired": "請填服務名稱",
+      "createFailed": "建立失敗"
+    }
+  },
+  "manDayEditor": {
+    "label": "人天結構",
+    "addRow": "加一行",
+    "customRole": "— 自訂 role —",
+    "colRole": "Role",
+    "colDayRate": "Day rate",
+    "colDays": "Days",
+    "placeholderDayRate": "Day rate",
+    "placeholderDays": "Days",
+    "titleSelected": "已選: {{name}}",
+    "titleDirty": "(day rate 已自訂)",
+    "priceRowFormat": "{{name}} · ¥{{price}}/天",
+    "pricePerDay": "/天",
+    "totalLabel_one": "{{count}} role · {{days}} day",
+    "totalLabel_other": "{{count}} role · {{days}} days"
+  },
+  "manDayRoles": {
+    "title": "人天結構",
+    "subtitle_one": "{{count}} 個角色 · 報價用的人天單價和成本",
+    "subtitle_other": "{{count}} 個角色 · 報價用的人天單價和成本",
+    "add": "新增人天角色",
+    "empty": "仍未有人天角色。Click 「新增人天角色」加第一個 — 例如 \"Senior Engineer\" ¥2000/¥1200。",
+    "notAdmin": "此頁面只供管理員使用。Sales rep 請透過 Service 表單的下拉選單選人天角色。",
+    "card": {
+      "inactive": "Inactive",
+      "sortOrder": "排序 {{n}}",
+      "createdAt": "創建 {{date}}",
+      "edit": "編輯",
+      "delete": "刪除",
+      "priceCny": "售價 (CNY)",
+      "costCny": "成本 (CNY)",
+      "margin": "毛利",
+      "activate": "啟用 (isActive)",
+      "deactivate": "停用 (isActive)"
+    },
+    "deleteConfirm": "確定刪除「{{name}}」?",
+    "dialog": {
+      "createTitle": "新增人天角色",
+      "editTitle": "編輯人天角色",
+      "name": "角色名稱 *",
+      "namePlaceholder": "例如: Senior Engineer",
+      "price": "售價 / 人天 (CNY) *",
+      "pricePlaceholder": "2000",
+      "cost": "成本 / 人天 (CNY)",
+      "costPlaceholder": "1200",
+      "currencyHint": "幣種固定為人民幣。毛利 % 會自動計算。",
+      "sortOrder": "排序",
+      "status": "狀態",
+      "saving": "儲存中...",
+      "cancel": "取消",
+      "save": "儲存",
+      "create": "建立"
+    }
+  },
+  "currency": {
+    "RMB": "人民幣 (RMB)",
+    "HKD": "港幣 (HKD)",
+    "MOP": "澳門幣 (MOP)",
+    "USD": "美元 (USD)",
+    "CNY": "CNY",
+    "EUR": "EUR",
+    "GBP": "GBP"
+  }
+}

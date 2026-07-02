@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { Shield, Plus, Trash2 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -17,6 +18,7 @@ import { RoleDialog } from '@/components/role-dialog';
  * matrix UI. A single `mode` prop (create | edit) covers both.
  */
 export function RolesPage() {
+  const { t } = useTranslation();
   const [editingRole, setEditingRole] = useState<Role | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const queryClient = useQueryClient();
@@ -45,22 +47,22 @@ export function RolesPage() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold">Role Management</h1>
-          <p className="text-muted-foreground">管理系統角色與權限 (RBAC)</p>
+          <h1 className="text-2xl md:text-3xl font-bold">{t('role.title')}</h1>
+          <p className="text-muted-foreground">{t('role.subtitle')}</p>
         </div>
         <Button onClick={() => setCreateOpen(true)}>
           <Plus className="h-4 w-4 mr-1" />
-          新增自訂角色
+          {t('role.newRole')}
         </Button>
       </div>
 
       {isLoading ? (
-        <p className="text-sm text-muted-foreground">載入中...</p>
+        <p className="text-sm text-muted-foreground">{t('role.loading')}</p>
       ) : roles.length === 0 ? (
         <Card>
           <CardContent className="p-12 text-center text-muted-foreground">
             <Shield className="h-12 w-12 mx-auto mb-3 opacity-50" />
-            尚未建立任何角色
+            {t('role.empty')}
           </CardContent>
         </Card>
       ) : (
@@ -74,7 +76,7 @@ export function RolesPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <h3 className="font-semibold truncate">{r.displayName ?? r.name}</h3>
-                        {r.isSystem && <Badge variant="info">System</Badge>}
+                        {r.isSystem && <Badge variant="info">{t('role.systemBadge')}</Badge>}
                       </div>
                       {r.description && (
                         <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
@@ -85,8 +87,12 @@ export function RolesPage() {
                   </div>
 
                   <div className="text-xs text-muted-foreground">
-                    {_count?.permissions ?? 0} / {allPermissions.length} 個權限
-                    {_count?.users !== undefined && ` · ${_count.users} 個用戶`}
+                    {t('role.permissionCount', {
+                      count: allPermissions.length,
+                      granted: _count?.permissions ?? 0,
+                      total: allPermissions.length,
+                    })}
+                    {_count?.users !== undefined && ` · ${t('role.userCount', { count: _count.users })}`}
                   </div>
 
                   <div className="flex gap-2 pt-2 border-t">
@@ -96,14 +102,14 @@ export function RolesPage() {
                       className="flex-1"
                       onClick={() => setEditingRole(r)}
                     >
-                      編輯權限
+                      {t('role.editPermissions')}
                     </Button>
                     {!r.isSystem && (
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => {
-                          if (confirm(`確定刪除角色「${r.displayName ?? r.name}」?`)) removeRole.mutate(r.id);
+                          if (confirm(t('role.deleteConfirm', { name: r.displayName ?? r.name }))) removeRole.mutate(r.id);
                         }}
                         disabled={removeRole.isPending}
                       >

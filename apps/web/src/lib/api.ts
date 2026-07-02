@@ -4,6 +4,7 @@
  */
 
 import { apiUrl, appUrl } from './runtime-paths';
+import { i18n } from '../i18n';
 
 const TOKEN_KEY = 'crm:token';
 
@@ -34,6 +35,13 @@ async function request<T>(
   headers.set('Content-Type', 'application/json');
   const token = getToken();
   if (token) headers.set('Authorization', `Bearer ${token}`);
+  // P3-i18n (2026-07-02): override the browser's Accept-Language with
+  // the i18next-active locale so the API's localeContext picks up the
+  // user's UI choice (not their OS locale). i18next initialises `en`
+  // by default before initI18n() runs, so this is always safe to read.
+  if (i18n && typeof i18n.language === 'string') {
+    headers.set('Accept-Language', i18n.language);
+  }
 
   const res = await fetch(apiUrl(path), {
     ...options,
@@ -46,10 +54,7 @@ async function request<T>(
     : await res.text().catch(() => null);
 
   if (!res.ok) {
-    const message =
-      (body && typeof body === 'object' && 'error' in body
-        ? (body as { error: string }).error
-        : null) ?? `Request failed (${res.status})`;
+    const message = extractErrorMessage(body, res.status);
     if (res.status === 401) {
       setToken(null);
       // Avoid redirect loop
@@ -71,12 +76,72 @@ export const api = {
   delete: <T>(p: string) => request<T>(p, { method: 'DELETE' }),
 };
 
+/**
+ * Pull the best human-readable message out of a server response body.
+ *
+ * Three shapes we accept (in priority order):
+ *   1. `{ error: "Not found" }` — our localized wire format (the
+ *      overwhelming majority of endpoints emit this).
+ *   2. Elysia's default body-validation 422 envelope:
+ *      `{ type: "validation", on: "body", property: "/role",
+ *         message: "Expected required property", summary: "...",
+ *         errors: [...], found: {...} }`.
+ *      Elysia 1.4's schema layer writes this DIRECTLY in the body
+ *      validator step, bypassing our app-level `onError`. So it has
+ *      no localized `error` field — we surface the `summary` (or
+ *      first `errors[].summary`, or `message`) so the user at
+ *      least sees WHICH field failed, instead of the opaque
+ *      `Request failed (422)`.
+ *   3. Fallback: `Request failed (<status>)`.
+ *
+ * Note: the locale-aware `VALIDATION_FAILED` message ("Validation
+ * failed" / "驗證失敗" / "验证失败") is rendered by the toast layer
+ * (calls `t('errors.validationFailed')`); this function only ensures
+ * the toast body has a useful field hint instead of just the status.
+ */
+function extractErrorMessage(body: unknown, status: number): string {
+  // Shape 1: localized wire format
+  if (body && typeof body === 'object' && 'error' in body) {
+    const err = (body as { error: unknown }).error;
+    if (typeof err === 'string' && err.length > 0) return err;
+  }
+  // Shape 2: Elysia validation envelope
+  if (body && typeof body === 'object' && (body as { type?: unknown }).type === 'validation') {
+    const env = body as {
+      summary?: string;
+      message?: string;
+      property?: string;
+      errors?: Array<{ summary?: string; message?: string; property?: string; path?: string }>;
+    };
+    const first = env.errors?.[0];
+    const hint =
+      first?.summary ?? first?.message ?? env.summary ?? env.message ?? null;
+    const field = first?.path ?? first?.property ?? env.property ?? null;
+    if (field && hint) return `${field}: ${hint}`;
+    if (hint) return hint;
+    if (field) return `Validation failed on ${field}`;
+    return 'Validation failed';
+  }
+  return `Request failed (${status})`;
+}
+
 // ---------- Auth ----------
 export interface AuthUser {
   id: string;
   email: string;
   name: string;
   role: 'ADMIN' | 'SALES' | 'VIEWER';
+  /**
+   * P3-i18n (2026-07-02): persisted user preference ('en' | 'zh-TW'
+   * | 'zh-CN'). The API returns the DB column on /auth/login and
+   * /auth/me; the auth store mirrors it to i18n.changeLanguage() on
+   * login + bootstrap so the UI matches the user's saved choice.
+   * Optional for back-compat with any cached AuthUser JSON that
+   * predated the migration.
+   */
+  locale?: 'en' | 'zh-TW' | 'zh-CN';
+  /** Wire format already includes this; promoted from optional to make it usable. */
+  avatarUrl?: string | null;
 }
 
 export const authApi = {
@@ -86,6 +151,16 @@ export const authApi = {
       body: JSON.stringify({ email, password }),
     }),
   me: () => request<AuthUser>('/auth/me'),
+  /**
+   * P3-i18n: persist a UI preference (currently just `locale`).
+   * Returns the updated AuthUser so the caller can replace its
+   * store entry without a second /me call.
+   */
+  updatePreferences: (prefs: { locale: 'en' | 'zh-TW' | 'zh-CN' }) =>
+    request<{ user: AuthUser; message: string }>('/auth/me/preferences', {
+      method: 'PATCH',
+      body: JSON.stringify(prefs),
+    }),
 };
 
 // ---------- Companies ----------

@@ -13,6 +13,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { Loader2, Plus, Trash2, X, Package, Briefcase, ChevronDown, Wrench } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input, Textarea } from '@/components/ui/input';
@@ -187,6 +188,7 @@ function mopRateFromConfig(
 export function QuotationBuilder({
   existing, initialDealId, initialCompanyId, defaultCompanyId, defaultDealId, onSaved, onCancel,
 }: QuotationBuilderProps) {
+  const { t } = useTranslation();
   const isEdit = !!existing;
 
   // For create mode, prefer `defaultCompanyId` (the newer inline-modal
@@ -267,7 +269,7 @@ export function QuotationBuilder({
           setServices(s);
         }
       } catch (err) {
-        if (alive) setError(`載入 dropdown 失敗: ${(err as Error).message}`);
+        if (alive) setError(t('quotation.loadFailed', { message: (err as Error).message }));
       } finally {
         if (alive) setLoadingRefs(false);
       }
@@ -512,9 +514,9 @@ const SERVICE_SKU = 'Barco-PS';
   }
 
   function validate(): string | null {
-    if (!companyId) return '選個客戶先';
+    if (!companyId) return t('quotation.validation.selectCustomer');
     const validLines = lines.filter((l) => l.name.trim() && Number(l.quantity) > 0 && Number(l.unitPrice) >= 0);
-    if (validLines.length === 0) return '至少要有一個 line item';
+    if (validLines.length === 0) return t('quotation.validation.needLineItem');
     return null;
   }
 
@@ -629,7 +631,7 @@ const SERVICE_SKU = 'Barco-PS';
   }
 
   if (loadingRefs) {
-    return <p className="text-sm text-muted-foreground p-4">載入公司 / 產品 / 服務...</p>;
+    return <p className="text-sm text-muted-foreground p-4">{t('quotation.loading')}</p>;
   }
 
   return (
@@ -637,16 +639,16 @@ const SERVICE_SKU = 'Barco-PS';
       {/* Header fields */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-1.5">
-          <Label htmlFor="company">客戶 *</Label>
+          <Label htmlFor="company">{t('quotation.header.customer')}</Label>
           <CompanyAutocomplete
             value={companyId}
             onChange={setCompanyId}
             label=""
-            placeholder="搜尋客戶名稱..."
+            placeholder={t('quotation.header.customerPlaceholder')}
           />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="deal">關聯 Deal (可選)</Label>
+          <Label htmlFor="deal">{t('quotation.header.deal')}</Label>
           {/* RG-2026-06-07-DEAL-AUTOCOMPLETE: was a plain <Select>
               backed by a useEffect-fetched `companyDeals` array.
               Replaced with <DealAutocomplete> so Sales can also
@@ -663,15 +665,15 @@ const SERVICE_SKU = 'Barco-PS';
           />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="title">標題</Label>
-          <Input id="title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="例: Q2 系統升級報價" />
+          <Label htmlFor="title">{t('quotation.header.title')}</Label>
+          <Input id="title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t('quotation.header.titlePlaceholder')} />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="valid">有效至</Label>
+          <Label htmlFor="valid">{t('quotation.header.validUntil')}</Label>
           <Input id="valid" type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} />
         </div>
         <div className="space-y-1.5 md:col-span-2">
-          <Label htmlFor="tax">稅率 (%)</Label>
+          <Label htmlFor="tax">{t('quotation.header.taxRate')}</Label>
           <Input
             id="tax"
             type="number"
@@ -695,7 +697,7 @@ const SERVICE_SKU = 'Barco-PS';
             row. The SENT lock means edits to a SENT quote's currency
             return 409 — the server enforces that path. */}
         <div className="space-y-1.5 md:col-span-2">
-          <Label htmlFor="currency">出單貨幣</Label>
+          <Label htmlFor="currency">{t('quotation.header.currency')}</Label>
           <Select
             id="currency"
             className="max-w-xs"
@@ -705,14 +707,14 @@ const SERVICE_SKU = 'Barco-PS';
               setCurrency(e.target.value as 'RMB' | 'HKD' | 'MOP');
             }}
           >
-            <option value="RMB">人民幣 (RMB)</option>
-            <option value="HKD">港幣 (HKD)</option>
-            <option value="MOP">澳門幣 (MOP)</option>
+            <option value="RMB">{t('quotation.currencies.RMB')}</option>
+            <option value="HKD">{t('quotation.currencies.HKD')}</option>
+            <option value="MOP">{t('quotation.currencies.MOP')}</option>
           </Select>
-          <p className="text-[11px] text-muted-foreground">
-            新建報價預設跟 <a href="/settings/currency" className="underline">系統設定</a>;
-            HKD 等值會在儲存時寫入快照。
-          </p>
+          <p
+            className="text-[11px] text-muted-foreground"
+            dangerouslySetInnerHTML={{ __html: t('quotation.header.currencyHelp') }}
+          />
         </div>
         {/* 2026-06-26: 銷售員 picker. Pre-fills from existing.salesRepId
             in edit mode; null in create mode (the backend defaults to
@@ -730,13 +732,13 @@ const SERVICE_SKU = 'Barco-PS';
       {/* Line items */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-          <CardTitle className="text-base">Line Items</CardTitle>
+          <CardTitle className="text-base">{t('quotation.lineItems.title')}</CardTitle>
           <div className="flex gap-2">
             <Button size="sm" variant="outline" onClick={() => addLine('PRODUCT')}>
-              <Plus className="h-3 w-3 mr-1" /> 加 Product
+              <Plus className="h-3 w-3 mr-1" /> {t('quotation.lineItems.addProduct')}
             </Button>
             <Button size="sm" variant="outline" onClick={() => addLine('SERVICE')}>
-              <Plus className="h-3 w-3 mr-1" /> 加 Service
+              <Plus className="h-3 w-3 mr-1" /> {t('quotation.lineItems.addService')}
             </Button>
             {/* 2026-07-01 (US-MAINT-1): "+ 維護費用" button.
                 - Computes fee = current draft subtotal × rate / 100.
@@ -756,11 +758,11 @@ const SERVICE_SKU = 'Barco-PS';
               disabled={!maintenanceFeeCfg || hasMaintenanceFee}
               title={
                 hasMaintenanceFee
-                  ? '此 Quotation 已有維護費用 line item;請先刪除再按'
-                  : `加入一行維護費用 (= subtotal × ${maintenanceFeeCfg?.rate ?? 20}% / 100)`
+                  ? t('quotation.lineItems.maintenanceDisabledTitle')
+                  : t('quotation.lineItems.maintenanceTitle', { rate: maintenanceFeeCfg?.rate ?? 20 })
               }
             >
-              <Wrench className="h-3 w-3 mr-1" /> + 維護費用
+              <Wrench className="h-3 w-3 mr-1" /> {t('quotation.lineItems.addMaintenance')}
             </Button>
           </div>
         </CardHeader>
@@ -791,13 +793,13 @@ const SERVICE_SKU = 'Barco-PS';
 
       {/* Notes */}
       <div className="space-y-1.5">
-        <Label htmlFor="notes">備註</Label>
+        <Label htmlFor="notes">{t('quotation.notes.label')}</Label>
         <Textarea
           id="notes"
           rows={3}
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
-          placeholder="額外條款、安裝時程、聯絡人等..."
+          placeholder={t('quotation.notes.placeholder')}
         />
       </div>
 
@@ -805,15 +807,15 @@ const SERVICE_SKU = 'Barco-PS';
       <Card>
         <CardContent className="p-4 space-y-1 text-sm">
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Subtotal ({currency})</span>
+            <span className="text-muted-foreground">{t('quotation.totals.subtotal', { currency })}</span>
             <span className="tabular-nums">{formatCurrency(subtotal, currency)}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Tax ({taxRate}%)</span>
+            <span className="text-muted-foreground">{t('quotation.totals.tax', { rate: taxRate })}</span>
             <span className="tabular-nums">{formatCurrency(taxAmount, currency)}</span>
           </div>
           <div className="flex justify-between border-t pt-2 mt-2 text-base font-bold">
-            <span>Total ({currency})</span>
+            <span>{t('quotation.totals.total', { currency })}</span>
             <span className="tabular-nums">{formatCurrency(total, currency)}</span>
           </div>
           {/* P2 multi-currency (2026-06-29): HKD equivalent preview.
@@ -828,9 +830,9 @@ const SERVICE_SKU = 'Barco-PS';
             return (
               <div
                 className="flex justify-between text-xs text-muted-foreground pt-1"
-                title="使用 /settings/currency 的當前匯率計算。儲存後此數字會以當下的匯率快照寫入該 row,後續修改系統匯率不會重新計算。"
+                title={t('quotation.totals.equivalentTooltip')}
               >
-                <span>≈ HKD (匯率 {rate.toFixed(4)})</span>
+                <span>{t('quotation.totals.equivalentHKD', { rate: rate.toFixed(4) })}</span>
                 <span className="tabular-nums">{formatCurrency(totalHKD, 'HKD')}</span>
               </div>
             );
@@ -849,9 +851,9 @@ const SERVICE_SKU = 'Barco-PS';
             return (
               <div
                 className="flex justify-between text-xs text-muted-foreground pt-1"
-                title="使用 /settings/currency 的當前匯率計算。儲存後此數字會以當下的匯率快照寫入該 row,後續修改系統匯率不會重新計算。"
+                title={t('quotation.totals.equivalentTooltip')}
               >
-                <span>≈ MOP (匯率 {rate.toFixed(4)})</span>
+                <span>{t('quotation.totals.equivalentMOP', { rate: rate.toFixed(4) })}</span>
                 <span className="tabular-nums">{formatCurrency(totalMOP, 'MOP')}</span>
               </div>
             );
@@ -862,13 +864,13 @@ const SERVICE_SKU = 'Barco-PS';
               estimate; we surface a hint when that's the case. */}
           <div className="flex justify-between text-sm pt-1 mt-1 border-t">
             <span className="text-emerald-700 dark:text-emerald-400 font-medium">
-              Total GP
+              {t('quotation.totals.gp')}
               {totalGpUnknownService > 0 && (
                 <span
                   className="ml-1 text-[10px] text-muted-foreground font-normal"
-                  title="Service line cost 未知 (server 才有),儲存後先見到實際 GP"
+                  title={t('quotation.totals.gpTooltip')}
                 >
-                  (未計 {totalGpUnknownService} 條 service)
+                  {t('quotation.totals.gpUnknownService', { count: totalGpUnknownService })}
                 </span>
               )}
             </span>
@@ -887,16 +889,16 @@ const SERVICE_SKU = 'Barco-PS';
 
       <div className="flex justify-end gap-2">
         <Button variant="outline" onClick={onCancel} disabled={saving}>
-          取消
+          {t('quotation.actions.cancel')}
         </Button>
         <Button onClick={handleSave} disabled={saving}>
           {saving ? (
             <>
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              儲存中...
+              {t('quotation.actions.saving')}
             </>
           ) : (
-            <>{isEdit ? '儲存改動' : '建立報價'}</>
+            <>{isEdit ? t('quotation.actions.saveChanges') : t('quotation.actions.create')}</>
           )}
         </Button>
       </div>
@@ -935,6 +937,7 @@ function LineItemRow({
   onCreateService: (s: Service) => void;
   currency: 'RMB' | 'HKD' | 'MOP';
 }) {
+  const { t } = useTranslation();
   const isProduct = line.itemType === 'PRODUCT';
   return (
     <div className="p-3 rounded border bg-muted/20 space-y-2">
@@ -948,7 +951,7 @@ function LineItemRow({
               isProduct ? 'bg-background shadow font-medium' : 'text-muted-foreground'
             }`}
           >
-            <Package className="h-3 w-3" /> Product
+            <Package className="h-3 w-3" /> {t('quotation.lineItems.type.product')}
           </button>
           <button
             type="button"
@@ -957,7 +960,7 @@ function LineItemRow({
               !isProduct ? 'bg-background shadow font-medium' : 'text-muted-foreground'
             }`}
           >
-            <Briefcase className="h-3 w-3" /> Service
+            <Briefcase className="h-3 w-3" /> {t('quotation.lineItems.type.service')}
           </button>
         </div>
         <Button
@@ -966,7 +969,7 @@ function LineItemRow({
           size="icon"
           onClick={onRemove}
           disabled={!canRemove}
-          aria-label="移除"
+          aria-label={t('quotation.lineItems.remove')}
         >
           <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
         </Button>
@@ -980,7 +983,7 @@ function LineItemRow({
             value={line.productId}
             onChange={onApplyProduct}
             onCreate={onCreateProduct}
-            label="產品"
+            label={t('quotation.lineItems.type.product')}
             // P1-10: snapshot wins over the live catalogue so a deleted
             // or renamed product doesn't blank the line or change what
             // the customer was quoted.
@@ -994,21 +997,21 @@ function LineItemRow({
             value={line.serviceId}
             onChange={onApplyService}
             onCreate={onCreateService}
-            label="服務"
+            label={t('quotation.lineItems.type.service')}
             // P1-10: see ProductAutocomplete above.
             snapshotName={line.name}
           />
         )}
         <div className="col-span-12 md:col-span-3 space-y-1">
-          <Label className="text-xs text-muted-foreground">名稱 *</Label>
+          <Label className="text-xs text-muted-foreground">{t('quotation.lineItems.fields.name')}</Label>
           <Input
             value={line.name}
             onChange={(e) => onChange({ name: e.target.value })}
-            placeholder="Item name"
+            placeholder={t('quotation.lineItems.fields.namePlaceholder')}
           />
         </div>
         <div className="col-span-4 md:col-span-1 space-y-1">
-          <Label className="text-xs text-muted-foreground">數量</Label>
+          <Label className="text-xs text-muted-foreground">{t('quotation.lineItems.fields.quantity')}</Label>
           <Input
             type="number"
             min={0}
@@ -1018,7 +1021,7 @@ function LineItemRow({
           />
         </div>
         <div className="col-span-4 md:col-span-2 space-y-1">
-          <Label className="text-xs text-muted-foreground">單價</Label>
+          <Label className="text-xs text-muted-foreground">{t('quotation.lineItems.fields.unitPrice')}</Label>
           <Input
             type="number"
             min={0}
@@ -1028,7 +1031,7 @@ function LineItemRow({
           />
         </div>
         <div className="col-span-3 md:col-span-1 space-y-1">
-          <Label className="text-xs text-muted-foreground">折扣%</Label>
+          <Label className="text-xs text-muted-foreground">{t('quotation.lineItems.fields.discount')}</Label>
           <Input
             type="number"
             min={0}
@@ -1070,7 +1073,7 @@ function LineItemRow({
       {!isProduct && line.manDaySnapshot && line.manDaySnapshot.length > 0 && (
         <details className="text-xs">
           <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
-            SOW · {line.manDaySnapshot.length} 個 role breakdown
+            {t('quotation.lineItems.sow', { count: line.manDaySnapshot.length })}
           </summary>
           <div className="mt-1.5 space-y-0.5 pl-3 border-l-2 border-primary/30">
             {line.manDaySnapshot.map((m, i) => (
@@ -1151,6 +1154,7 @@ function ProductAutocomplete({
   snapshotSku?: string;
   className?: string;
 }) {
+  const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -1195,7 +1199,7 @@ function ProductAutocomplete({
           value={query}
           onChange={(e) => { setQuery(e.target.value); setOpen(true); if (value) onChange(''); }}
           onFocus={() => setOpen(true)}
-          placeholder="搜尋 SKU 或名稱..."
+          placeholder={t('quotation.lineItems.autocomplete.productPlaceholder')}
           data-testid="product-autocomplete-input"
         />
         {/* Day N+1 (P1-10): show a "(已刪除)" badge when the product FK
@@ -1208,13 +1212,13 @@ function ProductAutocomplete({
             data-testid="product-deleted-badge"
             className="absolute -top-1 right-1 text-[10px] px-1.5 py-0"
           >
-            已刪除
+            {t('quotation.lineItems.autocomplete.deletedBadge')}
           </Badge>
         )}
         {open && (
           <div className="absolute z-50 top-full mt-1 left-0 right-0 max-h-60 overflow-y-auto bg-white border border-border rounded shadow-lg">
             {filtered.length === 0 ? (
-              <div className="p-2 text-sm text-muted-foreground text-center">查無資料</div>
+              <div className="p-2 text-sm text-muted-foreground text-center">{t('quotation.lineItems.autocomplete.noResults')}</div>
             ) : (
               filtered.map((p) => (
                 <button
@@ -1237,7 +1241,7 @@ function ProductAutocomplete({
                 onClick={() => { setCreateOpen(true); setOpen(false); }}
                 className="w-full text-left px-2 py-1.5 text-sm text-primary hover:bg-muted rounded flex items-center gap-1"
               >
-                <Plus className="h-3 w-3" /> 新增 Product「{query}」
+                <Plus className="h-3 w-3" /> {t('quotation.lineItems.autocomplete.addProduct', { name: query })}
               </button>
             </div>
           </div>
@@ -1282,6 +1286,7 @@ function ServiceAutocomplete({
   /** Snapshot of the service's name at line creation. */
   snapshotName?: string;
 }) {
+  const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -1322,7 +1327,7 @@ function ServiceAutocomplete({
           value={query}
           onChange={(e) => { setQuery(e.target.value); setOpen(true); if (value) onChange(''); }}
           onFocus={() => setOpen(true)}
-          placeholder="搜尋服務名..."
+          placeholder={t('quotation.lineItems.autocomplete.servicePlaceholder')}
           data-testid="service-autocomplete-input"
         />
         {/* See ProductAutocomplete for context. Snapshot wins; the
@@ -1333,13 +1338,13 @@ function ServiceAutocomplete({
             data-testid="service-deleted-badge"
             className="absolute -top-1 right-1 text-[10px] px-1.5 py-0"
           >
-            已刪除
+            {t('quotation.lineItems.autocomplete.deletedBadge')}
           </Badge>
         )}
         {open && (
           <div className="absolute z-50 top-full mt-1 left-0 right-0 max-h-60 overflow-y-auto bg-white border border-border rounded shadow-lg">
             {filtered.length === 0 ? (
-              <div className="p-2 text-sm text-muted-foreground text-center">查無資料</div>
+              <div className="p-2 text-sm text-muted-foreground text-center">{t('quotation.lineItems.autocomplete.noResults')}</div>
             ) : (
               filtered.map((s) => (
                 <button
@@ -1364,7 +1369,7 @@ function ServiceAutocomplete({
                 onClick={() => { setCreateOpen(true); setOpen(false); }}
                 className="w-full text-left px-2 py-1.5 text-sm text-primary hover:bg-muted rounded flex items-center gap-1"
               >
-                <Plus className="h-3 w-3" /> 新增 Service「{query}」
+                <Plus className="h-3 w-3" /> {t('quotation.lineItems.autocomplete.addService', { name: query })}
               </button>
             </div>
           </div>

@@ -33,6 +33,19 @@ export interface AgentRunInput {
    * completes.
    */
   confirmationController?: ConfirmationController;
+  /**
+   * Optional AbortSignal. When the caller (typically the SSE
+   * route's `request.signal`) aborts — client disconnect, network
+   * drop, explicit cancel — the agent loop throws `AiAbortError`
+   * at the next safe checkpoint so it stops spending LLM tokens
+   * on a stream no one is listening to. The route catches this
+   * error and exits the stream loop without surfacing an error
+   * event to the (now-gone) client.
+   *
+   * If absent, the run continues to completion regardless of
+   * client state — useful for background / eval harnesses.
+   */
+  signal?: AbortSignal;
 }
 
 /**
@@ -102,6 +115,28 @@ export class AiNotConfiguredError extends Error {
   constructor() {
     super('AI Assistant is not configured. Please ask an admin to set it up at /admin/ai-config.');
   }
+}
+
+/**
+ * Thrown by `runAgentStream` when the input signal is aborted.
+ * Mirrors the standard Web `AbortError` shape (name + message) so
+ * callers can `err.name === 'AbortError'` without importing
+ * anything extra. Caught explicitly by the chat route to skip
+ * error-event emission on client disconnect.
+ */
+export class AiAbortError extends Error {
+  constructor() {
+    super('Agent run aborted');
+    this.name = 'AbortError';
+  }
+}
+
+/**
+ * Throw `AiAbortError` if the signal has been aborted. Cheap to
+ * call (one property read); safe to invoke at every yield site.
+ */
+function throwIfAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) throw new AiAbortError();
 }
 
 /**
@@ -255,6 +290,7 @@ export async function* runAgentStream(input: AgentRunInput): AsyncGenerator<Stre
       if (delta.content) {
         if (!assistantMsg.content) assistantMsg.content = '';
         assistantMsg.content += delta.content;
+        throwIfAborted(input.signal);
         yield { type: 'token', delta: delta.content };
       }
 
@@ -323,6 +359,7 @@ export async function* runAgentStream(input: AgentRunInput): AsyncGenerator<Stre
       const toolName = tc.function.name;
       const parsedArgs = tc._parsedArgs;
 
+      throwIfAborted(input.signal);
       yield { type: 'tool_start', name: toolName, args: parsedArgs };
 
       const tool = toolRegistry.find((t) => t.name === toolName);
@@ -354,6 +391,7 @@ export async function* runAgentStream(input: AgentRunInput): AsyncGenerator<Stre
         const confirmationId = `cfm_${Date.now().toString(36)}_${Math.random()
           .toString(36)
           .slice(2, 8)}`;
+        throwIfAborted(input.signal);
         yield {
           type: 'confirmation_required',
           id: confirmationId,
@@ -371,6 +409,10 @@ export async function* runAgentStream(input: AgentRunInput): AsyncGenerator<Stre
             );
           } catch (err) {
             // Disconnect / timeout: auto-deny so the run completes.
+            // If the abort signal fired (the controller's awaiting
+            // promise rejected because the SSE route tore down),
+            // re-throw so the loop exits cleanly.
+            if (input.signal?.aborted) throw new AiAbortError();
             userResponse = { approved: false, reason: 'controller error' };
           }
         } else {
@@ -393,6 +435,7 @@ export async function* runAgentStream(input: AgentRunInput): AsyncGenerator<Stre
             approved: false,
             reason: userResponse.reason,
           }).catch((e) => console.error('[ai] audit log failed:', e));
+          throwIfAborted(input.signal);
           yield { type: 'tool_end', name: toolName, result, error: toolError };
           // Persist the synthetic denial result and feed back to
           // the LLM so it can explain to the user.
@@ -435,6 +478,7 @@ export async function* runAgentStream(input: AgentRunInput): AsyncGenerator<Stre
         }
       }
 
+      throwIfAborted(input.signal);
       yield { type: 'tool_end', name: toolName, result, error: toolError };
 
       // Persist tool call + tool result as separate messages.
@@ -484,6 +528,7 @@ export async function* runAgentStream(input: AgentRunInput): AsyncGenerator<Stre
     data: { updatedAt: new Date() },
   });
 
+  throwIfAborted(input.signal);
   yield { type: 'done', conversationId, usage: totalUsage };
 }
 

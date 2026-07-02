@@ -1,0 +1,109 @@
+{
+  "chat": {
+    "title": "AI Assistant",
+    "subtitle": "Ask anything about your CRM data",
+    "placeholder": "Ask about deals, quotations, companies…",
+    "send": "Send",
+    "sending": "Sending…",
+    "newConversation": "New conversation",
+    "empty": "Start a new conversation by typing your question above.",
+    "thinking": "Thinking…",
+    "streaming": "Streaming…",
+    "stop": "Stop",
+    "copied": "Copied to clipboard",
+    "copy": "Copy",
+    "regenerate": "Regenerate",
+    "regenerating": "Regenerating…",
+    "executing": "Executing…",
+    "untitled": "Untitled conversation",
+    "emptyConversations": "No conversations yet",
+    "deleteConfirm": "Delete this conversation?",
+    "toolFailed": "Failed",
+    "welcomeMessage": "Operate your CRM with natural language — look up customers, create quotations, log activities, view analytics.",
+    "welcomeTitle": "CRM AI Assistant",
+    "messageCount_one": "{{count}} message",
+    "messageCount_other": "{{count}} messages",
+    "messageCountSeparator": " · ",
+    "examplePrompts": {
+      "topCustomers": "Which 5 customers contribute the most revenue?",
+      "findCompany": "Find company \"ABC\"",
+      "createQuotation": "Create a quotation AC01 x 10 for the first customer",
+      "logCall": "Log a call with ABC Company about their Q4 plans"
+    },
+    "sources_one": "{{count}} source",
+    "sources_other": "{{count}} sources",
+    "errors": {
+      "sendFailed": "Failed to send message",
+      "aborted": "Request was cancelled",
+      "rateLimited": "You're sending messages too quickly. Please wait a moment."
+    },
+    "role": {
+      "user": "You",
+      "assistant": "Assistant",
+      "system": "System"
+    }
+  },
+  "config": {
+    "title": "AI Configuration",
+    "subtitle": "Manage AI provider, model and access controls",
+    "provider": "Provider",
+    "model": "Model",
+    "apiKey": "API Key",
+    "apiKeyPlaceholder": "sk-…",
+    "apiKeyHint": "Stored encrypted at rest",
+    "systemPrompt": "System prompt",
+    "systemPromptPlaceholder": "You are a helpful CRM assistant…",
+    "allowedRoles": "Allowed roles",
+    "save": "Save",
+    "saving": "Saving…",
+    "saved": "Saved",
+    "saveFailed": "Couldn't save AI config",
+    "test": "Test connection",
+    "testing": "Testing…",
+    "testSuccess": "Connection succeeded",
+    "testFailed": "Connection failed: {{message}}",
+    "providers": {
+      "openai": "OpenAI",
+      "anthropic": "Anthropic",
+      "google": "Google AI",
+      "custom": "Custom endpoint"
+    },
+    "advanced": {
+      "title": "Advanced",
+      "temperature": "Temperature",
+      "maxTokens": "Max tokens",
+      "frequencyPenalty": "Frequency penalty",
+      "presencePenalty": "Presence penalty"
+    },
+    "fields": {
+      "endpointUrl": "Endpoint URL *",
+      "endpointUrlPlaceholder": "https://api.openai.com/v1",
+      "endpointUrlHint": "Must be an http(s) URL. e.g. OpenAI = <openai>{{openaiUrl}}</openai>, OpenRouter = <openrouter>{{openrouterUrl}}</openrouter>, self-hosted vLLM = <vllm>{{vllmUrl}}</vllm>.",
+      "apiKeyCurrentHint": "Current key: {{mask}} (enter a new key to overwrite)",
+      "apiKeyPlaceholder": "Enter API key",
+      "apiKeyHint": "Must be re-entered on every save — never pre-filled or persisted in the client.",
+      "modelName": "Model Name *",
+      "modelNamePlaceholder": "gpt-4o",
+      "modelNameHint": "Model identifier supported by your provider. Common: gpt-4o, gpt-4o-mini, claude-3-5-sonnet-20241022, llama-3.1-70b.",
+      "systemPromptLabel": "System Prompt (optional)",
+      "systemPromptPlaceholder": "Leave blank to use the default prompt in packages/ai/src/prompts.ts.",
+      "systemPromptHint": "Overrides the default system prompt. Supports multi-line; blank uses default.",
+      "showKey": "Show API key",
+      "hideKey": "Hide API key",
+      "adminOnly": "This page is for administrators only.",
+      "statusLabel": "Status:",
+      "configured": "Configured",
+      "notConfigured": "Not configured",
+      "lastUpdated": "Last updated {{date}}",
+      "lastUpdatedBy": "Last updated {{date}} · by {{name}}",
+      "latency": "({{ms}}ms)"
+    },
+    "providerCard": {
+      "title": "LLM Provider",
+      "description": "Use any OpenAI-compatible endpoint — supports OpenAI, OpenRouter, Together, self-hosted vLLM / Ollama, etc. The API key is encrypted at rest with AES-256-GCM; the GET endpoint returns only a masked version."
+    },
+    "errors": {
+      "saveFailedWithMessage": "Save failed: {{message}}"
+    }
+  }
+}

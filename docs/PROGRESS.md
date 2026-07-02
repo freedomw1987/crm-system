@@ -531,3 +531,163 @@ documented in `REGRESSION-GUARD.md` (16 → 25 entries total):
   helpers
 - `b7ce018` test(t4): regression tests for the t3 helper ports
 
+---
+
+## Day 21 — Chat SSE controller-closed fix (RG-031)
+
+### Symptom
+
+When a user drafts a quotation via the AI Assistant and closes
+the browser tab / network drops mid-stream, the backend logs:
+
+```
+[chat] Agent error: 144 |             userId,
+145 |             message,
+...
+149 |             controller.enqueue(encoder.encode(sseFrame(event)));
+
+    TypeError: Invalid state: Controller is already closed
+     code: "ERR_INVALID_STATE"
+      at start (/app/apps/api/src/routes/chat.ts:149:24)
+```
+
+The runtime auto-closes the SSE controller when the response
+stream is torn down, but the agent's `for await` loop keeps
+yielding events. Each `controller.enqueue(...)` after that
+throws. The catch block tried to enqueue an error event (also
+threw), then `finally { controller.close() }` ran on an
+already-closed controller (threw again) — all logged as
+unhandled.
+
+### Fix (two layers)
+
+1. **Safe-stream wrapper** — new helper
+   `makeSafeStreamController()` in
+   `apps/api/src/lib/chat-sse.ts`. Tracks a `closed` flag and
+   short-circuits `enqueue` / `close` once the underlying
+   controller is torn down. Returns `{ ok, closed }` instead
+   of throwing. The route breaks out of the loop on `ok=false`
+   so no further events are pushed to a dead stream.
+
+2. **AbortSignal propagation** — `runAgentStream` now accepts
+   `signal?: AbortSignal`. The route passes `request.signal`
+   (the standard Web API abort on client disconnect). At every
+   yield site + inside the confirmation-required wait, the
+   agent calls `throwIfAborted()` which throws a new
+   `AiAbortError` (name = `'AbortError'` so callers can branch
+   on the standard contract). The agent stops at the next
+   checkpoint instead of burning LLM tokens on a gone client.
+
+The route catches `AiAbortError` explicitly and closes the
+stream silently — no error event surfaces to the (now-gone)
+client.
+
+### Files touched
+
+- `apps/api/src/lib/chat-sse.ts` — new `makeSafeStreamController`
+- `apps/api/src/routes/chat.ts` — wrap controller + pass signal +
+  catch `AiAbortError`
+- `packages/ai/src/index.ts` — `signal?: AbortSignal` on
+  `AgentRunInput`; new `AiAbortError` class; `throwIfAborted`
+  helper; 8 yield-site checks + confirmation-required check
+- `apps/api/src/lib/__tests__/chat-sse.test.ts` — 6 new
+  unit tests for `makeSafeStreamController`
+- `packages/ai/src/__tests__/abort.test.ts` — new file, 4 tests
+  pinning the `AiAbortError` contract
+
+### Test counts (after)
+
+- `apps/api`: 221 / 0 (was 215 — +6 for safe-controller)
+- `packages/ai`: 27 / 0 (was 23 — +4 for AbortError)
+- `apps/web`: 34 / 0 (untouched)
+- typecheck: clean
+
+### RG entry
+
+See `REGRESSION-GUARD.md` → **RG-031-CHAT-SSE-CONTROLLER-CLOSED**.
+Pinning the safe-enqueue + abort-signal pattern so a future
+refactor doesn't reintroduce the unhandled TypeError.
+
+### Pending follow-up (deferred)
+
+- The agent loop's LLM `for await (const chunk of stream)` does
+  not currently abort mid-token-stream — it reads whatever the
+  OpenAI SDK has buffered. Adding a per-chunk `throwIfAborted`
+  there would yield ~10 ms faster abort response at the cost
+  of an extra property read per token. Marked 🟢 MONITORED.
+
+---
+
+## Day 21 — i18n Phase 1: user-selectable UI language (en / zh-TW / zh-CN)
+
+### Scope
+
+UI chrome (sidebar, login, dashboard) + API error message localization
+across three locales — English (default), Taiwan Traditional Chinese,
+Simplified Chinese. Persistence target: `users.locale` column on the
+DB (per-user, survives across devices). `localStorage['crm:locale']`
+caches the pre-login choice.
+
+### Plan
+
+See `/Users/davidchu/.claude/plans/glistening-drifting-mountain.md`
+for the full 4-phase plan; Phase 1 (this entry) covers
+infrastructure + chrome + the new `/settings/account` tab.
+
+### Files added / changed
+
+**New (api):**
+- `apps/api/src/lib/i18n.ts` — `tApi(locale, key, vars?)`, `parseAcceptLanguage`.
+- `apps/api/src/lib/api-errors.{ts,en.ts,zh-TW.ts,zh-CN.ts}` — error catalog (en is canonical).
+- `apps/api/src/middleware/locale.ts` — derive `ctx.locale` from `users.locale` → `Accept-Language` → `en`.
+- `packages/shared/src/i18n.ts` — `SUPPORTED_LOCALES`, `SupportedLocale`, `isSupportedLocale`.
+
+**Changed (api):**
+- `apps/api/src/index.ts` — mounts `localeContext`; localized global `onError`.
+- `apps/api/src/routes/auth.ts` — `/login` and `/me` now return `locale`; new `PATCH /auth/me/preferences` endpoint; auth error strings go through `tApi()`.
+- `apps/api/src/lib/password-policy.ts` — returns translation keys (`PasswordPolicyErrorKey`), translated by the caller.
+- `packages/db/prisma/schema.prisma` — added `locale String @default("en")` to User.
+- `packages/db/prisma/migrations/20260702000000_p3_user_locale/` — DDL.
+
+**New (web):**
+- `apps/web/src/i18n/{config,detector,index,LocaleContext,LanguageSwitcher}.ts(x)`.
+- `apps/web/src/locales/{en,zh-TW,zh-CN}/{common,nav,auth,role,status,errors,dashboard,settings}.json`.
+- `apps/web/src/components/{status-badge,role-badge}.tsx`.
+- `apps/web/src/pages/settings-account.tsx`.
+- `apps/web/src/i18n/__tests__/catalog-completeness.test.ts`.
+
+**Changed (web):**
+- `apps/web/src/main.tsx` — `initI18n()` + `<I18nextProvider>`.
+- `apps/web/src/App.tsx` — wraps with `<LocaleProvider>`; registers `/settings/account`.
+- `apps/web/src/lib/api.ts` — `Accept-Language: <i18n.language>` header; `AuthUser.locale`; `updatePreferences()`.
+- `apps/web/src/lib/auth.ts` — sync i18n on login/bootstrap; new `setLocale()` action.
+- `apps/web/src/components/{layout/app-layout,settings-layout}.tsx` — translated.
+- `apps/web/src/pages/{login,dashboard}.tsx` — translated.
+
+**Tooling:**
+- `scripts/check-i18n.ts` — lint guard: fails CI if any non-locale source file contains user-facing CJK.
+
+### Verification
+
+- `bun run typecheck` — clean across all 4 packages (`@crm/ai`, `@crm/api`, `@crm/shared`, `@crm/web`).
+- `bun run test` — 261 pass / 0 fail (221 API + 40 web incl. 6 new catalog-completeness tests).
+- `docker compose exec api sh /tmp/i18n-smoke-test.sh` — all 10 steps green:
+  - login returns `{ user: { ..., locale: "en" } }`
+  - `/auth/me` includes `locale`
+  - `PATCH /auth/me/preferences { locale: "zh-TW" }` → persists; `/me` reflects
+  - same for `zh-CN` and reset to `en`
+  - `PATCH { locale: "de" }` → 422 (Elysia zod rejects first)
+  - bad login with `Accept-Language: zh-TW` → `{ "error": "帳號或密碼錯誤" }`
+  - same for `zh-CN` → `账号或密码错误`
+  - same for `en` → `Invalid credentials`
+- Web proxy chain (`localhost/api/...`) verified end-to-end — same three locales propagate correctly through nginx → api.
+- `bun scripts/check-i18n.ts` — Phase-1 files (`app-layout`, `login`, `dashboard`, `settings-account`, `App.tsx`, `main.tsx`, `i18n/*`, `lib/auth.ts`) report zero hits. The 680 hits are all in components/pages scheduled for Phases 2-4.
+
+### Pending follow-up (deferred)
+
+- **Phase 2**: high-traffic CRUD pages (companies, deals, quotations + their detail pages + builder).
+- **Phase 3**: admin + AI (settings tabs beyond Account, users, roles, ai-chat, ai-config, audit).
+- **Phase 4**: products, services, contacts + remaining components + the residual ~150 API error sites across `routes/*.ts`.
+- The lint guard is now in place — every PR after today that introduces a stray CJK string will trip CI until it's moved to a locale catalog.
+- The `SettingsAccountPage` Save button calls `useAuth().setLocale()`, which is optimistic — if `PATCH /auth/me/preferences` fails the local swap stays (next `bootstrap()` reconciles). A future enhancement could add a banner for the failure case.
+

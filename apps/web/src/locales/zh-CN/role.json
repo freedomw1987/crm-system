@@ -1,0 +1,65 @@
+{
+  "ADMIN": "管理员",
+  "SALES": "业务员",
+  "VIEWER": "查看者",
+  "title": "角色管理",
+  "subtitle": "管理系统角色与权限 (RBAC)",
+  "subtitleCount_one": "{{count}} 个角色",
+  "subtitleCount_other": "{{count}} 个角色",
+  "newRole": "新增自订角色",
+  "loading": "加载中…",
+  "empty": "尚未建立任何角色",
+  "systemBadge": "System",
+  "system": "系统",
+  "editPermissions": "编辑权限",
+  "deleteRole": "删除角色",
+  "deleteConfirm": "确定删除角色「{{name}}」?",
+  "permissionCount_one": "{{granted}} / {{total}} 个权限",
+  "permissionCount_other": "{{granted}} / {{total}} 个权限",
+  "userCount_one": "{{count}} 个用户",
+  "userCount_other": "{{count}} 个用户",
+  "dialog": {
+    "createTitle": "新增自订角色",
+    "editTitle": "编辑角色",
+    "name": "角色名称 *",
+    "namePlaceholder": "例如:Senior Sales",
+    "description": "描述",
+    "permissions": "权限",
+    "permissionsHint": "勾选该角色可以执行的动作",
+    "cancel": "取消",
+    "create": "建立",
+    "creating": "建立中…",
+    "save": "保存",
+    "saving": "保存中…",
+    "matrix": {
+      "selectedCount": "权限 ({{selected}} / {{total}})",
+      "selectAll": "全选",
+      "someSelected": "部分"
+    },
+    "errors": {
+      "nameRequired": "请填角色名称",
+      "saveFailed": "保存失败：{{message}}",
+      "createFailed": "建立失败：{{message}}"
+    }
+  },
+  "matrix": {
+    "group": {
+      "user": { "label": "用户管理", "description": "管理系统用户、角色、权限" },
+      "role": { "label": "角色", "description": "管理角色 + 权限矩阵" },
+      "audit": { "label": "审计日志", "description": "查看系统操作记录" },
+      "settings": { "label": "系统设置", "description": "税率、货币、维护费用、Pipeline 等全域设定" },
+      "aiConfig": { "label": "AI 配置", "description": "管理 LLM 连接 (endpoint、API key、model)" },
+      "manDayRole": { "label": "人天角色", "description": "人天角色 catalogue(Senior Engineer 等)" },
+      "region": { "label": "地区", "description": "地区目录 (HK / MO / CN / OTHER)" },
+      "company": { "label": "公司", "description": "客户/公司资料" },
+      "contact": { "label": "联系人", "description": "客户联系人" },
+      "product": { "label": "产品", "description": "产品目录" },
+      "service": { "label": "服务", "description": "服务目录 (SOW + 人天)" },
+      "quotation": { "label": "报价单", "description": "报价单管理" },
+      "deal": { "label": "Deal", "description": "销售 deal pipeline" },
+      "activity": { "label": "活动记录", "description": "Activity timeline (call/email/meeting/note)" },
+      "attachment": { "label": "附件", "description": "档案附件" },
+      "chat": { "label": "AI 助手", "description": "使用 AI 助手" }
+    }
+  }
+}

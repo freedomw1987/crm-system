@@ -30,7 +30,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, Save, Loader2, X, Shield } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { Plus, Save, Loader2, Shield } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -56,23 +57,23 @@ import { rolesApi, type Role } from '@/lib/api';
  *  (e.g. a "Settings Manager") because the row wasn't shown
  *  in the matrix — they'd hit 403 on settings pages with no
  *  way to grant the perm through the UI. */
-const PERMISSION_GROUPS: Array<{ prefix: string; label: string; description: string }> = [
-  { prefix: 'user',         label: '用戶管理',  description: '管理系統用戶、角色、權限' },
-  { prefix: 'role',         label: '角色',      description: '管理角色 + 權限矩陣' },
-  { prefix: 'audit',        label: '審計日誌',  description: '查看系統操作記錄' },
-  { prefix: 'settings',     label: '系統設置',  description: '稅率、貨幣、維護費用、Pipeline 等全域設定' },
-  { prefix: 'ai-config',    label: 'AI 配置',  description: '管理 LLM 連接 (endpoint、API key、model)' },
-  { prefix: 'man-day-role', label: '人天角色',  description: '人天角色 catalogue(Senior Engineer 等)' },
-  { prefix: 'region',       label: '地區',      description: '地區目錄 (HK / MO / CN / OTHER)' },
-  { prefix: 'company',      label: '公司',      description: '客戶/公司資料' },
-  { prefix: 'contact',      label: '聯絡人',    description: '客戶聯絡人' },
-  { prefix: 'product',      label: '產品',      description: '產品目錄' },
-  { prefix: 'service',      label: '服務',      description: '服務目錄 (SOW + 人天)' },
-  { prefix: 'quotation',    label: '報價單',    description: '報價單管理' },
-  { prefix: 'deal',         label: 'Deal',      description: '銷售 deal pipeline' },
-  { prefix: 'activity',     label: '活動記錄',  description: 'Activity timeline (call/email/meeting/note)' },
-  { prefix: 'attachment',   label: '附件',      description: '檔案附件' },
-  { prefix: 'chat',         label: 'AI 助手',   description: '使用 AI 助手' },
+const PERMISSION_GROUPS: Array<{ prefix: string; labelKey: string; descriptionKey: string }> = [
+  { prefix: 'user',         labelKey: 'role.matrix.group.user.label',        descriptionKey: 'role.matrix.group.user.description' },
+  { prefix: 'role',         labelKey: 'role.matrix.group.role.label',        descriptionKey: 'role.matrix.group.role.description' },
+  { prefix: 'audit',        labelKey: 'role.matrix.group.audit.label',       descriptionKey: 'role.matrix.group.audit.description' },
+  { prefix: 'settings',     labelKey: 'role.matrix.group.settings.label',    descriptionKey: 'role.matrix.group.settings.description' },
+  { prefix: 'ai-config',    labelKey: 'role.matrix.group.aiConfig.label',    descriptionKey: 'role.matrix.group.aiConfig.description' },
+  { prefix: 'man-day-role', labelKey: 'role.matrix.group.manDayRole.label',  descriptionKey: 'role.matrix.group.manDayRole.description' },
+  { prefix: 'region',       labelKey: 'role.matrix.group.region.label',      descriptionKey: 'role.matrix.group.region.description' },
+  { prefix: 'company',      labelKey: 'role.matrix.group.company.label',     descriptionKey: 'role.matrix.group.company.description' },
+  { prefix: 'contact',      labelKey: 'role.matrix.group.contact.label',     descriptionKey: 'role.matrix.group.contact.description' },
+  { prefix: 'product',      labelKey: 'role.matrix.group.product.label',     descriptionKey: 'role.matrix.group.product.description' },
+  { prefix: 'service',      labelKey: 'role.matrix.group.service.label',     descriptionKey: 'role.matrix.group.service.description' },
+  { prefix: 'quotation',    labelKey: 'role.matrix.group.quotation.label',   descriptionKey: 'role.matrix.group.quotation.description' },
+  { prefix: 'deal',         labelKey: 'role.matrix.group.deal.label',        descriptionKey: 'role.matrix.group.deal.description' },
+  { prefix: 'activity',     labelKey: 'role.matrix.group.activity.label',    descriptionKey: 'role.matrix.group.activity.description' },
+  { prefix: 'attachment',   labelKey: 'role.matrix.group.attachment.label',  descriptionKey: 'role.matrix.group.attachment.description' },
+  { prefix: 'chat',         labelKey: 'role.matrix.group.chat.label',        descriptionKey: 'role.matrix.group.chat.description' },
 ];
 
 export interface RoleDialogProps {
@@ -92,6 +93,7 @@ export interface RoleDialogProps {
 export function RoleDialog({
   open, onOpenChange, mode, role, onSaved,
 }: RoleDialogProps) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const isEdit = mode === 'edit';
 
@@ -148,7 +150,7 @@ export function RoleDialog({
       onSaved();
       onOpenChange(false);
     },
-    onError: (e) => setError(e instanceof Error ? e.message : '建立失敗'),
+    onError: (e) => setError(t('role.dialog.errors.createFailed', { message: e instanceof Error ? e.message : '' })),
   });
 
   const updateMutation = useMutation({
@@ -163,7 +165,7 @@ export function RoleDialog({
       onSaved();
       onOpenChange(false);
     },
-    onError: (e) => setError(e instanceof Error ? e.message : '儲存失敗'),
+    onError: (e) => setError(t('role.dialog.errors.saveFailed', { message: e instanceof Error ? e.message : '' })),
   });
 
   const submitting = createMutation.isPending || updateMutation.isPending;
@@ -189,7 +191,7 @@ export function RoleDialog({
   function submit() {
     setError(null);
     if (!name.trim()) {
-      setError('請填角色名稱');
+      setError(t('role.dialog.errors.nameRequired'));
       return;
     }
     if (isEdit) {
@@ -214,8 +216,8 @@ export function RoleDialog({
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <div className="flex items-center gap-2">
-            <DialogTitle>{isEdit ? '編輯角色' : '新增自訂角色'}</DialogTitle>
-            {isEdit && role?.isSystem && <Badge variant="info">System</Badge>}
+            <DialogTitle>{isEdit ? t('role.dialog.editTitle') : t('role.dialog.createTitle')}</DialogTitle>
+            {isEdit && role?.isSystem && <Badge variant="info">{t('role.systemBadge')}</Badge>}
           </div>
         </DialogHeader>
 
@@ -226,22 +228,22 @@ export function RoleDialog({
           {error && <p className="text-sm text-destructive">{error}</p>}
 
           <div className="space-y-1.5">
-            <Label htmlFor="role-name">角色名稱 *</Label>
+            <Label htmlFor="role-name">{t('role.dialog.name')}</Label>
             <Input
               id="role-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder={isEdit ? undefined : 'e.g. Senior Sales'}
+              placeholder={isEdit ? undefined : t('role.dialog.namePlaceholder')}
               disabled={isEdit && role?.isSystem}
               required
             />
             {isEdit && role?.isSystem && (
-              <p className="text-xs text-muted-foreground">系統角色名稱不可修改</p>
+              <p className="text-xs text-muted-foreground">{t('user.detail.systemRoleNameFixed')}</p>
             )}
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="role-desc">描述</Label>
+            <Label htmlFor="role-desc">{t('role.dialog.description')}</Label>
             <Textarea
               id="role-desc"
               value={description}
@@ -253,10 +255,10 @@ export function RoleDialog({
           <div className="space-y-3 pt-2 border-t">
             <div className="flex items-center gap-2">
               <Shield className="h-4 w-4 text-muted-foreground" />
-              <Label>權限 ({selected.size} / {allPermissions.length})</Label>
+              <Label>{t('role.dialog.matrix.selectedCount', { selected: selected.size, total: allPermissions.length })}</Label>
             </div>
             {!isEdit && (
-              <p className="text-xs text-muted-foreground">勾選該角色可以執行的操作</p>
+              <p className="text-xs text-muted-foreground">{t('role.dialog.permissionsHint')}</p>
             )}
 
             <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
@@ -267,8 +269,8 @@ export function RoleDialog({
                   <div key={g.prefix} className="border rounded-lg p-3 space-y-2">
                     <div className="flex items-center justify-between">
                       <div>
-                        <div className="font-medium text-sm">{g.label}</div>
-                        <div className="text-xs text-muted-foreground">{g.description}</div>
+                        <div className="font-medium text-sm">{t(g.labelKey)}</div>
+                        <div className="text-xs text-muted-foreground">{t(g.descriptionKey)}</div>
                       </div>
                       <Button
                         type="button"
@@ -276,7 +278,7 @@ export function RoleDialog({
                         size="sm"
                         onClick={() => toggleGroup(g.prefix)}
                       >
-                        {allOn ? '全選' : someOn ? '部分' : '全選'}
+                        {allOn ? t('role.dialog.matrix.selectAll') : someOn ? t('role.dialog.matrix.someSelected') : t('role.dialog.matrix.selectAll')}
                       </Button>
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pl-2">
@@ -307,7 +309,7 @@ export function RoleDialog({
               onClick={() => onOpenChange(false)}
               disabled={submitting}
             >
-              取消
+              {t('role.dialog.cancel')}
             </Button>
             <Button type="submit" disabled={submitting || !name.trim()}>
               {submitting ? (
@@ -317,7 +319,7 @@ export function RoleDialog({
               ) : (
                 <Plus className="h-4 w-4 mr-1" />
               )}
-              {isEdit ? '儲存' : '建立'}
+              {isEdit ? t('role.dialog.save') : t('role.dialog.create')}
             </Button>
           </DialogFooter>
         </form>

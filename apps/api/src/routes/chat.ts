@@ -12,6 +12,7 @@ import { prisma } from '@crm/db';
 import {
   runAgentStream,
   AiNotConfiguredError,
+  AiAbortError,
   createConfirmationController,
 } from '@crm/ai';
 import { authContext } from '../lib/context';
@@ -21,7 +22,9 @@ import {
   buildChatHeaders,
   buildChatPrecheckError,
   CHAT_SSE_EVENT_TYPES,
+  makeSafeStreamController,
 } from '../lib/chat-sse';
+import { tApi } from '../lib/i18n';
 
 // =============================================================================
 // US-C5 (Day 17, 2026-06-08): pending confirmation registry
@@ -51,9 +54,9 @@ const sseFrame = buildSseFrame;
 export const chatRoutes = new Elysia({ prefix: '/chat', tags: ['ai-chat'] })
   .use(authContext)
   .use(requirePermission('chat:use'))
-  .get('/conversations', async ({ request, set }) => {
+  .get('/conversations', async ({ request, set, locale }) => {
     const userId = await getUserIdFromRequest(request);
-    if (!userId) { set.status = 401; return { error: 'Unauthorized' }; }
+    if (!userId) { set.status = 401; return { error: tApi(locale, 'UNAUTHORIZED') }; }
     return prisma.conversation.findMany({
       where: { userId },
       orderBy: { updatedAt: 'desc' },
@@ -68,27 +71,27 @@ export const chatRoutes = new Elysia({ prefix: '/chat', tags: ['ai-chat'] })
     });
   })
 
-  .get('/conversations/:id', async ({ params, request, set }) => {
+  .get('/conversations/:id', async ({ params, request, set, locale }) => {
     const userId = await getUserIdFromRequest(request);
-    if (!userId) { set.status = 401; return { error: 'Unauthorized' }; }
+    if (!userId) { set.status = 401; return { error: tApi(locale, 'UNAUTHORIZED') }; }
     const conv = await prisma.conversation.findUnique({
       where: { id: params.id },
       include: { messages: { orderBy: { createdAt: 'asc' } } },
     });
     if (!conv || conv.userId !== userId) {
       set.status = 404;
-      return { error: 'Not found' };
+      return { error: tApi(locale, 'NOT_FOUND') };
     }
     return conv;
   })
 
-  .post('/send', async ({ request, body, set }) => {
+  .post('/send', async ({ request, body, set, locale }) => {
     const userId = await getUserIdFromRequest(request);
-    if (!userId) { set.status = 401; return { error: 'Unauthorized' }; }
+    if (!userId) { set.status = 401; return { error: tApi(locale, 'UNAUTHORIZED') }; }
     const { message, conversationId } = body as { message: string; conversationId?: string };
     if (!message || typeof message !== 'string') {
       set.status = 400;
-      return { error: 'Message is required' };
+      return { error: tApi(locale, 'CHAT_MESSAGE_REQUIRED') };
     }
     // Pre-check AiConfig to short-circuit with a friendly 503 (instead of
     // letting runAgent() throw AiNotConfiguredError and us translate to
@@ -139,27 +142,57 @@ export const chatRoutes = new Elysia({ prefix: '/chat', tags: ['ai-chat'] })
 
     const stream = new ReadableStream({
       async start(controller) {
+        // Wrap the controller so we survive mid-stream client disconnects.
+        // When the client closes the tab / network drops / AbortController
+        // fires, Bun's runtime auto-closes the underlying controller.
+        // Calling `controller.enqueue(...)` after that throws
+        // `TypeError: Invalid state: Controller is already closed`, which
+        // would propagate as an unhandled error and abort the stream.
+        // The wrapper tracks closed-state and short-circuits subsequent
+        // calls so the agent loop can break out cleanly without crashing.
+        const safe = makeSafeStreamController(controller);
         try {
           for await (const event of runAgentStream({
             userId,
             message,
             conversationId,
             confirmationController: wrappedController,
+            // Pass the request's abort signal so the agent loop can bail
+            // out between tool iterations when the client disconnects,
+            // rather than continuing to spend LLM tokens on a stream
+            // no one is listening to.
+            signal: request.signal,
           })) {
-            controller.enqueue(encoder.encode(sseFrame(event)));
+            const r = safe.enqueue(encoder.encode(sseFrame(event)));
+            if (!r.ok) {
+              // Client gone — break out of the loop and stop yielding.
+              break;
+            }
           }
         } catch (err) {
-          if (err instanceof AiNotConfiguredError) {
-            controller.enqueue(encoder.encode(sseFrame({ type: CHAT_SSE_EVENT_TYPES.ERROR, message: err.message })));
+          // AbortError: client disconnected (request.signal fired) or
+          // the safe-enqueue short-circuited. There is no one to send
+          // an error event to — just close silently. This branch is
+          // the expected exit path when the user closes their tab
+          // mid-stream.
+          if (err instanceof AiAbortError) {
+            // intentionally empty — silent close
+          } else if (safe.isClosed()) {
+            // Stream already torn down; nothing to do.
+          } else if (err instanceof AiNotConfiguredError) {
+            safe.enqueue(encoder.encode(sseFrame({
+              type: CHAT_SSE_EVENT_TYPES.ERROR,
+              message: err.message,
+            })));
           } else {
             console.error('[chat] Agent error:', err);
-            controller.enqueue(encoder.encode(sseFrame({
+            safe.enqueue(encoder.encode(sseFrame({
               type: CHAT_SSE_EVENT_TYPES.ERROR,
               message: (err as Error).message,
             })));
           }
         } finally {
-          controller.close();
+          safe.close();
         }
       },
     });
@@ -176,38 +209,38 @@ export const chatRoutes = new Elysia({ prefix: '/chat', tags: ['ai-chat'] })
   // the caller's userId matches the one that opened the chat
   // session, so a confirmation can't be hijacked by another user
   // (e.g. by guessing the nonce).
-  .post('/confirm/:id', async ({ params, request, body, set }) => {
+  .post('/confirm/:id', async ({ params, request, body, set, locale }) => {
     const userId = await getUserIdFromRequest(request);
-    if (!userId) { set.status = 401; return { error: 'Unauthorized' }; }
+    if (!userId) { set.status = 401; return { error: tApi(locale, 'UNAUTHORIZED') }; }
     const { approved, reason } = body as { approved: boolean; reason?: string };
     if (typeof approved !== 'boolean') {
       set.status = 400;
-      return { error: '`approved` must be a boolean' };
+      return { error: tApi(locale, 'CHAT_APPROVED_BOOLEAN') };
     }
     const entry = pendingConfirmations.get(params.id);
     if (!entry) {
       set.status = 404;
-      return { error: 'No pending confirmation with that id (may have timed out or already been answered)' };
+      return { error: tApi(locale, 'CHAT_NO_PENDING_CONFIRMATION') };
     }
     if (entry.userId !== userId) {
       set.status = 403;
-      return { error: 'Confirmation does not belong to this user' };
+      return { error: tApi(locale, 'CHAT_CONFIRMATION_NOT_OWNER') };
     }
     const ok = entry.controller.respond(params.id, approved, reason);
     if (!ok) {
       set.status = 409;
-      return { error: 'Confirmation already resolved' };
+      return { error: tApi(locale, 'CHAT_CONFIRMATION_RESOLVED') };
     }
     return { ok: true };
   })
 
-  .delete('/conversations/:id', async ({ params, request, set }) => {
+  .delete('/conversations/:id', async ({ params, request, set, locale }) => {
     const userId = await getUserIdFromRequest(request);
-    if (!userId) { set.status = 401; return { error: 'Unauthorized' }; }
+    if (!userId) { set.status = 401; return { error: tApi(locale, 'UNAUTHORIZED') }; }
     const conv = await prisma.conversation.findUnique({ where: { id: params.id } });
     if (!conv || conv.userId !== userId) {
       set.status = 404;
-      return { error: 'Not found' };
+      return { error: tApi(locale, 'NOT_FOUND') };
     }
     await prisma.conversation.delete({ where: { id: params.id } });
     return { success: true };

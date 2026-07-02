@@ -1,0 +1,94 @@
+{
+  "title": "Companies",
+  "subtitle_one": "{{count}} company",
+  "subtitle_other": "{{count}} companies",
+  "newCompany": "New Company",
+  "label": "Company",
+  "searchPlaceholder": "Search company name / legal name / email…",
+  "noResults": "No companies match your search",
+  "empty": "No companies yet",
+  "loading": "Loading…",
+  "filterByRegion": "Region:",
+  "filterAll": "All",
+  "form": {
+    "newTitle": "New Company",
+    "editTitle": "Edit Company",
+    "name": "Company Name *",
+    "legalName": "Legal Name",
+    "taxId": "Business Registration / Tax ID",
+    "industry": "Industry",
+    "email": "Email",
+    "phone": "Phone",
+    "website": "Website",
+    "status": "Status",
+    "region": "Region *",
+    "customRegion": "Other Region (free text)",
+    "customRegionPlaceholder": "e.g. Taiwan, Singapore, Japan…",
+    "submit": {
+      "create": "Create",
+      "edit": "Save",
+      "creating": "Creating…",
+      "saving": "Saving…"
+    },
+    "cancel": "Cancel"
+  },
+  "card": {
+    "deactivated": "Inactive",
+    "contacts_one": "{{count}} contact",
+    "contacts_other": "{{count}} contacts",
+    "quotations_one": "{{count}} quotation",
+    "quotations_other": "{{count}} quotations",
+    "deals_one": "{{count}} deal",
+    "deals_other": "{{count}} deals",
+    "newDeal": "New Deal",
+    "newQuotation": "New Quotation",
+    "editCompany": "Edit Company",
+    "deleteCompany": "Delete Company"
+  },
+  "deleteConfirm": "Delete \"{{name}}\"? This cannot be undone — related contacts / deals / quotations will be cascaded.",
+  "inlineDialog": {
+    "title": "New Quotation"
+  },
+  "detail": {
+    "loading": "Loading…",
+    "notFound": "Company not found",
+    "deleteContactConfirm": "Delete this contact?",
+    "tabs": {
+      "contacts": "Contacts",
+      "deals": "Deals",
+      "quotation": "Quotation",
+      "activity": "Activity",
+      "attachments": "Attachments"
+    },
+    "activityTitle": "Company Activity",
+    "contactsEmpty": "No contacts yet",
+    "newContact": "New Contact",
+    "newContactTitle": "New Contact",
+    "newContactFirstName": "First name *",
+    "newContactLastName": "Last name *",
+    "newContactTitleLabel": "Job title",
+    "newContactTitlePlaceholder": "e.g. CEO, Procurement Manager",
+    "newContactEmail": "Email",
+    "newContactPhone": "Phone",
+    "newContactIsPrimary": "Set as primary contact (Primary)",
+    "contactDialog": {
+      "cancel": "Cancel",
+      "submitCreate": "Create",
+      "submitCreating": "Creating…"
+    },
+    "dealsEmpty": "No deals yet · Click \"+ New Deal\" in the top right to start the first one",
+    "newDeal": "New Deal",
+    "quotationsEmpty": "No quotations yet · Click \"+ New Quotation\" in the top right to start the first one",
+    "newQuotation": "New Quotation"
+  },
+  "errors": {
+    "loadFailed": "Failed to load companies",
+    "saveFailed": "Failed to save company"
+  },
+  "region": {
+    "HK": "Hong Kong",
+    "MO": "Macau",
+    "CN": "China",
+    "OTHER": "Other"
+  }
+}

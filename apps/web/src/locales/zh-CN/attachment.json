@@ -1,0 +1,9 @@
+{
+  "title": "附件 ({{count}})",
+  "titleCount_one": "附件 ({{count}})",
+  "titleCount_other": "附件 ({{count}})",
+  "download": "下载",
+  "downloadFailed": "下载失败",
+  "empty": "仍未有附件 · 去「Activity」tab 写新跟进时可以顺手上传",
+  "loading": "载入中…"
+}

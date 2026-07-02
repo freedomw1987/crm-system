@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { Search, Plus, Users as UsersIcon, Loader2 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -14,6 +15,7 @@ import { usersApi, type UserSummary } from '@/lib/api';
 import { formatDate, formatDateTime } from '@/lib/utils';
 
 export function UsersPage() {
+  const { t } = useTranslation();
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
@@ -35,12 +37,12 @@ export function UsersPage() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold">Users</h1>
-          <p className="text-muted-foreground">管理系統用戶帳號、角色和權限</p>
+          <h1 className="text-2xl md:text-3xl font-bold">{t('user.title')}</h1>
+          <p className="text-muted-foreground">{t('user.subtitle')}</p>
         </div>
         <Button onClick={() => setCreateOpen(true)}>
           <Plus className="h-4 w-4 mr-2" />
-          新用戶
+          {t('user.newUser')}
         </Button>
       </div>
 
@@ -48,27 +50,27 @@ export function UsersPage() {
         <div className="md:col-span-2 relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="搜尋名 / email..."
+            placeholder={t('user.searchPlaceholder')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
           />
         </div>
         <Select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>
-          <option value="">全部角色</option>
-          <option value="ADMIN">管理員</option>
-          <option value="SALES">銷售</option>
-          <option value="VIEWER">檢視者</option>
+          <option value="">{t('user.filterAllRoles')}</option>
+          <option value="ADMIN">{t('role.ADMIN')}</option>
+          <option value="SALES">{t('role.SALES')}</option>
+          <option value="VIEWER">{t('role.VIEWER')}</option>
         </Select>
       </div>
 
       {isLoading ? (
-        <p className="text-sm text-muted-foreground">載入中...</p>
+        <p className="text-sm text-muted-foreground">{t('user.loading')}</p>
       ) : users.length === 0 ? (
         <Card>
           <CardContent className="p-12 text-center text-muted-foreground">
             <UsersIcon className="h-12 w-12 mx-auto mb-3 opacity-50" />
-            找不到用戶
+            {t('user.empty')}
           </CardContent>
         </Card>
       ) : (
@@ -78,11 +80,11 @@ export function UsersPage() {
               <table className="w-full text-sm">
                 <thead className="bg-muted/50 border-b">
                   <tr className="text-left">
-                    <th className="px-4 py-3 font-medium">User</th>
-                    <th className="px-4 py-3 font-medium">Role</th>
-                    <th className="px-4 py-3 font-medium">Status</th>
-                    <th className="px-4 py-3 font-medium">Last login</th>
-                    <th className="px-4 py-3 font-medium">Created</th>
+                    <th className="px-4 py-3 font-medium">{t('user.table.name')}</th>
+                    <th className="px-4 py-3 font-medium">{t('user.table.role')}</th>
+                    <th className="px-4 py-3 font-medium">{t('user.table.status')}</th>
+                    <th className="px-4 py-3 font-medium">{t('user.table.lastLogin')}</th>
+                    <th className="px-4 py-3 font-medium">{t('user.table.created')}</th>
                     <th className="px-4 py-3"></th>
                   </tr>
                 </thead>
@@ -107,13 +109,13 @@ export function UsersPage() {
                       </td>
                       <td className="px-4 py-3">
                         {u.isActive ? (
-                          <Badge variant="success">啟用</Badge>
+                          <Badge variant="success">{t('user.active')}</Badge>
                         ) : (
-                          <Badge variant="secondary">停用</Badge>
+                          <Badge variant="secondary">{t('user.inactive')}</Badge>
                         )}
                       </td>
                       <td className="px-4 py-3 text-xs text-muted-foreground">
-                        {u.lastLoginAt ? formatDateTime(u.lastLoginAt) : '從未'}
+                        {u.lastLoginAt ? formatDateTime(u.lastLoginAt) : t('user.neverLoggedIn')}
                       </td>
                       <td className="px-4 py-3 text-xs text-muted-foreground">
                         {formatDate(u.createdAt)}
@@ -125,7 +127,7 @@ export function UsersPage() {
                           onClick={() => toggleActive.mutate({ id: u.id, isActive: !u.isActive })}
                           disabled={toggleActive.isPending}
                         >
-                          {u.isActive ? '停用' : '啟用'}
+                          {u.isActive ? t('user.disable') : t('user.enable')}
                         </Button>
                       </td>
                     </tr>
@@ -143,20 +145,17 @@ export function UsersPage() {
 }
 
 function RoleBadge({ role }: { role: string }) {
+  const { t } = useTranslation();
   const map: Record<string, 'default' | 'info' | 'secondary'> = {
     ADMIN: 'default',
     SALES: 'info',
     VIEWER: 'secondary',
   };
-  const labels: Record<string, string> = {
-    ADMIN: '管理員',
-    SALES: '銷售',
-    VIEWER: '檢視者',
-  };
-  return <Badge variant={map[role] ?? 'default'}>{labels[role] ?? role}</Badge>;
+  return <Badge variant={map[role] ?? 'default'}>{t(`role.${role}`, { defaultValue: role })}</Badge>;
 }
 
 function CreateUserDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
@@ -174,7 +173,7 @@ function CreateUserDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
       onOpenChange(false);
       setEmail(''); setName(''); setRole('SALES'); setPassword('');
     } catch (e) {
-      setError((e as Error).message);
+      setError(t('user.dialog.errors.saveFailed', { message: (e as Error).message }));
     } finally {
       setSaving(false);
     }
@@ -184,36 +183,37 @@ function CreateUserDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>新增用戶</DialogTitle>
+          <DialogTitle>{t('user.dialog.createTitle')}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1.5">
-            <Label htmlFor="email">Email *</Label>
+            <Label htmlFor="email">{t('user.dialog.email')}</Label>
             <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="name">姓名 *</Label>
+            <Label htmlFor="name">{t('user.dialog.name')}</Label>
             <Input id="name" value={name} onChange={(e) => setName(e.target.value)} />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="role">角色 *</Label>
+            <Label htmlFor="role">{t('user.dialog.role')}</Label>
             <Select id="role" value={role} onChange={(e) => setRole(e.target.value as 'ADMIN' | 'SALES' | 'VIEWER')}>
-              <option value="SALES">銷售</option>
-              <option value="ADMIN">管理員</option>
-              <option value="VIEWER">檢視者</option>
+              <option value="SALES">{t('role.SALES')}</option>
+              <option value="ADMIN">{t('role.ADMIN')}</option>
+              <option value="VIEWER">{t('role.VIEWER')}</option>
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="pw">密碼 (至少 8 字) *</Label>
+            <Label htmlFor="pw">{t('user.dialog.password')}</Label>
             <Input id="pw" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+            <p className="text-xs text-muted-foreground">{t('user.dialog.passwordHint')}</p>
           </div>
           {error && <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded">{error}</p>}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>取消</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>{t('user.dialog.cancel')}</Button>
           <Button onClick={submit} disabled={saving || !email || !name || password.length < 8}>
             {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-            建立
+            {t('user.dialog.create')}
           </Button>
         </DialogFooter>
       </DialogContent>

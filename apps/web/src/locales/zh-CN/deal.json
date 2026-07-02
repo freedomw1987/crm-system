@@ -1,0 +1,114 @@
+{
+  "title": "Deals Pipeline",
+  "pipelineLabel": "销售 pipeline · {{name}}",
+  "defaultPipeline": "Default Sales Pipeline",
+  "newDeal": "新增 Deal",
+  "label": "关联 Deal (可选)",
+  "searchPlaceholder": "搜索 deal 名...",
+  "pleaseSelectCustomer": "请先选客户",
+  "noDealsForCustomer": "这个客户未有任何 deal",
+  "stats": {
+    "openTotal": "Open / Total",
+    "openDeals_one": "{{count}} deal",
+    "openDeals_other": "{{count}} deals",
+    "openDeals": "Open Deals",
+    "totalValue": "Total Value",
+    "weightedValue": "Weighted (by prob.)",
+    "stages": "Stages",
+    "probability": "Probability: {{value}}%"
+  },
+  "filters": {
+    "company": "Company",
+    "companyPlaceholder": "搜索公司...",
+    "salesRep": "销售员",
+    "salesRepPlaceholder": "搜索销售员...",
+    "clearAll": "清除 filter",
+    "showingCount_one": "显示 {{count}} 个 deal",
+    "showingCount_other": "显示 {{count}} 个 deal"
+  },
+  "column": {
+    "emptyDropZone": "拖 deal 落此处"
+  },
+  "card": {
+    "ownerTooltip": "销售员: {{name}}{{email}}",
+    "viewQuotations_tooltip": "查看這個 deal 的 {{count}} 份报价",
+    "viewQuotations_one": "{{count}} 份报价",
+    "viewQuotations_other": "{{count}} 份报价",
+    "firstQuotationTitle": "为此 deal 建立第一份报价",
+    "firstQuotation": "＋ 报价",
+    "newActivityTitle": "为此 deal 记录跟进",
+    "newActivity": "＋ Activity",
+    "editDeal": "编辑 deal",
+    "deleteDeal": "删除 deal"
+  },
+  "deleteConfirm": "确定删除 deal「{{title}}」?此操作无法复原,相关的 activities / quotations 会一并 cascade。",
+  "loading": "加载中...",
+  "dialog": {
+    "newTitle": "新增 Deal",
+    "editTitle": "编辑 Deal",
+    "title": "Deal 名称 *",
+    "company": "公司 *",
+    "companyReadonly": "公司不可修改",
+    "searchCompany": "搜索客户名称...",
+    "stage": "Stage *",
+    "amount": "金额 ({{currency}})",
+    "currency": "货币",
+    "expectedClose": "预计成交日",
+    "cancel": "取消",
+    "submit": {
+      "create": "建立",
+      "edit": "保存",
+      "creating": "建立中...",
+      "saving": "保存中..."
+    },
+    "errors": {
+      "companyStageRequired": "Company 与 Stage 必填",
+      "titleRequired": "Deal 名称必填"
+    }
+  },
+  "quotationDialog": {
+    "title": "为「{{title}}」建立报价"
+  },
+  "currencies": {
+    "RMB": "人民币 (RMB)",
+    "HKD": "港币 (HKD)",
+    "MOP": "澳门币 (MOP)"
+  },
+  "detail": {
+    "loading": "加载中...",
+    "notFound": "找不到这个 deal",
+    "deleteConfirm": "确定删除 deal「{{title}}」?此操作无法复原,相关的 activities / quotations 会一并 cascade。",
+    "deleteFailed": "删除失败: {{message}}",
+    "newQuotation": "新增报价",
+    "edit": "编辑",
+    "delete": "删除",
+    "meta": {
+      "dealValue": "Deal Value",
+      "expectedClose": "预计成交日",
+      "closedAtWon": "成交日",
+      "closedAt": "结案日",
+      "quotationCount": "报价数量",
+      "quotationCountSuffix": " 份"
+    },
+    "tabs": {
+      "quotations": "报价",
+      "activity": "Activity"
+    },
+    "quotationTabEmpty": "这个 deal 仍未有报价。",
+    "quotationTabEmptyHint": "按上面「＋ 新增报价」整第一份。",
+    "quotationTable": {
+      "number": "Number",
+      "title": "Title",
+      "status": "Status",
+      "total": "Total",
+      "salesRep": "销售员",
+      "created": "Created",
+      "sent": "Sent",
+      "accepted": "Accepted",
+      "view": "查看"
+    },
+    "activityEmpty": "这个 deal 仍未有 activity 记录。",
+    "newActivity": "新增 Activity",
+    "quotationBuilderTitle": "为「{{title}}」建立报价"
+  }
+}

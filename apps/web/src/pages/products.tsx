@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { Package, Plus, Trash2, Edit2, Search } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -17,6 +18,7 @@ const STATUS_VARIANT: Record<Product['status'], 'success' | 'secondary' | 'warni
 };
 
 export function ProductsPage() {
+  const { t } = useTranslation();
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -50,56 +52,56 @@ export function ProductsPage() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold">Products</h1>
-          <p className="text-muted-foreground">產品目錄 — 管理產品名稱、描述、售價、庫存</p>
+          <h1 className="text-2xl md:text-3xl font-bold">{t('product.title')}</h1>
+          <p className="text-muted-foreground">{t('product.subtitle')}</p>
         </div>
         <Button onClick={() => setCreateOpen(true)}>
           <Plus className="h-4 w-4 mr-1" />
-          新增產品
+          {t('product.newProduct')}
         </Button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
         <div className="space-y-1.5 md:col-span-2">
-          <Label htmlFor="search">搜尋</Label>
+          <Label htmlFor="search">{t('product.search')}</Label>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               id="search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="產品名 / SKU..."
+              placeholder={t('product.searchPlaceholder')}
               className="pl-9"
             />
           </div>
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="cat">分類</Label>
+          <Label htmlFor="cat">{t('product.filter.category')}</Label>
           <Select id="cat" value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
-            <option value="">全部分類</option>
+            <option value="">{t('product.filter.allCategories')}</option>
             {categories.map((c) => (
               <option key={c} value={c}>{c}</option>
             ))}
           </Select>
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="status">狀態</Label>
+          <Label htmlFor="status">{t('product.filter.status')}</Label>
           <Select id="status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-            <option value="">全部狀態</option>
-            <option value="ACTIVE">Active</option>
-            <option value="ARCHIVED">Archived</option>
-            <option value="OUT_OF_STOCK">Out of Stock</option>
+            <option value="">{t('product.filter.allStatuses')}</option>
+            <option value="ACTIVE">{t('product.status.ACTIVE')}</option>
+            <option value="ARCHIVED">{t('product.status.ARCHIVED')}</option>
+            <option value="OUT_OF_STOCK">{t('product.status.OUT_OF_STOCK')}</option>
           </Select>
         </div>
       </div>
 
       {isLoading ? (
-        <p className="text-sm text-muted-foreground">載入中...</p>
+        <p className="text-sm text-muted-foreground">{t('product.loading')}</p>
       ) : items.length === 0 ? (
         <Card>
           <CardContent className="p-12 text-center text-muted-foreground">
             <Package className="h-12 w-12 mx-auto mb-3 opacity-50" />
-            尚未建立任何產品
+            {t('product.empty')}
           </CardContent>
         </Card>
       ) : (
@@ -125,7 +127,7 @@ export function ProductsPage() {
                 )}
 
                 <div className="flex items-baseline justify-between text-sm">
-                  <span className="text-muted-foreground">售價</span>
+                  <span className="text-muted-foreground">{t('product.card.price')}</span>
                   <span className="font-semibold text-lg">
                     {formatCurrency(Number(p.unitPrice), p.currency)}
                   </span>
@@ -133,7 +135,7 @@ export function ProductsPage() {
 
                 {p.trackInventory && (
                   <div className="text-xs">
-                    <span className="text-muted-foreground">庫存: </span>
+                    <span className="text-muted-foreground">{t('product.card.stock')}</span>
                     <span className={
                       (p.lowStockThreshold != null && p.stockQuantity != null && p.stockQuantity <= p.lowStockThreshold)
                         ? 'text-amber-600 font-semibold'
@@ -142,7 +144,7 @@ export function ProductsPage() {
                       {p.stockQuantity ?? 0}
                     </span>
                     {p.lowStockThreshold != null && (
-                      <span className="text-muted-foreground"> (低於 {p.lowStockThreshold} 警示)</span>
+                      <span className="text-muted-foreground"> {t('product.card.lowStockWarning', { threshold: p.lowStockThreshold })}</span>
                     )}
                   </div>
                 )}
@@ -155,13 +157,13 @@ export function ProductsPage() {
                     onClick={() => setEditing(p)}
                   >
                     <Edit2 className="h-3 w-3 mr-1" />
-                    編輯
+                    {t('product.card.edit')}
                   </Button>
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() => {
-                      if (confirm(`確定刪除「${p.name}」?`)) removeProduct.mutate(p.id);
+                      if (confirm(t('product.deleteConfirm', { name: p.name }))) removeProduct.mutate(p.id);
                     }}
                     disabled={removeProduct.isPending}
                   >

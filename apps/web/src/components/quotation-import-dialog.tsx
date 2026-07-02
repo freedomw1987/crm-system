@@ -38,6 +38,7 @@
 
 import { useEffect, useRef, useState, Fragment } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import {
   FileUp, FileSpreadsheet, Loader2, X, Sparkles, Info,
   AlertCircle, Pencil, Save, ChevronDown, ChevronRight,
@@ -73,6 +74,7 @@ function formatBytes(n: number): string {
 }
 
 export function QuotationImportDialog({ open, onOpenChange, onSuccess }: Props) {
+  const { t } = useTranslation();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState<Step>('upload');
   const [file, setFile] = useState<File | null>(null);
@@ -125,7 +127,7 @@ export function QuotationImportDialog({ open, onOpenChange, onSuccess }: Props) 
   function pickFile(f: File | null | undefined) {
     if (!f) return;
     if (!f.name.toLowerCase().endsWith('.xlsx')) {
-      setError('只支援 .xlsx 檔案');
+      setError(t('quotation.import.xlsxOnly'));
       return;
     }
     setError(null);
@@ -145,7 +147,7 @@ export function QuotationImportDialog({ open, onOpenChange, onSuccess }: Props) 
         ? (e.body && typeof e.body === 'object' && 'error' in e.body
           ? (e.body as { error: string }).error
           : e.message)
-        : e instanceof Error ? e.message : '預覽失敗';
+        : e instanceof Error ? e.message : t('quotation.import.previewFailed');
       setError(msg);
       setStep('upload');
     }
@@ -180,7 +182,7 @@ export function QuotationImportDialog({ open, onOpenChange, onSuccess }: Props) 
         ? (e.body && typeof e.body === 'object' && 'error' in e.body
           ? (e.body as { error: string }).error
           : e.message)
-        : e instanceof Error ? e.message : '送出失敗';
+        : e instanceof Error ? e.message : t('quotation.import.submitFailed');
       setError(msg);
       setStep('preview');
     }
@@ -192,9 +194,9 @@ export function QuotationImportDialog({ open, onOpenChange, onSuccess }: Props) 
     return (
       <div className="space-y-3">
         <p className="text-sm text-muted-foreground">
-          上傳舊的 Quotation Excel 檔,AI 會自動提取客戶、產品、服務、報價項目。
+          {t('quotation.import.uploadHelp1')}
           <br />
-          已存在的客戶/產品/服務會自動關聯;找不到的會建立新記錄。
+          {t('quotation.import.uploadHelp2')}
         </p>
         <div
           role="button"
@@ -212,8 +214,8 @@ export function QuotationImportDialog({ open, onOpenChange, onSuccess }: Props) 
           className="border-2 border-dashed border-muted-foreground/30 rounded-lg p-8 text-center cursor-pointer hover:bg-muted/40 transition-colors"
         >
           <FileUp className="h-10 w-10 mx-auto mb-3 text-muted-foreground" />
-          <p className="text-sm font-medium">點擊此處選擇檔案,或拖曳檔案至此</p>
-          <p className="text-xs text-muted-foreground mt-1">只支援 .xlsx (上限 50MB)</p>
+          <p className="text-sm font-medium">{t('quotation.import.dropzone')}</p>
+          <p className="text-xs text-muted-foreground mt-1">{t('quotation.import.maxSize')}</p>
           <input
             ref={fileInputRef}
             type="file"
@@ -238,7 +240,7 @@ export function QuotationImportDialog({ open, onOpenChange, onSuccess }: Props) 
       return (
         <div className="flex items-center justify-center py-12 gap-2 text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
-          <span>AI 想緊點抽取...</span>
+          <span>{t('quotation.import.thinking')}</span>
         </div>
       );
     }
@@ -259,7 +261,7 @@ export function QuotationImportDialog({ open, onOpenChange, onSuccess }: Props) 
           <CardHeader className="pb-3">
             <CardTitle className="text-sm flex items-center justify-between">
               <span className="flex items-center gap-2">
-                公司 (Company)
+                {t('quotation.import.company.title')}
               </span>
               <Pencil className="h-3 w-3 text-muted-foreground" />
             </CardTitle>
@@ -267,7 +269,7 @@ export function QuotationImportDialog({ open, onOpenChange, onSuccess }: Props) 
           <CardContent className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label htmlFor="imp-co-name">名稱</Label>
+                <Label htmlFor="imp-co-name">{t('quotation.import.company.name')}</Label>
                 <Input
                   id="imp-co-name"
                   value={plan.company.name}
@@ -275,7 +277,7 @@ export function QuotationImportDialog({ open, onOpenChange, onSuccess }: Props) 
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="imp-co-region">地區</Label>
+                <Label htmlFor="imp-co-region">{t('quotation.import.company.region')}</Label>
                 <Select
                   id="imp-co-region"
                   value={plan.company.regionCode ?? ''}
@@ -284,15 +286,15 @@ export function QuotationImportDialog({ open, onOpenChange, onSuccess }: Props) 
                     company: { ...plan.company, regionCode: (e.target.value || null) as 'HK' | 'MO' | 'CN' | 'OTHER' | null },
                   })}
                 >
-                  <option value="">— 未指定 —</option>
-                  <option value="HK">HK 香港</option>
-                  <option value="MO">MO 澳門</option>
-                  <option value="CN">CN 中國</option>
-                  <option value="OTHER">OTHER 其他</option>
+                  <option value="">{t('quotation.import.company.regionUnspecified')}</option>
+                  <option value="HK">{t('quotation.import.company.regionHK')}</option>
+                  <option value="MO">{t('quotation.import.company.regionMO')}</option>
+                  <option value="CN">{t('quotation.import.company.regionCN')}</option>
+                  <option value="OTHER">{t('quotation.import.company.regionOther')}</option>
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="imp-co-tax">統編 / Tax ID</Label>
+                <Label htmlFor="imp-co-tax">{t('quotation.import.company.taxId')}</Label>
                 <Input
                   id="imp-co-tax"
                   value={plan.company.taxId ?? ''}
@@ -300,7 +302,7 @@ export function QuotationImportDialog({ open, onOpenChange, onSuccess }: Props) 
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="imp-co-industry">行業</Label>
+                <Label htmlFor="imp-co-industry">{t('quotation.import.company.industry')}</Label>
                 <Input
                   id="imp-co-industry"
                   value={plan.company.industry ?? ''}
@@ -309,10 +311,10 @@ export function QuotationImportDialog({ open, onOpenChange, onSuccess }: Props) 
               </div>
             </div>
             <details className="text-xs">
-              <summary className="cursor-pointer text-muted-foreground">聯絡人資料 (可選)</summary>
+              <summary className="cursor-pointer text-muted-foreground">{t('quotation.import.company.contactSection')}</summary>
               <div className="grid grid-cols-3 gap-3 mt-2">
                 <div className="space-y-1.5">
-                  <Label htmlFor="imp-co-person">姓名</Label>
+                  <Label htmlFor="imp-co-person">{t('quotation.import.company.contactPerson')}</Label>
                   <Input
                     id="imp-co-person"
                     value={plan.company.contactPerson ?? ''}
@@ -320,7 +322,7 @@ export function QuotationImportDialog({ open, onOpenChange, onSuccess }: Props) 
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="imp-co-email">Email</Label>
+                  <Label htmlFor="imp-co-email">{t('quotation.import.company.contactEmail')}</Label>
                   <Input
                     id="imp-co-email"
                     type="email"
@@ -329,7 +331,7 @@ export function QuotationImportDialog({ open, onOpenChange, onSuccess }: Props) 
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="imp-co-phone">電話</Label>
+                  <Label htmlFor="imp-co-phone">{t('quotation.import.company.contactPhone')}</Label>
                   <Input
                     id="imp-co-phone"
                     value={plan.company.contactPhone ?? ''}
@@ -344,12 +346,12 @@ export function QuotationImportDialog({ open, onOpenChange, onSuccess }: Props) 
         {/* ----- Deal + Contact + Sales Rep ----------------------- */}
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm">商機 / 聯絡人 / 銷售員 (可選)</CardTitle>
+            <CardTitle className="text-sm">{t('quotation.import.deal.title')}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label htmlFor="imp-deal-title">Deal 名稱</Label>
+                <Label htmlFor="imp-deal-title">{t('quotation.import.deal.dealTitle')}</Label>
                 <Input
                   id="imp-deal-title"
                   value={plan.deal?.title ?? ''}
@@ -359,11 +361,11 @@ export function QuotationImportDialog({ open, onOpenChange, onSuccess }: Props) 
                       ? { ...(plan.deal ?? { title: '' }), title: e.target.value }
                       : null,
                   })}
-                  placeholder="例:Acme 升級項目"
+                  placeholder={t('quotation.import.deal.dealTitlePlaceholder')}
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="imp-deal-owner">銷售員 (Sales Rep)</Label>
+                <Label htmlFor="imp-deal-owner">{t('quotation.import.deal.salesRep')}</Label>
                 <Input
                   id="imp-deal-owner"
                   value={plan.deal?.ownerName ?? ''}
@@ -373,11 +375,11 @@ export function QuotationImportDialog({ open, onOpenChange, onSuccess }: Props) 
                       ? { ...plan.deal, ownerName: e.target.value || null }
                       : null,
                   })}
-                  placeholder="依姓名自動配對現有 User"
+                  placeholder={t('quotation.import.deal.salesRepPlaceholder')}
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="imp-deal-value">Deal 估值</Label>
+                <Label htmlFor="imp-deal-value">{t('quotation.import.deal.dealValue')}</Label>
                 <Input
                   id="imp-deal-value"
                   type="number"
@@ -391,7 +393,7 @@ export function QuotationImportDialog({ open, onOpenChange, onSuccess }: Props) 
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="imp-contact-name">聯絡人姓名</Label>
+                <Label htmlFor="imp-contact-name">{t('quotation.import.deal.contactName')}</Label>
                 <Input
                   id="imp-contact-name"
                   value={plan.contact?.name ?? ''}
@@ -404,7 +406,7 @@ export function QuotationImportDialog({ open, onOpenChange, onSuccess }: Props) 
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="imp-contact-email">聯絡人 Email</Label>
+                <Label htmlFor="imp-contact-email">{t('quotation.import.deal.contactEmail')}</Label>
                 <Input
                   id="imp-contact-email"
                   type="email"
@@ -418,7 +420,7 @@ export function QuotationImportDialog({ open, onOpenChange, onSuccess }: Props) 
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="imp-contact-phone">聯絡人電話</Label>
+                <Label htmlFor="imp-contact-phone">{t('quotation.import.deal.contactPhone')}</Label>
                 <Input
                   id="imp-contact-phone"
                   value={plan.contact?.phone ?? ''}
@@ -439,7 +441,7 @@ export function QuotationImportDialog({ open, onOpenChange, onSuccess }: Props) 
           <CardHeader className="pb-3">
             <CardTitle className="text-sm flex items-center gap-2">
               <Sparkles className="h-3.5 w-3.5" />
-              報價項目 ({plan.lineItems.length})
+              {t('quotation.import.lineItems.title', { count: plan.lineItems.length })}
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
@@ -447,17 +449,17 @@ export function QuotationImportDialog({ open, onOpenChange, onSuccess }: Props) 
               <table className="w-full text-sm">
                 <thead className="bg-muted/50 text-xs">
                   <tr className="text-left">
-                    <th className="px-3 py-2 font-medium">類型</th>
-                    <th className="px-3 py-2 font-medium">名稱</th>
-                    <th className="px-3 py-2 font-medium">SKU</th>
-                    <th className="px-3 py-2 font-medium text-right">數量</th>
-                    <th className="px-3 py-2 font-medium text-right">單價</th>
-                    <th className="px-3 py-2 font-medium text-right">折扣%</th>
-                    <th className="px-3 py-2 font-medium text-right">小計</th>
+                    <th className="px-3 py-2 font-medium">{t('quotation.import.lineItems.type')}</th>
+                    <th className="px-3 py-2 font-medium">{t('quotation.import.lineItems.name')}</th>
+                    <th className="px-3 py-2 font-medium">{t('quotation.import.lineItems.sku')}</th>
+                    <th className="px-3 py-2 font-medium text-right">{t('quotation.import.lineItems.quantity')}</th>
+                    <th className="px-3 py-2 font-medium text-right">{t('quotation.import.lineItems.unitPrice')}</th>
+                    <th className="px-3 py-2 font-medium text-right">{t('quotation.import.lineItems.discount')}</th>
+                    <th className="px-3 py-2 font-medium text-right">{t('quotation.import.lineItems.subtotal')}</th>
                     {/* 2026-07-01 (US-IMPORT-MD): per-row toggle for the
                         inline Man-day editor. Empty cell for PRODUCT
                         rows (they don't have a man-day breakdown). */}
-                    <th className="px-3 py-2 font-medium">人天</th>
+                    <th className="px-3 py-2 font-medium">{t('quotation.import.lineItems.manDay')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -531,15 +533,15 @@ export function QuotationImportDialog({ open, onOpenChange, onSuccess }: Props) 
                                 className="text-xs flex items-center gap-1 text-muted-foreground hover:text-foreground"
                               >
                                 {isOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                                {mdCount === 0 ? '設定' : `${mdCount} 行`}
+                                {mdCount === 0 ? t('quotation.import.lineItems.manDaySetup') : t('quotation.import.lineItems.manDayRows', { count: mdCount })}
                               </button>
                             ) : (
                               <span className="text-xs text-muted-foreground/50" title={
                                 li.type === 'SERVICE'
-                                  ? '此行不需要設定人天 (維護費用 / Licence)'
+                                  ? t('quotation.import.lineItems.manDayTitle')
                                   : undefined
                               }>
-                                {li.type === 'SERVICE' ? '不需要' : '—'}
+                                {li.type === 'SERVICE' ? t('quotation.import.lineItems.manDayNA') : '—'}
                               </span>
                             )}
                           </td>
@@ -560,7 +562,7 @@ export function QuotationImportDialog({ open, onOpenChange, onSuccess }: Props) 
                     );
                   })}
                   <tr className="border-t bg-muted/30 font-medium">
-                    <td colSpan={7} className="px-3 py-2 text-right">Total</td>
+                    <td colSpan={7} className="px-3 py-2 text-right">{t('quotation.import.lineItems.total')}</td>
                     <td className="px-3 py-2 text-right tabular-nums">
                       {plan.lineItems.reduce((sum, li) => sum + li.quantity * li.unitPrice * (1 - (li.discount ?? 0) / 100), 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                     </td>
@@ -574,12 +576,12 @@ export function QuotationImportDialog({ open, onOpenChange, onSuccess }: Props) 
         {/* ----- Meta --------------------------------------------- */}
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm">報價單資料</CardTitle>
+            <CardTitle className="text-sm">{t('quotation.import.meta.title')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5 col-span-2">
-                <Label htmlFor="imp-title">標題</Label>
+                <Label htmlFor="imp-title">{t('quotation.import.meta.quotationTitle')}</Label>
                 <Input
                   id="imp-title"
                   value={plan.meta.title}
@@ -587,19 +589,19 @@ export function QuotationImportDialog({ open, onOpenChange, onSuccess }: Props) 
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="imp-currency">出單貨幣</Label>
+                <Label htmlFor="imp-currency">{t('quotation.import.meta.currency')}</Label>
                 <Select
                   id="imp-currency"
                   value={plan.meta.currency}
                   onChange={(e) => setPlan({ ...plan, meta: { ...plan.meta, currency: e.target.value as 'RMB' | 'HKD' | 'MOP' } })}
                 >
-                  <option value="RMB">人民幣 (RMB)</option>
-                  <option value="HKD">港幣 (HKD)</option>
-                  <option value="MOP">澳門幣 (MOP)</option>
+                  <option value="RMB">{t('quotation.import.meta.currencyRMB')}</option>
+                  <option value="HKD">{t('quotation.import.meta.currencyHKD')}</option>
+                  <option value="MOP">{t('quotation.import.meta.currencyMOP')}</option>
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="imp-taxrate">稅率 %</Label>
+                <Label htmlFor="imp-taxrate">{t('quotation.import.meta.taxRate')}</Label>
                 <Input
                   id="imp-taxrate"
                   type="number"
@@ -611,7 +613,7 @@ export function QuotationImportDialog({ open, onOpenChange, onSuccess }: Props) 
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="imp-issuedate">報價日期</Label>
+                <Label htmlFor="imp-issuedate">{t('quotation.import.meta.issueDate')}</Label>
                 <Input
                   id="imp-issuedate"
                   type="date"
@@ -623,7 +625,7 @@ export function QuotationImportDialog({ open, onOpenChange, onSuccess }: Props) 
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="imp-validuntil">有效期至</Label>
+                <Label htmlFor="imp-validuntil">{t('quotation.import.meta.validUntil')}</Label>
                 <Input
                   id="imp-validuntil"
                   type="date"
@@ -635,7 +637,7 @@ export function QuotationImportDialog({ open, onOpenChange, onSuccess }: Props) 
                 />
               </div>
               <div className="space-y-1.5 col-span-2">
-                <Label htmlFor="imp-notes">備註</Label>
+                <Label htmlFor="imp-notes">{t('quotation.import.meta.notes')}</Label>
                 <Textarea
                   id="imp-notes"
                   value={plan.meta.notes ?? ''}
@@ -663,8 +665,7 @@ export function QuotationImportDialog({ open, onOpenChange, onSuccess }: Props) 
         <p className="text-[11px] text-muted-foreground flex items-start gap-1.5">
           <Info className="h-3 w-3 mt-0.5 flex-shrink-0" />
           <span>
-            送出後 backend 會再行一次 find-or-create — 客戶/Deal/聯絡人/產品/服務按名稱(不分大小寫)+ SKU 自動配對既有記錄;
-            無法配對時將建立新記錄。所有新建的 entity 都會寫入 audit log。
+            {t('quotation.import.resolveNote')}
           </span>
         </p>
       </div>
@@ -725,7 +726,7 @@ export function QuotationImportDialog({ open, onOpenChange, onSuccess }: Props) 
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 pr-12">
             <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
-            Import Quotation from Excel
+            {t('quotation.import.fromExcel')}
           </DialogTitle>
           {/* Fullscreen toggle positioned to the LEFT of the
               built-in Radix close button so both are reachable.
@@ -737,8 +738,8 @@ export function QuotationImportDialog({ open, onOpenChange, onSuccess }: Props) 
             size="icon"
             className="absolute right-12 top-4 h-7 w-7"
             onClick={() => setIsFullscreen((f) => !f)}
-            aria-label={isFullscreen ? '退出全屏幕' : '切換到全屏幕'}
-            title={isFullscreen ? '退出全屏幕' : '切換到全屏幕'}
+            aria-label={isFullscreen ? t('quotation.import.exitFullscreen') : t('quotation.import.fullscreen')}
+            title={isFullscreen ? t('quotation.import.exitFullscreen') : t('quotation.import.fullscreen')}
           >
             {isFullscreen ? (
               <Minimize2 className="h-4 w-4" />
@@ -751,7 +752,7 @@ export function QuotationImportDialog({ open, onOpenChange, onSuccess }: Props) 
         {step === 'submitting' ? (
           <div className="flex flex-col items-center justify-center py-16 gap-3">
             <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
-            <p className="text-sm text-muted-foreground">AI 創建緊 Quotation ...</p>
+            <p className="text-sm text-muted-foreground">{t('quotation.import.creating')}</p>
           </div>
         ) : step === 'upload' ? (
           renderUpload()
@@ -762,7 +763,7 @@ export function QuotationImportDialog({ open, onOpenChange, onSuccess }: Props) 
         <DialogFooter className="gap-2">
           {step === 'upload' && (
             <>
-              <Button variant="ghost" onClick={() => onOpenChange(false)}>取消</Button>
+              <Button variant="ghost" onClick={() => onOpenChange(false)}>{t('quotation.import.cancel')}</Button>
             </>
           )}
           {step === 'preview' && (
@@ -772,14 +773,14 @@ export function QuotationImportDialog({ open, onOpenChange, onSuccess }: Props) 
                 onClick={() => { setStep('upload'); setFile(null); setPlan(null); setError(null); }}
               >
                 <X className="h-3.5 w-3.5 mr-1" />
-                重選檔案
+                {t('quotation.import.reselectFile')}
               </Button>
               <Button variant="outline" onClick={() => onOpenChange(false)}>
-                取消
+                {t('quotation.import.cancel')}
               </Button>
               <Button onClick={commit} disabled={!plan}>
                 <Save className="h-4 w-4 mr-1" />
-                確認建立
+                {t('quotation.import.confirmCreate')}
               </Button>
             </>
           )}
@@ -820,6 +821,7 @@ function ImportManDayEditor({
   catalogue: ManDayRole[];
   defaultDayRate: number;
 }) {
+  const { t } = useTranslation();
   function addRow() {
     onChange([
       ...rows,
@@ -844,17 +846,15 @@ function ImportManDayEditor({
     <div className="space-y-2">
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <span>
-          人天結構 (SOW breakdown) — 提交後會 snapshot 落 QuotationItem;
-          新 service 會和時 create ServiceManDay rows 入 catalogue
+          {t('quotation.import.sow.header')}
         </span>
         <Button size="sm" variant="outline" onClick={addRow}>
-          <Plus className="h-3 w-3 mr-1" /> 加一行
+          <Plus className="h-3 w-3 mr-1" /> {t('quotation.import.sow.addRow')}
         </Button>
       </div>
       {rows.length === 0 && (
         <p className="text-xs text-muted-foreground italic">
-          尚未設定。點擊「加一行」加入第一個 role breakdown(可留空,提交後此 SERVICE 的
-          costSnapshot = 0、lineGpPercent = 100%)。
+          {t('quotation.import.sow.empty')}
         </p>
       )}
       {rows.map((row, i) => (
@@ -875,7 +875,7 @@ function ImportManDayEditor({
             }}
             className="col-span-4 h-8 text-xs"
           >
-            <option value="">— 自訂(自由填)—</option>
+            <option value="">{t('quotation.import.sow.custom')}</option>
             {catalogue.map((r) => (
               <option key={r.id} value={r.id}>
                 {r.name} (¥{Number(r.price).toLocaleString()}/day)
@@ -888,8 +888,8 @@ function ImportManDayEditor({
             value={row.dayRate}
             onChange={(e) => updateRow(i, { dayRate: Number(e.target.value) })}
             className="col-span-2 h-8 text-right"
-            placeholder="day rate"
-            title="Day rate (sell)"
+            placeholder={t('quotation.import.sow.dayRate')}
+            title={t('quotation.import.sow.dayRate')}
           />
           <Input
             type="number"
@@ -898,8 +898,8 @@ function ImportManDayEditor({
             value={row.days}
             onChange={(e) => updateRow(i, { days: Number(e.target.value) })}
             className="col-span-2 h-8 text-right"
-            placeholder="days"
-            title="Man-days"
+            placeholder={t('quotation.import.sow.days')}
+            title={t('quotation.import.sow.days')}
           />
           <Input
             type="number"
@@ -907,8 +907,8 @@ function ImportManDayEditor({
             value={row.costRate ?? 0}
             onChange={(e) => updateRow(i, { costRate: Number(e.target.value) })}
             className="col-span-2 h-8 text-right"
-            placeholder="cost/day"
-            title="Cost per man-day (drives costSnapshot / GP%)"
+            placeholder={t('quotation.import.sow.costRate')}
+            title={t('quotation.import.sow.costRate')}
           />
           <Button
             type="button"
@@ -917,7 +917,7 @@ function ImportManDayEditor({
             onClick={() => removeRow(i)}
             className="col-span-2 h-8"
             disabled={rows.length === 1}
-            title="移除此行"
+            title={t('quotation.import.sow.removeRow')}
           >
             <Trash2 className="h-3 w-3" />
           </Button>

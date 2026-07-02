@@ -1,5 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate, Navigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
+
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +11,7 @@ import { ApiError } from "@/lib/api";
 export function LoginPage() {
   const navigate = useNavigate();
   const { login, user, loading, bootstrapped } = useAuth();
+  const { t } = useTranslation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -25,9 +28,12 @@ export function LoginPage() {
       navigate("/dashboard", { replace: true });
     } catch (err) {
       if (err instanceof ApiError) {
-        setError(err.message);
+        // The server returns a localized `{ error: "..." }` body
+        // (via the locale middleware). Fall back to the generic
+        // translated message if the body had no `error` field.
+        setError(err.message || t('auth.invalidCredentials'));
       } else {
-        setError("登入失敗,請稍後再試");
+        setError(t('errors.UNKNOWN_ERROR'));
       }
     }
   }
@@ -41,9 +47,9 @@ export function LoginPage() {
               C
             </div>
             <div>
-              <CardTitle>CRM System</CardTitle>
+              <CardTitle>{t('nav.appName')} System</CardTitle>
               <p className="text-sm text-muted-foreground">
-                Sign in to your account
+                {t('auth.signInToAccount')}
               </p>
             </div>
           </div>
@@ -52,7 +58,7 @@ export function LoginPage() {
           <form onSubmit={onSubmit} className="space-y-4">
             <div className="space-y-2">
               <label htmlFor="email" className="text-sm font-medium">
-                Email
+                {t('auth.email')}
               </label>
               <Input
                 id="email"
@@ -65,7 +71,7 @@ export function LoginPage() {
             </div>
             <div className="space-y-2">
               <label htmlFor="password" className="text-sm font-medium">
-                Password
+                {t('auth.password')}
               </label>
               <Input
                 id="password"
@@ -82,7 +88,7 @@ export function LoginPage() {
               </div>
             )}
             <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "登入中..." : "登入"}
+              {loading ? `${t('common.loading')}` : t('auth.signInButton')}
             </Button>
             <div className="hidden pt-2 text-xs text-center border-t text-muted-foreground">
               Demo: <code>admin@crm.local</code> / <code>admin123</code>

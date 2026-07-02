@@ -38,6 +38,7 @@
 import { useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { useTranslation } from 'react-i18next';
 import { Brain } from 'lucide-react';
 import { ChartBlock } from './ChartBlock';
 import { cn } from '@/lib/utils';
@@ -127,6 +128,7 @@ export function MarkdownContent({ source, className }: MarkdownContentProps) {
  *     obvious
  */
 function ThinkBlock({ content }: { content: string }) {
+  const { t } = useTranslation();
   if (!content) return null;
   return (
     <details
@@ -148,7 +150,7 @@ function ThinkBlock({ content }: { content: string }) {
         )}
       >
         <Brain className="h-3.5 w-3.5 text-primary/70 group-hover:text-primary transition-colors shrink-0" />
-        <span className="font-medium">推理過程</span>
+        <span className="font-medium">{t('common.reasoning')}</span>
         <span aria-hidden="true" className="text-[10px] group-open:rotate-90 transition-transform ml-auto opacity-60 group-hover:opacity-100">
           ▸
         </span>

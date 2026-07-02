@@ -1,0 +1,114 @@
+{
+  "title": "Deals Pipeline",
+  "pipelineLabel": "Sales pipeline · {{name}}",
+  "defaultPipeline": "Default Sales Pipeline",
+  "newDeal": "New Deal",
+  "label": "Related Deal (optional)",
+  "searchPlaceholder": "Search deal name…",
+  "pleaseSelectCustomer": "Please select a customer first",
+  "noDealsForCustomer": "This customer has no deals",
+  "stats": {
+    "openTotal": "Open / Total",
+    "openDeals_one": "{{count}} deal",
+    "openDeals_other": "{{count}} deals",
+    "openDeals": "Open Deals",
+    "totalValue": "Total Value",
+    "weightedValue": "Weighted (by prob.)",
+    "stages": "Stages",
+    "probability": "Probability: {{value}}%"
+  },
+  "filters": {
+    "company": "Company",
+    "companyPlaceholder": "Search companies…",
+    "salesRep": "Sales Rep",
+    "salesRepPlaceholder": "Search sales reps…",
+    "clearAll": "Clear filters",
+    "showingCount_one": "Showing {{count}} deal",
+    "showingCount_other": "Showing {{count}} deals"
+  },
+  "column": {
+    "emptyDropZone": "Drag a deal here"
+  },
+  "card": {
+    "ownerTooltip": "Sales rep: {{name}}{{email}}",
+    "viewQuotations_tooltip": "View {{count}} quotations on this deal",
+    "viewQuotations_one": "{{count}} quotation",
+    "viewQuotations_other": "{{count}} quotations",
+    "firstQuotationTitle": "Create the first quotation for this deal",
+    "firstQuotation": "+ Quotation",
+    "newActivityTitle": "Log a follow-up for this deal",
+    "newActivity": "+ Activity",
+    "editDeal": "Edit deal",
+    "deleteDeal": "Delete deal"
+  },
+  "deleteConfirm": "Delete deal \"{{title}}\"? This cannot be undone — related activities / quotations will be cascaded.",
+  "loading": "Loading…",
+  "dialog": {
+    "newTitle": "New Deal",
+    "editTitle": "Edit Deal",
+    "title": "Deal Name *",
+    "company": "Company *",
+    "companyReadonly": "Company cannot be modified",
+    "searchCompany": "Search customer name…",
+    "stage": "Stage *",
+    "amount": "Amount ({{currency}})",
+    "currency": "Currency",
+    "expectedClose": "Expected close date",
+    "cancel": "Cancel",
+    "submit": {
+      "create": "Create",
+      "edit": "Save",
+      "creating": "Creating…",
+      "saving": "Saving…"
+    },
+    "errors": {
+      "companyStageRequired": "Company and Stage are required",
+      "titleRequired": "Deal name is required"
+    }
+  },
+  "quotationDialog": {
+    "title": "Create quotation for \"{{title}}\""
+  },
+  "currencies": {
+    "RMB": "Renminbi (RMB)",
+    "HKD": "Hong Kong Dollar (HKD)",
+    "MOP": "Macau Pataca (MOP)"
+  },
+  "detail": {
+    "loading": "Loading…",
+    "notFound": "Deal not found",
+    "deleteConfirm": "Delete deal \"{{title}}\"? This cannot be undone — related activities / quotations will be cascaded.",
+    "deleteFailed": "Delete failed: {{message}}",
+    "newQuotation": "New Quotation",
+    "edit": "Edit",
+    "delete": "Delete",
+    "meta": {
+      "dealValue": "Deal Value",
+      "expectedClose": "Expected close date",
+      "closedAtWon": "Closed won date",
+      "closedAt": "Closed date",
+      "quotationCount": "Quotations",
+      "quotationCountSuffix": " {{count}} in total"
+    },
+    "tabs": {
+      "quotations": "Quotations",
+      "activity": "Activity"
+    },
+    "quotationTabEmpty": "This deal has no quotations yet.",
+    "quotationTabEmptyHint": "Click \"+ New Quotation\" above to create the first one.",
+    "quotationTable": {
+      "number": "Number",
+      "title": "Title",
+      "status": "Status",
+      "total": "Total",
+      "salesRep": "Sales rep",
+      "created": "Created",
+      "sent": "Sent",
+      "accepted": "Accepted",
+      "view": "View"
+    },
+    "activityEmpty": "This deal has no activity records yet.",
+    "newActivity": "New Activity",
+    "quotationBuilderTitle": "Create quotation for \"{{title}}\""
+  }
+}

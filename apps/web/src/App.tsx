@@ -27,6 +27,8 @@ import { SettingsLayout } from '@/components/settings-layout';
 import { SettingsTaxPage } from '@/pages/settings-tax';
 import { SettingsCurrencyPage } from '@/pages/settings-currency';
 import { SettingsMaintenanceFeePage } from '@/pages/settings-maintenance-fee';
+import { SettingsAccountPage } from '@/pages/settings-account';
+import { LocaleProvider } from '@/i18n/LocaleContext';
 import { APP_BASENAME } from '@/lib/runtime-paths';
 // Day 14.7 Step 8 — the 5 admin pages that were at top-level routes are
 // now mounted as children of <SettingsLayout /> (below). Top-level direct
@@ -54,9 +56,10 @@ function Bootstrap() {
 export function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter basename={APP_BASENAME || undefined}>
-        <Bootstrap />
-        <Routes>
+      <LocaleProvider>
+        <BrowserRouter basename={APP_BASENAME || undefined}>
+          <Bootstrap />
+          <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route
             element={
@@ -92,6 +95,10 @@ export function App() {
             <Route path="/settings" element={<Navigate to="/settings/pipelines" replace />} />
             {/* Day 14.7 — Settings sub-routes under SettingsLayout (Step 6-8: all 7 tabs live). */}
             <Route path="/settings" element={<SettingsLayout />}>
+              {/* P3-i18n (2026-07-02): the Account tab is the first one
+                  in the sidebar so every user — admin or not — has
+                  something useful to click. It's NOT admin-gated. */}
+              <Route path="account" element={<SettingsAccountPage />} />
               <Route path="pipelines" element={<SettingsPage />} />
               <Route path="users" element={<UsersPage />} />
               <Route path="roles" element={<RolesPage />} />
@@ -107,6 +114,7 @@ export function App() {
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </BrowserRouter>
+      </LocaleProvider>
     </QueryClientProvider>
   );
 }

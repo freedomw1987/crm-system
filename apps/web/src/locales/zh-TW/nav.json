@@ -1,0 +1,27 @@
+{
+  "dashboard": "儀表板",
+  "companies": "公司",
+  "deals": "商機",
+  "quotations": "報價單",
+  "products": "產品",
+  "services": "服務",
+  "contacts": "聯絡人",
+  "settings": "系統設定",
+  "admin": "管理員",
+  "account": "帳號",
+  "signOut": "登出",
+  "aiAssistant": "AI 助理",
+  "aiAssistantOpen": "開啟 AI 助理",
+  "appName": "CRM",
+  "settingsTabs": {
+    "pipelines": "銷售流程",
+    "users": "使用者",
+    "roles": "角色",
+    "ai": "AI",
+    "manDay": "人天角色",
+    "tax": "稅率",
+    "currency": "幣別",
+    "maintenanceFee": "維護費用",
+    "audit": "稽核紀錄"
+  }
+}

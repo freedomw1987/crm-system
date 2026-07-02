@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { FileText, Plus, Sparkles, Loader2, X, Trash2, FileUp } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -17,6 +18,7 @@ import { quotationsApi, chatApi, companiesApi, type Quotation } from '@/lib/api'
 import { formatCurrency, formatDate } from '@/lib/utils';
 
 export function QuotationsPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -136,7 +138,7 @@ export function QuotationsPage() {
       queryClient.setQueryData(['quotation', q.id], full);
       setEditing(full);
     } catch (err) {
-      window.alert(`載入報價失敗: ${(err as Error).message}`);
+      window.alert(t('quotation.list.loadFailed', { message: (err as Error).message }));
     } finally {
       setLoadingEditId(null);
     }
@@ -182,7 +184,7 @@ export function QuotationsPage() {
         navigate(`/quotations/${draftQuotationId}`);
         return;
       }
-      setAiError('AI 沒有整到 quotation,看下 chat 了解詳情');
+      setAiError(t('quotation.ai.noResult'));
     } catch (err) {
       setAiError((err as Error).message);
     } finally {
@@ -194,21 +196,21 @@ export function QuotationsPage() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold">Quotations</h1>
-          <p className="text-muted-foreground">所有報價單</p>
+          <h1 className="text-2xl md:text-3xl font-bold">{t('quotation.list.title')}</h1>
+          <p className="text-muted-foreground">{t('quotation.list.pageSubtitle')}</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => setAiOpen(true)}>
             <Sparkles className="h-4 w-4 mr-2" />
-            AI Draft
+            {t('quotation.list.aiDraft')}
           </Button>
           <Button variant="outline" onClick={() => setImportOpen(true)}>
             <FileUp className="h-4 w-4 mr-2" />
-            Import from Excel
+            {t('quotation.list.importExcel')}
           </Button>
           <Button onClick={() => setBuilderOpen(true)}>
             <Plus className="h-4 w-4 mr-2" />
-            新報價
+            {t('quotation.list.newQuotation')}
           </Button>
         </div>
       </div>
@@ -224,16 +226,16 @@ export function QuotationsPage() {
             value={filterCompanyIds}
             onChange={setFilterCompanyIds}
             companies={companies}
-            label="Company"
-            placeholder="搜尋公司..."
+            label={t('quotation.list.companyLabel')}
+            placeholder={t('quotation.list.companyPlaceholder')}
           />
         </div>
         <div className="min-w-[260px] flex-1 max-w-md">
           <MultiUserAutocomplete
             value={filterCreatedByIds}
             onChange={setFilterCreatedByIds}
-            label="銷售員"
-            placeholder="搜尋銷售員..."
+            label={t('quotation.list.salesRepLabel')}
+            placeholder={t('quotation.list.salesRepPlaceholder')}
           />
         </div>
         {hasFilter && (
@@ -244,12 +246,12 @@ export function QuotationsPage() {
             className="text-muted-foreground"
           >
             <X className="h-3 w-3 mr-1" />
-            清除 filter
+            {t('quotation.list.clearFilters')}
           </Button>
         )}
         {hasFilter && (
           <div className="text-sm text-muted-foreground pb-2 w-full">
-            顯示 {quotations.length} 份 quotation
+            {t('quotation.list.showingCount', { count: quotations.length })}
           </div>
         )}
       </div>
@@ -258,7 +260,7 @@ export function QuotationsPage() {
       <Dialog open={builderOpen} onOpenChange={(o) => (o ? setBuilderOpen(true) : closeBuilder())}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>建立新報價單</DialogTitle>
+            <DialogTitle>{t('quotation.list.newDialogTitle')}</DialogTitle>
           </DialogHeader>
           <QuotationBuilder
             initialDealId={presetDealId}
@@ -273,20 +275,20 @@ export function QuotationsPage() {
       <Dialog open={aiOpen} onOpenChange={setAiOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>AI 報價助手</DialogTitle>
+            <DialogTitle>{t('quotation.ai.assistantTitle')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              用自然語言講你想點報,例如:
+              {t('quotation.ai.helperIntro')}
             </p>
             <ul className="text-xs text-muted-foreground list-disc pl-5 space-y-1">
-              <li>「幫 ABC Company 開個 5 個 AC01 和 2 個 AC02 的 quotation」</li>
-              <li>「幫我整個 deal 客戶的 starter pack」</li>
+              <li>{t('quotation.ai.helperExample1')}</li>
+              <li>{t('quotation.ai.helperExample2')}</li>
             </ul>
             <Textarea
               value={aiPrompt}
               onChange={(e) => setAiPrompt(e.target.value)}
-              placeholder="你想點報..."
+              placeholder={t('quotation.ai.promptPlaceholder')}
               rows={4}
             />
             {aiError && (
@@ -297,18 +299,18 @@ export function QuotationsPage() {
           </div>
           <div className="flex justify-end gap-2 mt-2">
             <Button variant="outline" onClick={() => setAiOpen(false)}>
-              取消
+              {t('quotation.detail.cancel')}
             </Button>
             <Button onClick={handleAiDraft} disabled={aiLoading || !aiPrompt.trim()}>
               {aiLoading ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  AI 想緊...
+                  {t('quotation.ai.generating')}
                 </>
               ) : (
                 <>
                   <Sparkles className="h-4 w-4 mr-2" />
-                  生成草稿
+                  {t('quotation.ai.generate')}
                 </>
               )}
             </Button>
@@ -326,7 +328,7 @@ export function QuotationsPage() {
       <Dialog open={editOpen} onOpenChange={(o) => (o ? null : closeEdit())}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>編輯報價單 {editing?.number ?? ''}</DialogTitle>
+            <DialogTitle>{t('quotation.detail.editDialogTitle', { number: editing?.number ?? '' })}</DialogTitle>
           </DialogHeader>
           {editing && (
             <QuotationBuilder
@@ -347,12 +349,12 @@ export function QuotationsPage() {
       />
 
       {isLoading ? (
-        <p className="text-sm text-muted-foreground">載入中...</p>
+        <p className="text-sm text-muted-foreground">{t('quotation.list.loading')}</p>
       ) : quotations.length === 0 ? (
         <Card>
           <CardContent className="p-12 text-center text-muted-foreground">
             <FileText className="h-12 w-12 mx-auto mb-3 opacity-50" />
-            未有報價單,點擊「+ 新報價」整第一個
+            {t('quotation.list.emptyAction')}
           </CardContent>
         </Card>
       ) : (
@@ -362,19 +364,19 @@ export function QuotationsPage() {
               <table className="w-full text-sm">
                 <thead className="bg-muted/50 border-b">
                   <tr className="text-left">
-                    <th className="px-4 py-3 font-medium">Number</th>
-                    <th className="px-4 py-3 font-medium">Title</th>
-                    <th className="px-4 py-3 font-medium">Company</th>
-                    <th className="px-4 py-3 font-medium">Status</th>
-                    <th className="px-4 py-3 font-medium text-right">Total</th>
+                    <th className="px-4 py-3 font-medium">{t('quotation.list.table.number')}</th>
+                    <th className="px-4 py-3 font-medium">{t('quotation.list.table.title')}</th>
+                    <th className="px-4 py-3 font-medium">{t('quotation.list.table.company')}</th>
+                    <th className="px-4 py-3 font-medium">{t('quotation.list.table.status')}</th>
+                    <th className="px-4 py-3 font-medium text-right">{t('quotation.list.table.total')}</th>
                     {/* 2026-06-26: 銷售員 column. Sales-rep filter
                         already exists at the top of the page; the
                         table column closes the loop so users can see
                         who's responsible per row without opening the
                         detail page. Falls back to the creator when
                         salesRepId is null. */}
-                    <th className="px-4 py-3 font-medium">銷售員</th>
-                    <th className="px-4 py-3 font-medium">Created</th>
+                    <th className="px-4 py-3 font-medium">{t('quotation.list.table.salesRep')}</th>
+                    <th className="px-4 py-3 font-medium">{t('quotation.list.table.created')}</th>
                     <th className="px-4 py-3"></th>
                   </tr>
                 </thead>
@@ -406,7 +408,7 @@ export function QuotationsPage() {
                       <td className="px-4 py-3 text-right">
                         <div className="inline-flex items-center gap-1">
                           <Button asChild variant="ghost" size="sm">
-                            <Link to={`/quotations/${q.id}`}>查看</Link>
+                            <Link to={`/quotations/${q.id}`}>{t('quotation.list.table.view')}</Link>
                           </Button>
                           <Button
                             variant="ghost"
@@ -418,7 +420,7 @@ export function QuotationsPage() {
                             {loadingEditId === q.id ? (
                               <Loader2 className="h-3.5 w-3.5 animate-spin" />
                             ) : (
-                              '編輯'
+                              t('quotation.list.table.edit')
                             )}
                           </Button>
                           <Button
@@ -426,7 +428,7 @@ export function QuotationsPage() {
                             size="sm"
                             className="text-muted-foreground hover:text-destructive"
                             onClick={() => {
-                              if (confirm(`確定刪除 quotation「${q.number}」?此操作無法復原,line items 會一齊 cascade。`)) {
+                              if (confirm(t('quotation.list.deleteConfirm', { number: q.number }))) {
                                 deleteQuotation.mutate(q.id);
                               }
                             }}
@@ -448,6 +450,7 @@ export function QuotationsPage() {
 }
 
 function QuotationStatusBadge({ status }: { status: string }) {
+  const { t } = useTranslation();
   const map: Record<string, 'default' | 'secondary' | 'info' | 'success' | 'warning' | 'destructive'> = {
     DRAFT: 'secondary',
     SENT: 'info',
@@ -457,5 +460,5 @@ function QuotationStatusBadge({ status }: { status: string }) {
     EXPIRED: 'warning',
     INVOICED: 'success',
   };
-  return <Badge variant={map[status] ?? 'default'}>{status}</Badge>;
+  return <Badge variant={map[status] ?? 'default'}>{t(`status.quotation.${status}`)}</Badge>;
 }

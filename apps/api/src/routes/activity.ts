@@ -52,6 +52,7 @@ import { prisma } from '@crm/db';
 import { authContext } from '../lib/context';
 import { logEvent } from '../middleware/audit';
 import { requirePermission, getUserIdFromRequest } from '../middleware/rbac';
+import { tApi } from '../lib/i18n';
 
 const DATA_DIR = process.env.DATA_DIR ?? '/app/data/uploads';
 const MAX_FILE_BYTES = 50 * 1024 * 1024; // 50 MB
@@ -142,9 +143,9 @@ export const activityRoutes = new Elysia({ prefix: '', tags: ['activities', 'att
   // ============================================================
   // ACTIVITY CRUD
   // ============================================================
-  .get('/activities', async ({ query, set, request }) => {
+  .get('/activities', async ({ query, set, request, locale }) => {
     const userId = await getUserIdFromRequest(request);
-    if (!userId) { set.status = 401; return { error: 'Unauthorized' }; }
+    if (!userId) { set.status = 401; return { error: tApi(locale, 'UNAUTHORIZED') }; }
     const { companyId, dealId, limit = '50', offset = '0', type } = query as {
       companyId?: string;
       dealId?: string;
@@ -154,7 +155,7 @@ export const activityRoutes = new Elysia({ prefix: '', tags: ['activities', 'att
     };
     if (!companyId && !dealId) {
       set.status = 400;
-      return { error: 'Either companyId or dealId is required' };
+      return { error: tApi(locale, 'ATTACHMENT_TARGET_REQUIRED') };
     }
     const where: Record<string, unknown> = {};
     if (companyId) where.companyId = companyId;
@@ -173,9 +174,9 @@ export const activityRoutes = new Elysia({ prefix: '', tags: ['activities', 'att
     return { items, total: items.length };
   })
 
-  .get('/activities/recent', async ({ query, set, request }) => {
+  .get('/activities/recent', async ({ query, set, request, locale }) => {
     const userId = await getUserIdFromRequest(request);
-    if (!userId) { set.status = 401; return { error: 'Unauthorized' }; }
+    if (!userId) { set.status = 401; return { error: tApi(locale, 'UNAUTHORIZED') }; }
     const { limit: limitRaw, authorId, since, until } = query as {
       limit?: string;
       /** Day N+1: filter to a single sales rep (used by the Deal Kanban
@@ -222,9 +223,9 @@ export const activityRoutes = new Elysia({ prefix: '', tags: ['activities', 'att
   // The author is set from the authenticated userId (not from the
   // body) — see POST handler body schema.
   .use(requirePermission('activity:create'))
-  .post('/activities', async ({ body, set, request }) => {
+  .post('/activities', async ({ body, set, request, locale }) => {
     const userId = await getUserIdFromRequest(request);
-    if (!userId) { set.status = 401; return { error: 'Unauthorized' }; }
+    if (!userId) { set.status = 401; return { error: tApi(locale, 'UNAUTHORIZED') }; }
     const data = body as {
       companyId?: string;
       dealId?: string;
@@ -233,19 +234,19 @@ export const activityRoutes = new Elysia({ prefix: '', tags: ['activities', 'att
     };
     if ((!data.companyId && !data.dealId) || (data.companyId && data.dealId)) {
       set.status = 400;
-      return { error: 'Exactly one of companyId or dealId must be set' };
+      return { error: tApi(locale, 'ATTACHMENT_TARGET_MUTEX') };
     }
     if (!data.content || data.content.trim().length === 0) {
       set.status = 400;
-      return { error: 'content is required' };
+      return { error: tApi(locale, 'ACTIVITY_CONTENT_REQUIRED') };
     }
     if (data.companyId) {
       const exists = await prisma.company.findUnique({ where: { id: data.companyId }, select: { id: true } });
-      if (!exists) { set.status = 404; return { error: 'Company not found' }; }
+      if (!exists) { set.status = 404; return { error: tApi(locale, 'COMPANY_NOT_FOUND') }; }
     }
     if (data.dealId) {
       const exists = await prisma.deal.findUnique({ where: { id: data.dealId }, select: { id: true } });
-      if (!exists) { set.status = 404; return { error: 'Deal not found' }; }
+      if (!exists) { set.status = 404; return { error: tApi(locale, 'DEAL_NOT_FOUND') }; }
     }
     const activity = await prisma.activity.create({
       data: {
@@ -283,20 +284,20 @@ export const activityRoutes = new Elysia({ prefix: '', tags: ['activities', 'att
   // (matches the user's request "自己Activity 應該可以編輯及刪除").
   // Accepts either type or content (or both). The schema's
   // @updatedAt column refreshes automatically on Prisma.update.
-  .patch('/activities/:id', async ({ params, body, set, request }) => {
+  .patch('/activities/:id', async ({ params, body, set, request, locale }) => {
     const userId = await getUserIdFromRequest(request);
-    if (!userId) { set.status = 401; return { error: 'Unauthorized' }; }
+    if (!userId) { set.status = 401; return { error: tApi(locale, 'UNAUTHORIZED') }; }
     const data = body as { type?: 'NOTE' | 'CALL' | 'EMAIL' | 'MEETING'; content?: string };
     const before = await prisma.activity.findUnique({ where: { id: params.id } });
-    if (!before) { set.status = 404; return { error: 'Activity not found' }; }
+    if (!before) { set.status = 404; return { error: tApi(locale, 'ACTIVITY_NOT_FOUND') }; }
     if (before.authorId !== userId) {
       set.status = 403;
-      return { error: 'Only the author can edit this activity.' };
+      return { error: tApi(locale, 'ACTIVITY_NOT_AUTHOR_EDIT') };
     }
     const update: Record<string, unknown> = {};
     if (data.type !== undefined) update.type = data.type;
     if (data.content !== undefined) {
-      if (data.content.length < 1) { set.status = 400; return { error: 'content cannot be empty' }; }
+      if (data.content.length < 1) { set.status = 400; return { error: tApi(locale, 'ACTIVITY_CONTENT_EMPTY') }; }
       update.content = data.content;
     }
     const updated = await prisma.activity.update({ where: { id: params.id }, data: update as never });
@@ -316,14 +317,14 @@ export const activityRoutes = new Elysia({ prefix: '', tags: ['activities', 'att
     }),
   })
 
-  .delete('/activities/:id', async ({ params, set, request }) => {
+  .delete('/activities/:id', async ({ params, set, request, locale }) => {
     const userId = await getUserIdFromRequest(request);
-    if (!userId) { set.status = 401; return { error: 'Unauthorized' }; }
+    if (!userId) { set.status = 401; return { error: tApi(locale, 'UNAUTHORIZED') }; }
     const before = await prisma.activity.findUnique({
       where: { id: params.id },
       include: { attachments: true },
     });
-    if (!before) { set.status = 404; return { error: 'Activity not found' }; }
+    if (!before) { set.status = 404; return { error: tApi(locale, 'ACTIVITY_NOT_FOUND') }; }
     // 2026-06-27: author-only delete. Previously open to any user
     // (per the v1 comment "Editing/deleting someone else's
     // activity is allowed"). Tightened to match the user's
@@ -331,7 +332,7 @@ export const activityRoutes = new Elysia({ prefix: '', tags: ['activities', 'att
     // activity. A future perms cleanup can grant admin override.
     if (before.authorId !== userId) {
       set.status = 403;
-      return { error: 'Only the author can delete this activity.' };
+      return { error: tApi(locale, 'ACTIVITY_NOT_AUTHOR_DELETE') };
     }
     await prisma.activity.delete({ where: { id: params.id } });
     for (const att of before.attachments) {
@@ -357,9 +358,9 @@ export const activityRoutes = new Elysia({ prefix: '', tags: ['activities', 'att
   // is enforced INSIDE the handler, not at this layer — see RG-018 +
   // ADR-0018.
   .use(requirePermission('attachment:read'))
-  .get('/companies/:id/attachments', async ({ params, query, set, request }) => {
+  .get('/companies/:id/attachments', async ({ params, query, set, request, locale }) => {
     const userId = await getUserIdFromRequest(request);
-    if (!userId) { set.status = 401; return { error: 'Unauthorized' }; }
+    if (!userId) { set.status = 401; return { error: tApi(locale, 'UNAUTHORIZED') }; }
     const limit = Math.min(Number((query as { limit?: string }).limit ?? '100'), 500);
     const activities = await prisma.activity.findMany({
       where: { companyId: params.id },
@@ -389,9 +390,9 @@ export const activityRoutes = new Elysia({ prefix: '', tags: ['activities', 'att
   // ============================================================
   // ATTACHMENT: per-activity list + upload
   // ============================================================
-  .get('/activities/:id/attachments', async ({ params, set, request }) => {
+  .get('/activities/:id/attachments', async ({ params, set, request, locale }) => {
     const userId = await getUserIdFromRequest(request);
-    if (!userId) { set.status = 401; return { error: 'Unauthorized' }; }
+    if (!userId) { set.status = 401; return { error: tApi(locale, 'UNAUTHORIZED') }; }
     const items = await prisma.attachment.findMany({
       where: { activityId: params.id },
       orderBy: { createdAt: 'desc' },
@@ -400,24 +401,24 @@ export const activityRoutes = new Elysia({ prefix: '', tags: ['activities', 'att
     return { items, total: items.length };
   })
 
-  .post('/activities/:id/attachments', async ({ params, set, request }) => {
+  .post('/activities/:id/attachments', async ({ params, set, request, locale }) => {
     const userId = await getUserIdFromRequest(request);
-    if (!userId) { set.status = 401; return { error: 'Unauthorized' }; }
+    if (!userId) { set.status = 401; return { error: tApi(locale, 'UNAUTHORIZED') }; }
     const activity = await prisma.activity.findUnique({ where: { id: params.id } });
-    if (!activity) { set.status = 404; return { error: 'Activity not found' }; }
+    if (!activity) { set.status = 404; return { error: tApi(locale, 'ACTIVITY_NOT_FOUND') }; }
     // 2026-06-29: author-only attachment upload. Mirrors the
     // PATCH/DELETE author check on the activity itself — the
     // user is now editing attachments from the activity edit
     // dialog, so the ownership rule must hold for them too.
     if (activity.authorId !== userId) {
       set.status = 403;
-      return { error: 'Only the author can upload attachments to this activity.' };
+      return { error: tApi(locale, 'ACTIVITY_NOT_AUTHOR_UPLOAD') };
     }
     const ctype = request.headers.get('content-type') ?? '';
     const m = ctype.match(/^multipart\/form-data;\s*boundary=(.+)$/i);
     if (!m) {
       set.status = 400;
-      return { error: 'Content-Type must be multipart/form-data with a boundary' };
+      return { error: tApi(locale, 'ATTACHMENT_CONTENT_TYPE_INVALID') };
     }
     const boundary = m[1].replace(/^"|"$/g, '');
     let parsed;
@@ -429,7 +430,7 @@ export const activityRoutes = new Elysia({ prefix: '', tags: ['activities', 'att
     }
     if (parsed.files.length === 0) {
       set.status = 400;
-      return { error: 'No file provided' };
+      return { error: tApi(locale, 'ATTACHMENT_NO_FILE') };
     }
     const created: unknown[] = [];
     for (const f of parsed.files) {
@@ -464,15 +465,15 @@ export const activityRoutes = new Elysia({ prefix: '', tags: ['activities', 'att
   // ============================================================
   // ATTACHMENT: download + delete
   // ============================================================
-  .get('/attachments/:id/download', async ({ params, set, request }) => {
+  .get('/attachments/:id/download', async ({ params, set, request, locale }) => {
     const userId = await getUserIdFromRequest(request);
-    if (!userId) { set.status = 401; return { error: 'Unauthorized' }; }
+    if (!userId) { set.status = 401; return { error: tApi(locale, 'UNAUTHORIZED') }; }
     const att = await prisma.attachment.findUnique({ where: { id: params.id } });
-    if (!att) { set.status = 404; return { error: 'Attachment not found' }; }
+    if (!att) { set.status = 404; return { error: tApi(locale, 'ATTACHMENT_NOT_FOUND') }; }
     const path = join(DATA_DIR, att.storageKey);
     if (!existsSync(path)) {
       set.status = 410;
-      return { error: 'File no longer exists on disk' };
+      return { error: tApi(locale, 'ATTACHMENT_FILE_GONE') };
     }
     const { readFile } = await import('fs/promises');
     const buf = await readFile(path);
@@ -484,21 +485,21 @@ export const activityRoutes = new Elysia({ prefix: '', tags: ['activities', 'att
     return new Response(buf, { status: 200 });
   })
 
-  .delete('/attachments/:id', async ({ params, set, request }) => {
+  .delete('/attachments/:id', async ({ params, set, request, locale }) => {
     const userId = await getUserIdFromRequest(request);
-    if (!userId) { set.status = 401; return { error: 'Unauthorized' }; }
+    if (!userId) { set.status = 401; return { error: tApi(locale, 'UNAUTHORIZED') }; }
     const before = await prisma.attachment.findUnique({
       where: { id: params.id },
       include: { activity: { select: { authorId: true } } },
     });
-    if (!before) { set.status = 404; return { error: 'Attachment not found' }; }
+    if (!before) { set.status = 404; return { error: tApi(locale, 'ATTACHMENT_NOT_FOUND') }; }
     // 2026-06-29: author-only attachment delete. We check the parent
     // activity's authorId (not the uploader) so the ownership rule
     // stays consistent with PATCH/DELETE on /activities/:id — the
     // activity author owns the whole record, including attachments.
     if (before.activity.authorId !== userId) {
       set.status = 403;
-      return { error: 'Only the activity author can delete this attachment.' };
+      return { error: tApi(locale, 'ATTACHMENT_NOT_AUTHOR_DELETE') };
     }
     await prisma.attachment.delete({ where: { id: params.id } });
     const path = join(DATA_DIR, before.storageKey);

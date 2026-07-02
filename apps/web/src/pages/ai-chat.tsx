@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient, useIsFetching } from '@tanstack/react-query';
 import { Send, Sparkles, Trash2, Plus, Loader2, User, Bot, Wrench } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -29,6 +30,7 @@ interface InFlightToolCall {
 }
 
 export function AiChatPage() {
+  const { t } = useTranslation();
   const qc = useQueryClient();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [input, setInput] = useState('');
@@ -144,7 +146,7 @@ export function AiChatPage() {
               const now = new Date().toISOString();
               const placeholder: ConversationSummary = {
                 id: ev.conversationId,
-                title: '新對話',
+                title: t('ai.chat.newConversation'),
                 createdAt: now,
                 updatedAt: now,
                 _count: { messages: 0 },
@@ -205,13 +207,13 @@ export function AiChatPage() {
         <CardHeader className="border-b">
           <Button onClick={startNewChat} className="w-full" size="sm">
             <Plus className="h-4 w-4 mr-2" />
-            新對話
+            {t('ai.chat.newConversation')}
           </Button>
         </CardHeader>
         <div className="flex-1 overflow-y-auto p-2 space-y-1 scrollbar-thin">
           {conversations.length === 0 ? (
             <p className="text-xs text-muted-foreground text-center py-4">
-              仍未有對話
+              {t('ai.chat.emptyConversations')}
             </p>
           ) : (
             conversations.map((c) => (
@@ -239,7 +241,7 @@ export function AiChatPage() {
           <>
             <CardHeader className="border-b flex flex-row items-center justify-between">
               <CardTitle className="text-base truncate">
-                {activeConv?.title ?? '對話'}
+                {activeConv?.title ?? t('ai.chat.untitled')}
               </CardTitle>
             </CardHeader>
             <div
@@ -278,7 +280,7 @@ export function AiChatPage() {
               {submitInFlight && streamingReply === '' && inFlightTools.length === 0 && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  AI 想緊...
+                  {t('ai.chat.thinking')}
                 </div>
               )}
 
@@ -301,7 +303,7 @@ export function AiChatPage() {
                     handleSubmit(e as unknown as FormEvent);
                   }
                 }}
-                placeholder="問 AI 有關 CRM 的物..."
+                placeholder={t('ai.chat.placeholder')}
                 rows={2}
                 className="flex-1"
               />
@@ -317,11 +319,12 @@ export function AiChatPage() {
 }
 
 function EmptyState({ onSend, disabled }: { onSend: (msg: string) => void; disabled: boolean }) {
+  const { t } = useTranslation();
   const examples = [
-    '哪 5 個客戶最大貢獻 revenue?',
-    '搵下 "ABC" 這間公司',
-    '幫我開個 AC01 x 10 的報價給第一個 customer',
-    'Log 一個 call 給 ABC Company,談過佢哋的 Q4 計劃',
+    t('ai.chat.examplePrompts.topCustomers'),
+    t('ai.chat.examplePrompts.findCompany'),
+    t('ai.chat.examplePrompts.createQuotation'),
+    t('ai.chat.examplePrompts.logCall'),
   ];
   // 2026-06-29: a free-text composer so the user can type their own
   // prompt on a new conversation, not just pick from the example
@@ -343,9 +346,9 @@ function EmptyState({ onSend, disabled }: { onSend: (msg: string) => void; disab
         <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">
           <Sparkles className="h-8 w-8 text-primary" />
         </div>
-        <h2 className="text-xl font-semibold mb-2">CRM AI Assistant</h2>
+        <h2 className="text-xl font-semibold mb-2">{t('ai.chat.welcomeTitle')}</h2>
         <p className="text-muted-foreground mb-6 max-w-md">
-          用自然語言操作 CRM — 查客戶、生報價、log activity、看 analytics。
+          {t('ai.chat.welcomeMessage')}
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-2xl">
           {examples.map((ex) => (
@@ -374,7 +377,7 @@ function EmptyState({ onSend, disabled }: { onSend: (msg: string) => void; disab
               handleSubmit(e as unknown as FormEvent);
             }
           }}
-          placeholder="問 AI 有關 CRM 的物..."
+          placeholder={t('ai.chat.placeholder')}
           rows={2}
           className="flex-1"
           autoFocus
@@ -405,6 +408,7 @@ function ConversationItem({
   onClick: () => void;
   onDelete: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div
       className={cn(
@@ -422,19 +426,21 @@ function ConversationItem({
                 'h-3 w-3 animate-spin shrink-0',
                 active ? 'text-primary-foreground/80' : 'text-muted-foreground'
               )}
-              aria-label="載入中"
+              aria-label={t('common.loading')}
             />
           )}
         </div>
         <div className={cn('text-xs', active ? 'text-primary-foreground/70' : 'text-muted-foreground')}>
-          {conv._count.messages} messages · {formatDateTime(conv.updatedAt)}
+          {t('ai.chat.messageCount', { count: conv._count.messages })}
+          {t('ai.chat.messageCountSeparator')}
+          {formatDateTime(conv.updatedAt)}
         </div>
       </div>
       <button
         type="button"
         onClick={(e) => {
           e.stopPropagation();
-          if (confirm('刪除這個對話?')) onDelete();
+          if (confirm(t('ai.chat.deleteConfirm'))) onDelete();
         }}
         className={cn(
           'opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded',
@@ -578,6 +584,7 @@ function StreamingBotMessage({
  * completion.
  */
 function ToolPill({ tool }: { tool: InFlightToolCall }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const status = tool.result === undefined ? 'running' : tool.error ? 'error' : 'ok';
   return (
@@ -593,8 +600,8 @@ function ToolPill({ tool }: { tool: InFlightToolCall }) {
     >
       <Wrench className="h-3 w-3" />
       <span className="font-mono">{tool.name}</span>
-      {status === 'running' && <span className="text-[10px]">執行中…</span>}
-      {status === 'error' && <span className="text-[10px]">failed</span>}
+      {status === 'running' && <span className="text-[10px]">{t('ai.chat.executing')}</span>}
+      {status === 'error' && <span className="text-[10px]">{t('ai.chat.toolFailed')}</span>}
       <span aria-hidden="true">{expanded ? '▾' : '▸'}</span>
       {expanded && (
         <pre className="text-xs bg-muted p-2 rounded overflow-x-auto scrollbar-thin max-w-full text-left">

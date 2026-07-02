@@ -1,0 +1,9 @@
+{
+  "title": "Attachments ({{count}})",
+  "titleCount_one": "Attachments ({{count}})",
+  "titleCount_other": "Attachments ({{count}})",
+  "download": "Download",
+  "downloadFailed": "Download failed",
+  "empty": "No attachments yet · Upload one when writing a new follow-up on the Activity tab.",
+  "loading": "Loading…"
+}

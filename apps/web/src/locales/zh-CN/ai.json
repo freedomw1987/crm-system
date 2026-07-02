@@ -1,0 +1,109 @@
+{
+  "chat": {
+    "title": "AI 助理",
+    "subtitle": "问任何关于 CRM 数据的问题",
+    "placeholder": "问 deals、报价、公司的相关问题…",
+    "send": "发出",
+    "sending": "发送中…",
+    "newConversation": "新对话",
+    "empty": "在上面输入问题以开始新对话。",
+    "thinking": "思考中…",
+    "streaming": "串流中…",
+    "stop": "停止",
+    "copied": "已复制到剪贴板",
+    "copy": "复制",
+    "regenerate": "重新生成",
+    "regenerating": "重新生成中…",
+    "executing": "执行中…",
+    "untitled": "对话",
+    "emptyConversations": "仍未有对话",
+    "deleteConfirm": "删除这个对话?",
+    "toolFailed": "失败",
+    "welcomeMessage": "用自然语言操作 CRM — 查客户、生报价、log activity、看 analytics。",
+    "welcomeTitle": "CRM AI Assistant",
+    "messageCount_one": "{{count}} 个信息",
+    "messageCount_other": "{{count}} 个信息",
+    "messageCountSeparator": " · ",
+    "examplePrompts": {
+      "topCustomers": "哪 5 个客户最大贡献 revenue?",
+      "findCompany": "搵下「ABC」这间公司",
+      "createQuotation": "帮我开个 AC01 x 10 的报价给第一个 customer",
+      "logCall": "Log 一个 call 给 ABC Company,谈过佢哋的 Q4 计划"
+    },
+    "sources_one": "{{count}} 个资料来源",
+    "sources_other": "{{count}} 个资料来源",
+    "errors": {
+      "sendFailed": "发送消息失败",
+      "aborted": "请求已取消",
+      "rateLimited": "消息发送太频繁,请稍候。"
+    },
+    "role": {
+      "user": "你",
+      "assistant": "助理",
+      "system": "系统"
+    }
+  },
+  "config": {
+    "title": "AI 设置",
+    "subtitle": "管理 AI 供应商、模型与存取权限",
+    "provider": "供应商",
+    "model": "模型",
+    "apiKey": "API Key",
+    "apiKeyPlaceholder": "sk-…",
+    "apiKeyHint": "加密储存于数据库",
+    "systemPrompt": "系统提示",
+    "systemPromptPlaceholder": "你是一个有用的 CRM 助理…",
+    "allowedRoles": "允许存取的角色",
+    "save": "保存",
+    "saving": "保存中…",
+    "saved": "已保存",
+    "saveFailed": "无法保存 AI 设置",
+    "test": "测试连线",
+    "testing": "测试中…",
+    "testSuccess": "连线成功",
+    "testFailed": "连线失败: {{message}}",
+    "providers": {
+      "openai": "OpenAI",
+      "anthropic": "Anthropic",
+      "google": "Google AI",
+      "custom": "自订 endpoint"
+    },
+    "advanced": {
+      "title": "进阶",
+      "temperature": "Temperature",
+      "maxTokens": "Max tokens",
+      "frequencyPenalty": "Frequency penalty",
+      "presencePenalty": "Presence penalty"
+    },
+    "fields": {
+      "endpointUrl": "Endpoint URL *",
+      "endpointUrlPlaceholder": "https://api.openai.com/v1",
+      "endpointUrlHint": "必须是 http(s) URL。例如 OpenAI = <openai>{{openaiUrl}}</openai>,OpenRouter = <openrouter>{{openrouterUrl}}</openrouter>,自建 vLLM = <vllm>{{vllmUrl}}</vllm>。",
+      "apiKeyCurrentHint": "现时 key: {{mask}} (输入新 key 覆写)",
+      "apiKeyPlaceholder": "输入 API key",
+      "apiKeyHint": "每次保存都要重新输入 — 不会预填,也不会在 client 持久化。",
+      "modelName": "Model Name *",
+      "modelNamePlaceholder": "gpt-4o",
+      "modelNameHint": "Provider 支援的 model identifier。常见:gpt-4o、gpt-4o-mini、claude-3-5-sonnet-20241022、llama-3.1-70b。",
+      "systemPromptLabel": "System Prompt (可选)",
+      "systemPromptPlaceholder": "留空使用 packages/ai/src/prompts.ts 的 default prompt。",
+      "systemPromptHint": "覆写 default system prompt。支援多行,留白会用 default。",
+      "showKey": "显示 API key",
+      "hideKey": "隐藏 API key",
+      "adminOnly": "此页面只供管理员使用。",
+      "statusLabel": "状态:",
+      "configured": "已配置",
+      "notConfigured": "未配置",
+      "lastUpdated": "上次更新 {{date}}",
+      "lastUpdatedBy": "上次更新 {{date}} · by {{name}}",
+      "latency": "({{ms}}ms)"
+    },
+    "providerCard": {
+      "title": "LLM Provider",
+      "description": "用 OpenAI-compatible 的 endpoint — 适用于 OpenAI、OpenRouter、Together、自建 vLLM / Ollama 等。API key 会用 AES-256-GCM 加密储存,GET 请求只回遮罩版本。"
+    },
+    "errors": {
+      "saveFailedWithMessage": "储存失败: {{message}}"
+    }
+  }
+}

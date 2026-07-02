@@ -1,13 +1,16 @@
 import { useQuery } from '@tanstack/react-query';
 import { Building2, FileText, KanbanSquare, TrendingUp } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
+
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { companiesApi, quotationsApi, dealsApi } from '@/lib/api';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { RecentActivitiesWidget } from '@/components/activity-feed';
+import { StatusBadge } from '@/components/status-badge';
 
 export function DashboardPage() {
+  const { t } = useTranslation();
   // Day 9 fix: Dashboard KPIs (Open Deals, Win Rate, Pipeline Value) need
   // full-population stats, not just the first 5 records. The previous code
   // fetched `limit: 5` and reduced on the result, so once the DB had more
@@ -51,52 +54,52 @@ export function DashboardPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl md:text-3xl font-bold">Dashboard</h1>
-        <p className="text-muted-foreground">歡迎回來,看下今日的 overview</p>
+        <h1 className="text-2xl md:text-3xl font-bold">{t('dashboard.title')}</h1>
+        <p className="text-muted-foreground">{t('dashboard.welcomeBack')}</p>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard
           icon={Building2}
-          label="Companies"
+          label={t('dashboard.kpi.companies')}
           value={companies.length}
-          hint="全部 active companies"
+          hint={t('dashboard.kpi.companiesHint')}
           to="/companies"
         />
         <KpiCard
           icon={FileText}
-          label="Quotations"
+          label={t('dashboard.kpi.quotations')}
           value={quotations.length}
           hint={formatCurrency(totalQuotationValue, 'HKD')}
           to="/quotations"
         />
         <KpiCard
           icon={KanbanSquare}
-          label="Open Deals"
+          label={t('dashboard.kpi.openDeals')}
           value={openDeals.length}
-          hint={formatCurrency(pipelineValue, 'HKD') + ' pipeline'}
+          hint={t('dashboard.kpi.openDealsHint', { value: formatCurrency(pipelineValue, 'HKD') })}
           to="/deals"
         />
         <KpiCard
           icon={TrendingUp}
-          label="Win Rate"
+          label={t('dashboard.kpi.winRate')}
           value={
             deals.length > 0
               ? Math.round((wonDeals.length / deals.length) * 100) + '%'
               : '—'
           }
-          hint="Won / Total"
+          hint={t('dashboard.kpi.winRateHint')}
         />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <Card>
           <CardHeader>
-            <CardTitle>Recent Quotations</CardTitle>
+            <CardTitle>{t('dashboard.recentQuotations')}</CardTitle>
           </CardHeader>
           <CardContent>
             {quotations.length === 0 ? (
-              <p className="text-sm text-muted-foreground">未有報價單</p>
+              <p className="text-sm text-muted-foreground">{t('dashboard.noQuotations')}</p>
             ) : (
               <ul className="space-y-2">
                 {quotations.slice(0, 5).map((q) => (
@@ -113,7 +116,7 @@ export function DashboardPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <StatusBadge status={q.status} />
+                      <StatusBadge kind="quotation" value={q.status} />
                       <span className="font-semibold tabular-nums">
                         {formatCurrency(q.total, q.currency)}
                       </span>
@@ -127,11 +130,11 @@ export function DashboardPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Recent Deals</CardTitle>
+            <CardTitle>{t('dashboard.recentDeals')}</CardTitle>
           </CardHeader>
           <CardContent>
             {deals.length === 0 ? (
-              <p className="text-sm text-muted-foreground">未有 deal</p>
+              <p className="text-sm text-muted-foreground">{t('dashboard.noDeals')}</p>
             ) : (
               <ul className="space-y-2">
                 {deals.slice(0, 5).map((d) => (
@@ -139,17 +142,11 @@ export function DashboardPage() {
                     <div className="flex-1 min-w-0">
                       <div className="font-medium truncate">{d.title}</div>
                       <div className="text-xs text-muted-foreground">
-                        {d.company?.name} · {d.stage?.name ?? 'No stage'}
+                        {d.company?.name} · {d.stage?.name ?? t('dashboard.noStage')}
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Badge
-                        variant={
-                          d.status === 'WON' ? 'success' : d.status === 'LOST' ? 'destructive' : 'info'
-                        }
-                      >
-                        {d.status}
-                      </Badge>
+                      <StatusBadge kind="deal" value={d.status} />
                       <span className="font-semibold tabular-nums">
                         {formatCurrency(d.value, d.currency)}
                       </span>
@@ -199,17 +196,4 @@ function KpiCard({
     </Card>
   );
   return to ? <Link to={to}>{inner}</Link> : inner;
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, 'default' | 'secondary' | 'info' | 'success' | 'warning' | 'destructive'> = {
-    DRAFT: 'secondary',
-    SENT: 'info',
-    VIEWED: 'info',
-    ACCEPTED: 'success',
-    REJECTED: 'destructive',
-    EXPIRED: 'warning',
-    INVOICED: 'success',
-  };
-  return <Badge variant={map[status] ?? 'default'}>{status}</Badge>;
 }

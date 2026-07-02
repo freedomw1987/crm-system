@@ -20,6 +20,7 @@ import { prisma } from '@crm/db';
 import { authContext } from '../lib/context';
 import { logEvent } from '../middleware/audit';
 import { requirePermission, getUserIdFromRequest } from '../middleware/rbac';
+import { tApi } from '../lib/i18n';
 
 export const manDayRoleRoutes = new Elysia({ prefix: '/man-day-roles', tags: ['man-day-roles'] })
   .use(authContext)
@@ -34,9 +35,9 @@ export const manDayRoleRoutes = new Elysia({ prefix: '/man-day-roles', tags: ['m
     });
   })
 
-  .get('/:id', async ({ params, set }) => {
+  .get('/:id', async ({ params, set, locale }) => {
     const role = await prisma.manDayRole.findUnique({ where: { id: params.id } });
-    if (!role) { set.status = 404; return { error: 'Man-day role not found' }; }
+    if (!role) { set.status = 404; return { error: tApi(locale, 'MAN_DAY_ROLE_NOT_FOUND') }; }
     return role;
   })
 
@@ -45,7 +46,7 @@ export const manDayRoleRoutes = new Elysia({ prefix: '/man-day-roles', tags: ['m
   // was kept as defense-in-depth in case Elysia 1.2's requirePermission
   // doesn't reach the handler scope — see the rationale in PATCH below.
   .use(requirePermission('man-day-role:create'))
-  .post('/', async ({ body, set, userId, request }) => {
+  .post('/', async ({ body, set, userId, request, locale }) => {
     // Admin-only: we re-derive the role here (not via authContext.userRole)
     // because Elysia 1.2's derive context does not reach the route
     // handler scope (the derive only injects into onBeforeHandle and
@@ -54,14 +55,14 @@ export const manDayRoleRoutes = new Elysia({ prefix: '/man-day-roles', tags: ['m
       where: { id: await getUserIdFromRequest(request) ?? '__no_user__' },
       select: { role: true },
     });
-    if (adminUser?.role !== 'ADMIN') { set.status = 403; return { error: 'Admin only' }; }
+    if (adminUser?.role !== 'ADMIN') { set.status = 403; return { error: tApi(locale, 'ADMIN_ONLY') }; }
     const data = body as { name: string; price: number; cost?: number; sortOrder?: number; isActive?: boolean };
     // Guard against duplicate name (the unique index would also catch it,
     // but a friendly 409 is much nicer for the UI than a P2002 stack trace)
     const existing = await prisma.manDayRole.findUnique({ where: { name: data.name } });
     if (existing) {
       set.status = 409;
-      return { error: `A man-day role named "${data.name}" already exists` };
+      return { error: tApi(locale, 'MAN_DAY_ROLE_NAME_EXISTS', { name: data.name }) };
     }
     const role = await prisma.manDayRole.create({
       data: {
@@ -93,24 +94,24 @@ export const manDayRoleRoutes = new Elysia({ prefix: '/man-day-roles', tags: ['m
   })
 
   .use(requirePermission('man-day-role:update'))
-  .patch('/:id', async ({ params, body, set, userId, request }) => {
+  .patch('/:id', async ({ params, body, set, userId, request, locale }) => {
     // Admin-only (see POST handler for the rationale on re-deriving
     // the role inline).
     const adminUser = await prisma.user.findUnique({
       where: { id: await getUserIdFromRequest(request) ?? '__no_user__' },
       select: { role: true },
     });
-    if (adminUser?.role !== 'ADMIN') { set.status = 403; return { error: 'Admin only' }; }
+    if (adminUser?.role !== 'ADMIN') { set.status = 403; return { error: tApi(locale, 'ADMIN_ONLY') }; }
     const data = body as Partial<{ name: string; price: number; cost: number; sortOrder: number; isActive: boolean }>;
     const before = await prisma.manDayRole.findUnique({ where: { id: params.id } });
-    if (!before) { set.status = 404; return { error: 'Man-day role not found' }; }
+    if (!before) { set.status = 404; return { error: tApi(locale, 'MAN_DAY_ROLE_NOT_FOUND') }; }
 
     // Re-check uniqueness if the name is changing
     if (data.name && data.name !== before.name) {
       const dup = await prisma.manDayRole.findUnique({ where: { name: data.name } });
       if (dup) {
         set.status = 409;
-        return { error: `A man-day role named "${data.name}" already exists` };
+        return { error: tApi(locale, 'MAN_DAY_ROLE_NAME_EXISTS', { name: data.name }) };
       }
     }
 
@@ -140,15 +141,15 @@ export const manDayRoleRoutes = new Elysia({ prefix: '/man-day-roles', tags: ['m
   })
 
   .use(requirePermission('man-day-role:delete'))
-  .delete('/:id', async ({ params, set, userId, request }) => {
+  .delete('/:id', async ({ params, set, userId, request, locale }) => {
     // Admin-only (see POST handler for the rationale).
     const adminUser = await prisma.user.findUnique({
       where: { id: await getUserIdFromRequest(request) ?? '__no_user__' },
       select: { role: true },
     });
-    if (adminUser?.role !== 'ADMIN') { set.status = 403; return { error: 'Admin only' }; }
+    if (adminUser?.role !== 'ADMIN') { set.status = 403; return { error: tApi(locale, 'ADMIN_ONLY') }; }
     const before = await prisma.manDayRole.findUnique({ where: { id: params.id } });
-    if (!before) { set.status = 404; return { error: 'Man-day role not found' }; }
+    if (!before) { set.status = 404; return { error: tApi(locale, 'MAN_DAY_ROLE_NOT_FOUND') }; }
     // Block delete if a service line still references this role. The FK
     // is ON DELETE SET NULL, so the row would silently disappear from the
     // service line's UI; we want to make the admin reassign first.

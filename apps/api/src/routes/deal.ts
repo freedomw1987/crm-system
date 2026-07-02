@@ -6,6 +6,7 @@ import { logEvent } from '../middleware/audit';
 import { authContext } from '../lib/context';
 import { requirePermission, getUserIdFromRequest } from '../middleware/rbac';
 import { withAuditDelete } from '../lib/with-audit';
+import { tApi } from '../lib/i18n';
 
 // P0-2 (2026-06-07 review): all deal endpoints (GET list/kanban/:id,
 // POST, PATCH stage, PATCH, DELETE) were public. Now gated.
@@ -68,7 +69,7 @@ export const dealRoutes = new Elysia({ prefix: '/deals', tags: ['deals'] })
 
   // Day 8: Kanban view — returns stages with nested deals, perfect for drag-drop board
   .use(requirePermission('deal:read'))
-  .get('/kanban', async ({ query }) => {
+  .get('/kanban', async ({ query, locale }) => {
     // 2026-06-09: same multi-select filter as the flat /deals list.
     // `?companyIds=a,b` or `?companyIds=a&companyIds=b` (and same for
     // ownerIds) all work. Single-id shorthand `companyId` / `ownerId`
@@ -84,7 +85,7 @@ export const dealRoutes = new Elysia({ prefix: '/deals', tags: ['deals'] })
     const pipeline = pipelineId
       ? await prisma.pipeline.findUnique({ where: { id: pipelineId } })
       : await prisma.pipeline.findFirst({ where: { isDefault: true } });
-    if (!pipeline) return { error: 'No pipeline found' };
+    if (!pipeline) return { error: tApi(locale, 'PIPELINE_NOT_FOUND') };
     // 2) load stages
     const stages = await prisma.pipelineStage.findMany({
       where: { pipelineId: pipeline.id },
@@ -127,11 +128,11 @@ export const dealRoutes = new Elysia({ prefix: '/deals', tags: ['deals'] })
 
   // Day 8: Move deal to a different stage (Kanban drag-drop endpoint)
   .use(requirePermission('deal:update'))
-  .patch('/:id/stage', async ({ params, body, userId, request }) => {
+  .patch('/:id/stage', async ({ params, body, userId, request, locale }) => {
     const { stageId, status } = body as { stageId: string; status?: 'OPEN' | 'WON' | 'LOST' };
     // Verify the new stage exists
     const newStage = await prisma.pipelineStage.findUnique({ where: { id: stageId } });
-    if (!newStage) return { error: 'Stage not found' };
+    if (!newStage) return { error: tApi(locale, 'STAGE_NOT_FOUND') };
     // Auto-set status: Won stage → WON, Lost stage → LOST, others → OPEN
     let finalStatus = status;
     if (!finalStatus) {
@@ -167,7 +168,7 @@ export const dealRoutes = new Elysia({ prefix: '/deals', tags: ['deals'] })
   })
 
   .use(requirePermission('deal:read'))
-  .get('/:id', async ({ params, set }) => {
+  .get('/:id', async ({ params, set, locale }) => {
     const d = await prisma.deal.findUnique({
       where: { id: params.id },
       include: {
@@ -179,11 +180,11 @@ export const dealRoutes = new Elysia({ prefix: '/deals', tags: ['deals'] })
         quotations: { orderBy: { createdAt: 'desc' }, include: { company: { select: { id: true, name: true } } } },
       },
     });
-    if (!d) { set.status = 404; return { error: 'Not found' }; }
+    if (!d) { set.status = 404; return { error: tApi(locale, 'DEAL_NOT_FOUND') }; }
     return d;
   })
   .use(requirePermission('deal:create'))
-  .post('/', async ({ body, set, userId, request }) => {
+  .post('/', async ({ body, set, userId, request, locale }) => {
     // RG-2026-06-07-DEAL-AUTOCOMPLETE: tightened body validation. Previously
     // we passed `body as never` straight into prisma.deal.create, so a
     // malformed payload (e.g. bogus `status` value, missing required FK,
@@ -234,7 +235,7 @@ export const dealRoutes = new Elysia({ prefix: '/deals', tags: ['deals'] })
         where: { id: incoming.stageId },
         select: { pipelineId: true },
       });
-      if (!stage) { set.status = 400; return { error: `Stage ${incoming.stageId} not found` }; }
+      if (!stage) { set.status = 400; return { error: tApi(locale, 'STAGE_NOT_FOUND_BY_ID', { id: incoming.stageId }) }; }
       pipelineId = stage.pipelineId;
     }
     // Owner defaults to the calling user
@@ -246,7 +247,7 @@ export const dealRoutes = new Elysia({ prefix: '/deals', tags: ['deals'] })
     // via `getUserIdFromRequest` (the same helper RBAC uses internally)
     // so the ownerId default works in this route specifically.
     const ownerId = incoming.ownerId ?? userId ?? await getUserIdFromRequest(request);
-    if (!ownerId) { set.status = 400; return { error: 'ownerId is required (no user in context)' }; }
+    if (!ownerId) { set.status = 400; return { error: tApi(locale, 'OWNER_ID_REQUIRED') }; }
     // P2 multi-currency (2026-06-29): default the deal's currency to
     // the admin-configured system default rather than the hardcoded
     // Prisma default. The frontend may also pass an explicit `currency`

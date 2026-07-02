@@ -33,6 +33,7 @@ import { prisma } from '@crm/db';
 import { encryptSecret, maskApiKey, invalidateAiConfigCache, decryptSecret } from '@crm/ai';
 import { getUserIdFromRequest, requirePermission } from '../middleware/rbac';
 import { logEvent } from '../middleware/audit';
+import { tApi } from '../lib/i18n';
 
 // Validate that a URL is at least well-formed. We don't enforce
 // https here because dev/test deployments may use http://localhost.
@@ -59,18 +60,18 @@ export const aiConfigRoutes = new Elysia({ prefix: '/ai/config', tags: ['ai-conf
   // (defence in depth). The status endpoint no longer serves
   // unauthenticated traffic; it returns 401 like the rest.
   // ----------------------------------------------------------------
-  .get('/status', async ({ request, set }) => {
+  .get('/status', async ({ request, set, locale }) => {
     const userId = await getUserIdFromRequest(request);
     if (!userId) {
       set.status = 401;
-      return { error: 'Unauthorized' };
+      return { error: tApi(locale, 'UNAUTHORIZED') };
     }
     const allowed = await import('../middleware/rbac').then((m) =>
       m.userHasPermission(userId, 'ai-config:read')
     );
     if (!allowed) {
       set.status = 403;
-      return { error: "Forbidden: missing permission 'ai-config:read'" };
+      return { error: tApi(locale, 'AI_FORBIDDEN_READ') };
     }
     const row = await prisma.aiConfig.findUnique({
       where: { id: 1 },
@@ -85,18 +86,18 @@ export const aiConfigRoutes = new Elysia({ prefix: '/ai/config', tags: ['ai-conf
   // ----------------------------------------------------------------
   .get(
     '/',
-    async ({ request, set }) => {
+    async ({ request, set, locale }) => {
       const userId = await getUserIdFromRequest(request);
       if (!userId) {
         set.status = 401;
-        return { error: 'Unauthorized' };
+        return { error: tApi(locale, 'UNAUTHORIZED') };
       }
       const allowed = await import('../middleware/rbac').then((m) =>
         m.userHasPermission(userId, 'ai-config:read')
       );
       if (!allowed) {
         set.status = 403;
-        return { error: "Forbidden: missing permission 'ai-config:read'" };
+        return { error: tApi(locale, 'AI_FORBIDDEN_READ') };
       }
 
       const row = await prisma.aiConfig.findUnique({ where: { id: 1 } });
@@ -152,18 +153,18 @@ export const aiConfigRoutes = new Elysia({ prefix: '/ai/config', tags: ['ai-conf
   // ----------------------------------------------------------------
   .put(
     '/',
-    async ({ request, body, set }) => {
+    async ({ request, body, set, locale }) => {
       const userId = await getUserIdFromRequest(request);
       if (!userId) {
         set.status = 401;
-        return { error: 'Unauthorized' };
+        return { error: tApi(locale, 'UNAUTHORIZED') };
       }
       const allowed = await import('../middleware/rbac').then((m) =>
         m.userHasPermission(userId, 'ai-config:update')
       );
       if (!allowed) {
         set.status = 403;
-        return { error: "Forbidden: missing permission 'ai-config:update'" };
+        return { error: tApi(locale, 'AI_FORBIDDEN_UPDATE') };
       }
 
       const { endpointUrl, apiKey, modelName, systemPrompt } = body as {
@@ -175,15 +176,15 @@ export const aiConfigRoutes = new Elysia({ prefix: '/ai/config', tags: ['ai-conf
 
       if (!endpointUrl || !isValidEndpointUrl(endpointUrl)) {
         set.status = 422;
-        return { error: 'endpointUrl must be a valid http(s) URL' };
+        return { error: tApi(locale, 'AI_ENDPOINT_URL_INVALID') };
       }
       if (!apiKey || apiKey.length < 8) {
         set.status = 422;
-        return { error: 'apiKey must be at least 8 characters' };
+        return { error: tApi(locale, 'AI_API_KEY_TOO_SHORT') };
       }
       if (!modelName || !modelName.trim()) {
         set.status = 422;
-        return { error: 'modelName is required' };
+        return { error: tApi(locale, 'AI_MODEL_NAME_REQUIRED') };
       }
 
       const apiKeyCipher = encryptSecret(apiKey);
@@ -242,18 +243,18 @@ export const aiConfigRoutes = new Elysia({ prefix: '/ai/config', tags: ['ai-conf
   // ----------------------------------------------------------------
   .post(
     '/test',
-    async ({ request, body, set }) => {
+    async ({ request, body, set, locale }) => {
       const userId = await getUserIdFromRequest(request);
       if (!userId) {
         set.status = 401;
-        return { error: 'Unauthorized' };
+        return { error: tApi(locale, 'UNAUTHORIZED') };
       }
       const allowed = await import('../middleware/rbac').then((m) =>
         m.userHasPermission(userId, 'ai-config:update')
       );
       if (!allowed) {
         set.status = 403;
-        return { error: "Forbidden: missing permission 'ai-config:update'" };
+        return { error: tApi(locale, 'AI_FORBIDDEN_UPDATE') };
       }
 
       const { endpointUrl, modelName, apiKey } = body as {
@@ -264,11 +265,11 @@ export const aiConfigRoutes = new Elysia({ prefix: '/ai/config', tags: ['ai-conf
 
       if (!endpointUrl || !isValidEndpointUrl(endpointUrl)) {
         set.status = 422;
-        return { error: 'endpointUrl must be a valid http(s) URL' };
+        return { error: tApi(locale, 'AI_ENDPOINT_URL_INVALID') };
       }
       if (!modelName?.trim()) {
         set.status = 422;
-        return { error: 'modelName is required' };
+        return { error: tApi(locale, 'AI_MODEL_NAME_REQUIRED') };
       }
 
       let keyToUse = apiKey;

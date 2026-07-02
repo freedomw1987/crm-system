@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { Search, Building2, Plus, X, Pencil, Briefcase, FileText, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { companiesApi, regionsApi, dealsApi, type Company, type Region } from '@/lib/api';
@@ -11,9 +12,9 @@ import { Label } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { DealDialog } from '@/pages/deals';
 import { QuotationBuilder } from '@/components/quotation-builder';
-import { formatDate } from '@/lib/utils';
 
 export function CompaniesPage() {
+  const { t } = useTranslation();
   const qc = useQueryClient();
   const [query, setQuery] = useState('');
   const [regionFilter, setRegionFilter] = useState<string>('');
@@ -76,11 +77,11 @@ export function CompaniesPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold">Companies</h1>
-          <p className="text-muted-foreground">{companies.length} 間公司</p>
+          <h1 className="text-2xl md:text-3xl font-bold">{t('company.title')}</h1>
+          <p className="text-muted-foreground">{t('company.subtitle', { count: companies.length })}</p>
         </div>
         <Button onClick={() => setCreateOpen(true)}>
-          <Plus className="h-4 w-4 mr-1" /> 新增公司
+          <Plus className="h-4 w-4 mr-1" /> {t('company.newCompany')}
         </Button>
       </div>
 
@@ -89,18 +90,18 @@ export function CompaniesPage() {
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="搜尋公司名 / legal name / email..."
+            placeholder={t('company.searchPlaceholder')}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="pl-9"
           />
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-muted-foreground mr-1">地區:</span>
+          <span className="text-xs text-muted-foreground mr-1">{t('company.filterByRegion')}</span>
           <FilterPill
             active={!regionFilter}
             onClick={() => setRegionFilter('')}
-            label="全部"
+            label={t('company.filterAll')}
             flag=""
           />
           {regions.filter((r) => r.isActive).map((r) => (
@@ -108,7 +109,7 @@ export function CompaniesPage() {
               key={r.id}
               active={regionFilter === r.code}
               onClick={() => setRegionFilter(regionFilter === r.code ? '' : r.code)}
-              label={r.name}
+              label={t(`company.region.${r.code}`)}
               flag={r.flag ?? ''}
             />
           ))}
@@ -116,9 +117,9 @@ export function CompaniesPage() {
       </div>
 
       {isLoading ? (
-        <p className="text-sm text-muted-foreground">載入中...</p>
+        <p className="text-sm text-muted-foreground">{t('company.loading')}</p>
       ) : companies.length === 0 ? (
-        <p className="text-sm text-muted-foreground">未有公司</p>
+        <p className="text-sm text-muted-foreground">{t('company.empty')}</p>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {companies.map((c) => (
@@ -127,7 +128,7 @@ export function CompaniesPage() {
               company={c}
               onEdit={() => setEditing(c)}
               onDelete={() => {
-                if (confirm(`確定刪除「${c.name}」?此操作無法復原,相關 contacts / deals / quotations 會一齊 cascade。`)) {
+                if (confirm(t('company.deleteConfirm', { name: c.name }))) {
                   deleteCompany.mutate(c.id);
                 }
               }}
@@ -176,7 +177,7 @@ export function CompaniesPage() {
         <Dialog open={true} onOpenChange={(v) => { if (!v) setQuotationDialog(null); }}>
           <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>新增 Quotation</DialogTitle>
+              <DialogTitle>{t('company.inlineDialog.title')}</DialogTitle>
             </DialogHeader>
             <QuotationBuilder
               defaultCompanyId={quotationDialog.companyId}
@@ -195,11 +196,16 @@ export function CompaniesPage() {
   );
 }
 
+// Region names are resolved at render time via `t(\`company.region.${code}\`)`.
+// The original Chinese strings moved into locales/{en,zh-TW,zh-CN}/company.json
+// under the `region.HK|MO|CN|OTHER` keys (mirrors the company-detail region
+// meta-pattern). Adding a new region code now requires adding it to those
+// three locales as well.
 const BASE_REGIONS: Region[] = [
-  { id: 'reg_hk_seed', code: 'HK', name: '香港', flag: '🇭🇰', isActive: true, sortOrder: 1 },
-  { id: 'reg_mo_seed', code: 'MO', name: '澳門', flag: '🇲🇴', isActive: true, sortOrder: 2 },
-  { id: 'reg_cn_seed', code: 'CN', name: '中國', flag: '🇨🇳', isActive: true, sortOrder: 3 },
-  { id: 'reg_other_seed', code: 'OTHER', name: '其他', flag: '🌏', isActive: true, sortOrder: 4 },
+  { id: 'reg_hk_seed', code: 'HK', name: 'Hong Kong', flag: '🇭🇰', isActive: true, sortOrder: 1 },
+  { id: 'reg_mo_seed', code: 'MO', name: 'Macau', flag: '🇲🇴', isActive: true, sortOrder: 2 },
+  { id: 'reg_cn_seed', code: 'CN', name: 'China', flag: '🇨🇳', isActive: true, sortOrder: 3 },
+  { id: 'reg_other_seed', code: 'OTHER', name: 'Other', flag: '🌏', isActive: true, sortOrder: 4 },
 ];
 
 function FilterPill({ active, onClick, label, flag }: { active: boolean; onClick: () => void; label: string; flag: string }) {
@@ -236,8 +242,10 @@ function CompanyCard({
   /** Open the inline "+ Quotation" dialog pre-filled with this company. */
   onNewQuotation?: () => void;
 }) {
+  const { t } = useTranslation();
   const region = company.region;
   const isOther = region?.code === 'OTHER';
+  const isInactive = company.status !== 'active';
   return (
     <div className="relative group">
       <Link to={`/companies/${company.id}`}>
@@ -261,14 +269,14 @@ function CompanyCard({
                   <p className="text-sm text-muted-foreground mt-0.5">{company.industry}</p>
                 )}
                 <div className="flex items-center gap-2 mt-2 flex-wrap">
-                  <Badge variant={company.status === 'active' ? 'success' : 'secondary'}>
-                    {company.status}
+                  <Badge variant={isInactive ? 'secondary' : 'success'}>
+                    {isInactive ? t('company.card.deactivated') : company.status}
                   </Badge>
                   {company._count && (
                     <span className="text-xs text-muted-foreground">
-                      {company._count.contacts} 聯絡人 ·{' '}
-                      {company._count.quotations} 報價 ·{' '}
-                      {company._count.deals} deals
+                      {t('company.card.contacts', { count: company._count.contacts })} ·{' '}
+                      {t('company.card.quotations', { count: company._count.quotations })} ·{' '}
+                      {t('company.card.deals', { count: company._count.deals })}
                     </span>
                   )}
                 </div>
@@ -288,8 +296,8 @@ function CompanyCard({
           {onNewDeal && (
             <button
               type="button"
-              aria-label="新增 Deal"
-              title="新增 Deal"
+              aria-label={t('company.card.newDeal')}
+              title={t('company.card.newDeal')}
               onClick={(e) => { e.preventDefault(); e.stopPropagation(); onNewDeal(); }}
               className="h-7 w-7 rounded-md bg-background/80 backdrop-blur border border-input flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-background"
             >
@@ -299,8 +307,8 @@ function CompanyCard({
           {onNewQuotation && (
             <button
               type="button"
-              aria-label="新增 Quotation"
-              title="新增 Quotation"
+              aria-label={t('company.card.newQuotation')}
+              title={t('company.card.newQuotation')}
               onClick={(e) => { e.preventDefault(); e.stopPropagation(); onNewQuotation(); }}
               className="h-7 w-7 rounded-md bg-background/80 backdrop-blur border border-input flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-background"
             >
@@ -318,8 +326,8 @@ function CompanyCard({
         {onDelete && (
           <button
             type="button"
-            aria-label="刪除公司"
-            title="刪除公司"
+            aria-label={t('company.card.deleteCompany')}
+            title={t('company.card.deleteCompany')}
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(); }}
             className="h-7 w-7 rounded-md bg-background/80 backdrop-blur border border-input flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-background"
           >
@@ -328,7 +336,7 @@ function CompanyCard({
         )}
         <button
           type="button"
-          aria-label="編輯公司"
+          aria-label={t('company.card.editCompany')}
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); onEdit(); }}
           className="h-7 w-7 rounded-md bg-background/80 backdrop-blur border border-input flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-background"
         >
@@ -374,6 +382,7 @@ export function CompanyFormDialog({
    *  when the user typed a query that didn't match any company). */
   defaultName?: string;
 }) {
+  const { t } = useTranslation();
   const [name, setName] = useState('');
   const [industry, setIndustry] = useState('');
   const [email, setEmail] = useState('');
@@ -408,12 +417,12 @@ export function CompanyFormDialog({
       setRegionId(company.regionId ?? '');
       setCustomRegion(company.customRegion ?? '');
     } else {
-      setName(''); setIndustry(''); setEmail(''); setPhone('');
+      setName(defaultName ?? ''); setIndustry(''); setEmail(''); setPhone('');
       setLegalName(''); setTaxId(''); setWebsite(''); setStatus('active');
       setRegionId(''); setCustomRegion('');
     }
     setError(null);
-  }, [open, mode, company?.id]);
+  }, [open, mode, company?.id, defaultName]);
 
   const selectedRegion = regions.find((r) => r.id === regionId);
   const isOther = selectedRegion?.code === 'OTHER';
@@ -459,44 +468,44 @@ export function CompanyFormDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{isEdit ? '編輯公司' : '新增公司'}</DialogTitle>
+          <DialogTitle>{isEdit ? t('company.form.editTitle') : t('company.form.newTitle')}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <Label htmlFor="name">公司名稱 *</Label>
+            <Label htmlFor="name">{t('company.form.name')}</Label>
             <Input id="name" value={name} onChange={(e) => setName(e.target.value)} required />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <Label htmlFor="legalName">法定名稱</Label>
+              <Label htmlFor="legalName">{t('company.form.legalName')}</Label>
               <Input id="legalName" value={legalName} onChange={(e) => setLegalName(e.target.value)} />
             </div>
             <div>
-              <Label htmlFor="taxId">商業登記 / Tax ID</Label>
+              <Label htmlFor="taxId">{t('company.form.taxId')}</Label>
               <Input id="taxId" value={taxId} onChange={(e) => setTaxId(e.target.value)} />
             </div>
           </div>
           <div>
-            <Label htmlFor="industry">行業</Label>
+            <Label htmlFor="industry">{t('company.form.industry')}</Label>
             <Input id="industry" value={industry} onChange={(e) => setIndustry(e.target.value)} />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">{t('company.form.email')}</Label>
               <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
             </div>
             <div>
-              <Label htmlFor="phone">電話</Label>
+              <Label htmlFor="phone">{t('company.form.phone')}</Label>
               <Input id="phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
             </div>
           </div>
           <div>
-            <Label htmlFor="website">網站</Label>
+            <Label htmlFor="website">{t('company.form.website')}</Label>
             <Input id="website" value={website} onChange={(e) => setWebsite(e.target.value)} />
           </div>
           {isEdit && (
             <div>
-              <Label htmlFor="status">狀態</Label>
+              <Label htmlFor="status">{t('company.form.status')}</Label>
               <select
                 id="status"
                 value={status}
@@ -510,7 +519,7 @@ export function CompanyFormDialog({
             </div>
           )}
           <div>
-            <Label>地區 (Region) *</Label>
+            <Label>{t('company.form.region')}</Label>
             <div className="grid grid-cols-2 gap-2 mt-1">
               {regions.filter((r) => r.isActive).map((r) => (
                 <button
@@ -523,17 +532,17 @@ export function CompanyFormDialog({
                       : 'bg-background hover:bg-muted'
                   }`}
                 >
-                  {r.flag ? `${r.flag} ` : ''}{r.name}
+                  {r.flag ? `${r.flag} ` : ''}{t(`company.region.${r.code}`)}
                 </button>
               ))}
             </div>
           </div>
           {isOther && (
             <div>
-              <Label htmlFor="customRegion">其他地區 (自由填寫)</Label>
+              <Label htmlFor="customRegion">{t('company.form.customRegion')}</Label>
               <Input
                 id="customRegion"
-                placeholder="例如: Taiwan, Singapore, Japan..."
+                placeholder={t('company.form.customRegionPlaceholder')}
                 value={customRegion}
                 onChange={(e) => setCustomRegion(e.target.value)}
               />
@@ -546,9 +555,11 @@ export function CompanyFormDialog({
             </div>
           )}
           <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>取消</Button>
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>{t('company.form.cancel')}</Button>
             <Button type="submit" disabled={submitting || !name || !regionId}>
-              {submitting ? (isEdit ? '儲存中...' : '建立中...') : (isEdit ? '儲存' : '建立')}
+              {submitting
+                ? (isEdit ? t('company.form.submit.saving') : t('company.form.submit.creating'))
+                : (isEdit ? t('company.form.submit.edit') : t('company.form.submit.create'))}
             </Button>
           </DialogFooter>
         </form>

@@ -42,6 +42,7 @@ import { getAiConfig } from '@crm/ai';
 // in @crm/db so this route + the AI draft_quotation tool share one
 // source of truth (see packages/db/src/currency.ts).
 import { getCurrencyConfig, hkdRateFor, mopRateFor } from '@crm/db';
+import { tApi } from '../lib/i18n';
 
 // Quotation number generator (Q-YYYY-NNNN)
 async function nextQuotationNumber(): Promise<string> {
@@ -271,7 +272,7 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
       },
     });
   })
-  .get('/:id', async ({ params, set }) => {
+  .get('/:id', async ({ params, set, locale }) => {
     const q = await prisma.quotation.findUnique({
       where: { id: params.id },
       include: {
@@ -283,7 +284,7 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
         items: { include: { product: true, service: { include: { manDayLines: true } } }, orderBy: { position: 'asc' } },
       },
     });
-    if (!q) { set.status = 404; return { error: 'Not found' }; }
+    if (!q) { set.status = 404; return { error: tApi(locale, 'QUOTATION_NOT_FOUND') }; }
     return q;
   })
   // 2026-06-07 (US-A5): Download Quotation as .xlsx (5 worksheets, bc-quotation
@@ -293,7 +294,7 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
   // no extra permission gate, since GET /:id is also open to authenticated
   // users. (RBAC 係 sales rep 同 admin 已經有 read, sales rep 下屬之間 read
   // 嘅 scope 跟現有 GET /:id 嘅 include 邏輯。)
-  .get('/:id/export-xlsx', async ({ params, query, set, userId, request }) => {
+  .get('/:id/export-xlsx', async ({ params, query, set, userId, request, locale }) => {
     const lang = (query.lang ?? 'zh') as 'zh' | 'en';
     const version = (query.version ?? 'v2') as 'v1' | 'v2';
     const q = await prisma.quotation.findUnique({
@@ -311,7 +312,7 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
         },
       },
     });
-    if (!q) { set.status = 404; return { error: 'Quotation not found' }; }
+    if (!q) { set.status = 404; return { error: tApi(locale, 'QUOTATION_NOT_FOUND') }; }
     const flat = adaptCrmQuotationForExcel(q);
     const buffer = generateQuotationExcel(flat, lang, version);
     const filename = `${q.number.replace(/[\/\\:]/g, '-')}.xlsx`;
@@ -341,8 +342,8 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
       version: t.Optional(t.UnionEnum(['v1', 'v2'])),
     }),
   })
-  .post('/', async ({ body, userId, set, request }) => {
-    if (!userId) { set.status = 401; return { error: 'Unauthorized' }; }
+  .post('/', async ({ body, userId, set, request, locale }) => {
+    if (!userId) { set.status = 401; return { error: tApi(locale, 'UNAUTHORIZED') }; }
     const data = body as {
       companyId: string;
       dealId?: string;
@@ -384,12 +385,12 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
     const chosenCurrency = (data.currency || currencyCfg.default) as 'RMB' | 'HKD' | 'MOP';
     if (chosenCurrency !== 'RMB' && chosenCurrency !== 'HKD' && chosenCurrency !== 'MOP') {
       set.status = 400;
-      return { error: `Unsupported currency "${chosenCurrency}". Use RMB, HKD, or MOP.` };
+      return { error: tApi(locale, 'UNSUPPORTED_CURRENCY', { currency: chosenCurrency }) };
     }
     const rateToHKD = hkdRateFor(chosenCurrency, currencyCfg);
     if (rateToHKD == null) {
       set.status = 400;
-      return { error: `No exchange rate configured for ${chosenCurrency} → HKD. Set it in /settings/currency.` };
+      return { error: tApi(locale, 'CURRENCY_RATE_MISSING_HKD', { currency: chosenCurrency }) };
     }
     // 2026-06-29: MOP snapshot — mirrors the HKD path. Both rates
     // are derived from the same `chosenCurrency` + `currencyCfg`,
@@ -401,7 +402,7 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
     const rateToMOP = mopRateFor(chosenCurrency, currencyCfg);
     if (rateToMOP == null) {
       set.status = 400;
-      return { error: `No exchange rate configured for ${chosenCurrency} → MOP. Set it in /settings/currency.` };
+      return { error: tApi(locale, 'CURRENCY_RATE_MISSING_MOP', { currency: chosenCurrency }) };
     }
     const number = await nextQuotationNumber();
     let subtotal = 0;
@@ -564,13 +565,13 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
     // SENT/VIEWED/ACCEPTED/REJECTED/EXPIRED/INVOICED set all map
     // to legitimate "we need a new draft because the locked one
     // can't change" scenarios.
-    .post('/:id/revise', async ({ params, userId, set, request }) => {
-    if (!userId) { set.status = 401; return { error: 'Unauthorized' }; }
+    .post('/:id/revise', async ({ params, userId, set, request, locale }) => {
+    if (!userId) { set.status = 401; return { error: tApi(locale, 'UNAUTHORIZED') }; }
     const source = await prisma.quotation.findUnique({
       where: { id: params.id },
       include: { items: { orderBy: { position: 'asc' } } },
     });
-    if (!source) { set.status = 404; return { error: 'Source quotation not found' }; }
+    if (!source) { set.status = 404; return { error: tApi(locale, 'SOURCE_QUOTATION_NOT_FOUND') }; }
     if (source.status === 'DRAFT') {
       // A DRAFT can be edited directly; revising it would just
       // create a duplicate that confuses the audit trail. Tell
@@ -697,14 +698,14 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
     return refreshed;
   })
   // Update header (title, notes, validUntil, taxRate, status, dealId, salesRepId, currency)
-  .patch('/:id', async ({ params, body, set, userId, request }) => {
+  .patch('/:id', async ({ params, body, set, userId, request, locale }) => {
     // PATCH body shape is canonicalised in `lib/quotation-patch-body.ts`
     // (RG-020 + RG-021). The route still uses an implicit `as` cast
     // rather than a `t.Object` validator — see RG-024 for the
     // planned migration to runtime validation.
     const data = body as QuotationPatchBody;
     const before = await prisma.quotation.findUnique({ where: { id: params.id } });
-    if (!before) { set.status = 404; return { error: 'Not found' }; }
+    if (!before) { set.status = 404; return { error: tApi(locale, 'QUOTATION_NOT_FOUND') }; }
 
     // SENT lock: reject edits to non-status fields once the quotation has
     // been sent. The status field itself is still mutable (so the user
@@ -749,7 +750,7 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
       );
       if (lockedFieldTouched) {
         set.status = 409;
-        return { error: `Quotation is ${before.status} and cannot be edited. Create a revision instead.` };
+        return { error: tApi(locale, 'QUOTATION_SENT_LOCK', { status: before.status }) };
       }
     }
 
@@ -782,25 +783,25 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
     if (data.currency !== undefined) {
       if (data.currency !== 'RMB' && data.currency !== 'HKD' && data.currency !== 'MOP') {
         set.status = 400;
-        return { error: `Unsupported currency "${data.currency}". Use RMB, HKD, or MOP.` };
+        return { error: tApi(locale, 'UNSUPPORTED_CURRENCY', { currency: data.currency }) };
       }
       const cfg = await getCurrencyConfig();
       rateToHKD = hkdRateFor(data.currency, cfg);
       if (rateToHKD == null) {
         set.status = 400;
-        return { error: `No exchange rate configured for ${data.currency} → HKD. Set it in /settings/currency.` };
+        return { error: tApi(locale, 'CURRENCY_RATE_MISSING_HKD', { currency: data.currency }) };
       }
       rateToMOP = mopRateFor(data.currency, cfg);
       if (rateToMOP == null) {
         set.status = 400;
-        return { error: `No exchange rate configured for ${data.currency} → MOP. Set it in /settings/currency.` };
+        return { error: tApi(locale, 'CURRENCY_RATE_MISSING_MOP', { currency: data.currency }) };
       }
       update.currency = data.currency;
       chosenCurrency = data.currency;
     }
     if (data.status !== undefined) {
       const valid = ['DRAFT', 'SENT', 'VIEWED', 'ACCEPTED', 'REJECTED', 'EXPIRED', 'INVOICED'];
-      if (!valid.includes(data.status)) { set.status = 400; return { error: 'Invalid status' }; }
+      if (!valid.includes(data.status)) { set.status = 400; return { error: tApi(locale, 'INVALID_STATUS') }; }
       update.status = data.status;
       if (data.status === 'SENT') update.sentAt = new Date();
       if (data.status === 'ACCEPTED') update.acceptedAt = new Date();
@@ -909,12 +910,12 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
   // also reject SENT if any SERVICE line has costSnapshot == 0 (which
   // would mean the admin never set a cost on the man-day role, giving
   // the line a fake 100% GP).
-  .post('/:id/status', async ({ params, body, set, userId, request }) => {
+  .post('/:id/status', async ({ params, body, set, userId, request, locale }) => {
     const { status } = body as { status: string };
     const valid = ['DRAFT', 'SENT', 'VIEWED', 'ACCEPTED', 'REJECTED', 'EXPIRED', 'INVOICED'];
-    if (!valid.includes(status)) { set.status = 400; return { error: 'Invalid status' }; }
+    if (!valid.includes(status)) { set.status = 400; return { error: tApi(locale, 'INVALID_STATUS') }; }
     const before = await prisma.quotation.findUnique({ where: { id: params.id }, select: { status: true, number: true } });
-    if (!before) { set.status = 404; return { error: 'Not found' }; }
+    if (!before) { set.status = 404; return { error: tApi(locale, 'QUOTATION_NOT_FOUND') }; }
 
     if (status === 'SENT') {
       // Last chance to refresh GP from live ManDayRole costs before
@@ -977,7 +978,7 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
     return updated;
   })
   // Add a line item
-  .post('/:id/items', async ({ params, body, set }) => {
+  .post('/:id/items', async ({ params, body, set, locale }) => {
     const data = body as {
       productId?: string;
       serviceId?: string;
@@ -990,10 +991,10 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
       manDaySnapshot?: unknown;
     };
     const quotation = await prisma.quotation.findUnique({ where: { id: params.id }, select: { status: true } });
-    if (!quotation) { set.status = 404; return { error: 'Quotation not found' }; }
+    if (!quotation) { set.status = 404; return { error: tApi(locale, 'QUOTATION_NOT_FOUND') }; }
     if (quotation.status !== 'DRAFT') {
       set.status = 409;
-      return { error: `Quotation is ${quotation.status} and cannot be modified. Create a revision instead.` };
+      return { error: tApi(locale, 'QUOTATION_LOCKED', { status: quotation.status }) };
     }
     const last = await prisma.quotationItem.findFirst({
       where: { quotationId: params.id },
@@ -1029,15 +1030,15 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
     return item;
   })
   // Update a line item
-  .patch('/:id/items/:itemId', async ({ params, body, set }) => {
+  .patch('/:id/items/:itemId', async ({ params, body, set, locale }) => {
     const data = body as { name?: string; description?: string; quantity?: number; unitPrice?: number; discount?: number };
     const existing = await prisma.quotationItem.findUnique({ where: { id: params.itemId } });
-    if (!existing || existing.quotationId !== params.id) { set.status = 404; return { error: 'Item not found' }; }
+    if (!existing || existing.quotationId !== params.id) { set.status = 404; return { error: tApi(locale, 'QUOTATION_ITEM_NOT_FOUND') }; }
     const quotation = await prisma.quotation.findUnique({ where: { id: params.id }, select: { status: true } });
-    if (!quotation) { set.status = 404; return { error: 'Quotation not found' }; }
+    if (!quotation) { set.status = 404; return { error: tApi(locale, 'QUOTATION_NOT_FOUND') }; }
     if (quotation.status !== 'DRAFT') {
       set.status = 409;
-      return { error: `Quotation is ${quotation.status} and cannot be modified. Create a revision instead.` };
+      return { error: tApi(locale, 'QUOTATION_LOCKED', { status: quotation.status }) };
     }
     const qty = data.quantity !== undefined ? Number(data.quantity) : Number(existing.quantity);
     const price = data.unitPrice !== undefined ? Number(data.unitPrice) : Number(existing.unitPrice);
@@ -1065,14 +1066,14 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
     return item;
   })
   // Delete a line item
-  .delete('/:id/items/:itemId', async ({ params, set }) => {
+  .delete('/:id/items/:itemId', async ({ params, set, locale }) => {
     const existing = await prisma.quotationItem.findUnique({ where: { id: params.itemId } });
-    if (!existing || existing.quotationId !== params.id) { set.status = 404; return { error: 'Item not found' }; }
+    if (!existing || existing.quotationId !== params.id) { set.status = 404; return { error: tApi(locale, 'QUOTATION_ITEM_NOT_FOUND') }; }
     const quotation = await prisma.quotation.findUnique({ where: { id: params.id }, select: { status: true } });
-    if (!quotation) { set.status = 404; return { error: 'Quotation not found' }; }
+    if (!quotation) { set.status = 404; return { error: tApi(locale, 'QUOTATION_NOT_FOUND') }; }
     if (quotation.status !== 'DRAFT') {
       set.status = 409;
-      return { error: `Quotation is ${quotation.status} and cannot be modified. Create a revision instead.` };
+      return { error: tApi(locale, 'QUOTATION_LOCKED', { status: quotation.status }) };
     }
     await prisma.quotationItem.delete({ where: { id: params.itemId } });
     await recalcQuotationAndItems(params.id, { liveCostRefresh: true });
@@ -1094,13 +1095,13 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
   // Products / Services) are scoped under the same operation
   // (consistent with the existing AI draft_quotation tool).
   // ===================================================================
-  .post('/import/preview', async ({ request, set, userId }) => {
-    if (!userId) { set.status = 401; return { error: 'Unauthorized' }; }
+  .post('/import/preview', async ({ request, set, userId, locale }) => {
+    if (!userId) { set.status = 401; return { error: tApi(locale, 'UNAUTHORIZED') }; }
     const contentType = request.headers.get('content-type') ?? '';
     const boundary = extractBoundary(contentType);
     if (!boundary) {
       set.status = 400;
-      return { error: 'multipart/form-data with boundary required' };
+      return { error: tApi(locale, 'ATTACHMENT_MULTIPART_REQUIRED') };
     }
     let parsed;
     try {
@@ -1115,14 +1116,14 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
     const xlsxFile = parsed.files.find((f) => f.fieldName === 'file');
     if (!xlsxFile) {
       set.status = 400;
-      return { error: 'file field is required (multipart key "file")' };
+      return { error: tApi(locale, 'ATTACHMENT_FILE_FIELD_REQUIRED') };
     }
     if (
       !xlsxFile.mimeType.includes('spreadsheet') &&
       !xlsxFile.fileName.toLowerCase().endsWith('.xlsx')
     ) {
       set.status = 400;
-      return { error: `file must be a .xlsx spreadsheet (got ${xlsxFile.mimeType})` };
+      return { error: tApi(locale, 'IMPORT_FILE_NOT_XLSX', { mimeType: xlsxFile.mimeType }) };
     }
     const [companies, products, services, deals] = await Promise.all([
       prisma.company.findMany({ select: { id: true, name: true } }),
@@ -1156,17 +1157,17 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
     } catch (err) {
       const msg = (err as Error).message;
       set.status = 422;
-      return { error: `Failed to extract import plan: ${msg}` };
+      return { error: tApi(locale, 'IMPORT_EXTRACT_FAILED', { message: msg }) };
     }
   })
-  .post('/import/commit', async ({ body, set, userId }) => {
-    if (!userId) { set.status = 401; return { error: 'Unauthorized' }; }
+  .post('/import/commit', async ({ body, set, userId, locale }) => {
+    if (!userId) { set.status = 401; return { error: tApi(locale, 'UNAUTHORIZED') }; }
     let plan: ImportPlan;
     try {
       plan = ImportPlanSchema.parse(body);
     } catch (err) {
       set.status = 422;
-      return { error: `Invalid plan: ${(err as Error).message}` };
+      return { error: tApi(locale, 'IMPORT_PLAN_INVALID', { message: (err as Error).message }) };
     }
     const [companies, products, services, deals] = await Promise.all([
       prisma.company.findMany({ select: { id: true, name: true } }),
@@ -1196,6 +1197,6 @@ export const quotationRoutes = new Elysia({ prefix: '/quotations', tags: ['quota
       return { resolved, newQuotationId };
     } catch (err) {
       set.status = 500;
-      return { error: `Failed to commit import: ${(err as Error).message}` };
+      return { error: tApi(locale, 'IMPORT_COMMIT_FAILED', { message: (err as Error).message }) };
     }
   });
