@@ -1629,3 +1629,31 @@ System prompt (`packages/ai/src/prompts.ts`) updated with a new `# Looking up pe
   - PASS as of 2026-07-03.
 
 **Lesson:** when designing a tool registry, "what makes sense as an input parameter" and "what's natural for the user to provide" can diverge. `list_deals(ownerId)` is the correct wire format (UUIDs are stable, name changes don't break references), but the user-facing entry point is a name. The right answer is a thin **resolution layer** at the front of the chain — `search_users` + auto-resolution in `list_deals(ownerName)` — rather than asking the user to bridge the gap manually. Same pattern would apply to `list_quotations(salesRepName=...)` and `get_company(slugOrName=...)` if those workflows ever come up.
+
+---
+
+## RG-033-AI-CHAT-MOBILE-DRAWER — mobile `/ai` showed full sidebar above conversation, hiding messages
+
+**Symptom:** On phones (`<768px` wide), `/ai` rendered the conversation list as a 260px column stacked ABOVE the active conversation. The viewport is ~390px wide on an iPhone 12, so the sidebar ate ~half the screen height before the user even saw the current chat. The "New conversation" button + the conversation history were permanently visible, which competed with the active conversation for attention. On mobile, the user wants the conversation to fill the screen and access history behind a tap.
+
+**Root cause:** `apps/web/src/pages/ai-chat.tsx` used `grid grid-cols-1 md:grid-cols-[260px_1fr]` which on mobile collapses to a single column — but the sidebar (a `<Card>` containing the conversation list) was still rendered inside the grid, just stacked. No responsive branching ever hid the sidebar on mobile.
+
+**Fix (2026-07-03):**
+1. Desktop sidebar now uses `hidden md:flex md:flex-col` (hidden by default, visible at md+). It stays in the left grid column on desktop.
+2. New mobile drawer: a `md:hidden fixed inset-0 z-50` overlay with `bg-black/50` backdrop + a 72-wide slide-in Card panel (uses Tailwind `animate-in slide-in-from-left`). Only mounts when `drawerOpen` is true. Mobile-only because `md:hidden` keeps it off the desktop layout entirely.
+3. Hamburger icon (`<Menu />`) in BOTH the active-conversation header AND inside `EmptyState` — both are `md:hidden` so they only appear on mobile. Same `aria-label={t('ai.chat.openHistory')}` on both buttons.
+4. Drawer body uses the same JSX as the desktop sidebar — extracted into a reusable `SidebarContents` sub-component so the conversation list, "+ New chat" button, and delete-confirm flow are written ONCE.
+5. Drawer auto-closes on three triggers:
+   - backdrop click (mobile-only because the backdrop is inside the `md:hidden` overlay)
+   - `Escape` key (handled by `onKeyDown` on the dialog Card)
+   - tapping a conversation in the list (`selectConversation` closes it)
+   - tapping "+ New chat" in the drawer (`startNewChat` closes it)
+6. Resize handler closes the drawer if the viewport grows past 768px (so a phone-to-tablet resize doesn't leave a stale open drawer floating over the desktop sidebar).
+7. New i18n keys `ai.chat.openHistory` ("Open conversation history" / "打開對話歷史" / "打开对话历史") and `ai.chat.conversationHistory` ("Conversation history" / "對話歷史" / "对话历史") in all three locales.
+
+**Pinned by:**
+- `apps/web/src/pages/ai-chat.tsx` — `data-testid` selectors for the hamburger button and the dialog panel would be the natural probe anchors; the current `aria-label` + `role="dialog"` selectors are equally stable.
+- Manual Playwright probe at `/tmp/pw-test/probe-mobile-drawer.mjs` (transient) — uses `devices['iPhone 12']` viewport, logs in, navigates to `/ai`, taps the hamburger, asserts `[role="dialog"]` count goes 0 → 1, then taps a conversation and asserts it goes 1 → 0. PASS as of 2026-07-03.
+- Screenshots: `/tmp/pw-test/mobile-empty.png` (no sidebar visible, EmptyState shows hamburger), `/tmp/pw-test/mobile-drawer-open.png` (drawer mounted with backdrop), `/tmp/pw-test/mobile-after-click.png` (drawer auto-closed after conversation tap).
+
+**Lesson:** responsive layouts in two-column grid systems default to "stacked" — the `grid-cols-1` fallback puts BOTH columns on screen, which is rarely what the user wants on mobile. The fix isn't just a `w-full md:w-64` — it's recognizing that a "primary content" column (the conversation) and a "secondary navigation" column (the history list) have DIFFERENT roles on mobile vs. desktop, and the right CSS primitive is `hidden md:flex` + an off-canvas drawer, NOT a single shared layout. The `SidebarContents` extraction is the part that keeps this maintainable — without it, every future change to the sidebar needs to be duplicated in the drawer body.

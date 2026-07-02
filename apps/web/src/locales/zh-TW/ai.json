@@ -18,6 +18,8 @@
     "untitled": "對話",
     "emptyConversations": "仍未有對話",
     "deleteConfirm": "刪除這個對話?",
+    "openHistory": "打開對話歷史",
+    "conversationHistory": "對話歷史",
     "toolFailed": "失敗",
     "welcomeMessage": "用自然語言操作 CRM — 查客戶、生報價、log activity、看 analytics。",
     "welcomeTitle": "CRM AI Assistant",

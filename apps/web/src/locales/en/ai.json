@@ -18,6 +18,8 @@
     "untitled": "Untitled conversation",
     "emptyConversations": "No conversations yet",
     "deleteConfirm": "Delete this conversation?",
+    "openHistory": "Open conversation history",
+    "conversationHistory": "Conversation history",
     "toolFailed": "Failed",
     "welcomeMessage": "Operate your CRM with natural language — look up customers, create quotations, log activities, view analytics.",
     "welcomeTitle": "CRM AI Assistant",

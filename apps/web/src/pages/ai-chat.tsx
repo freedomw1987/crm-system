@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient, useIsFetching } from '@tanstack/react-query';
-import { Send, Sparkles, Trash2, Plus, Loader2, User, Bot, Wrench } from 'lucide-react';
+import { Send, Sparkles, Trash2, Plus, Loader2, User, Bot, Wrench, Menu, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -92,6 +92,24 @@ export function AiChatPage() {
   // `pendingConvId` defensively on the same effect so the state
   // doesn't dangle if the user navigates away mid-refetch.
   const isFetchingConvs = useIsFetching({ queryKey: ['conversations'] }) > 0;
+
+  // Mobile sidebar drawer (RG-033): on phones we want the user focused
+  // on the active conversation / EmptyState composer, with the
+  // conversation list hidden behind a hamburger icon. On md+ the
+  // sidebar is always visible in the grid, so `drawerOpen` is a no-op
+  // for desktop layouts.
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  // Close the drawer when the viewport grows past the md breakpoint
+  // (so resizing from phone → desktop doesn't leave a stale open state).
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(min-width: 768px)');
+    const handler = (e: MediaQueryListEvent) => {
+      if (e.matches) setDrawerOpen(false);
+    };
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
   useEffect(() => {
     if (pendingConvId && !isFetchingConvs) {
       // Give the cache a tick to settle before clearing so the
@@ -190,6 +208,14 @@ export function AiChatPage() {
     setStreamingReply('');
     setInFlightTools([]);
     setStreamError(null);
+    // Close the mobile drawer if it was open (user just tapped
+    // "+ New chat" inside the drawer).
+    setDrawerOpen(false);
+  }
+
+  function selectConversation(id: string) {
+    setActiveId(id);
+    setDrawerOpen(false);
   }
 
   const deleteMutation = useMutation({
@@ -201,46 +227,94 @@ export function AiChatPage() {
   });
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-4 h-[calc(100vh-8rem)]">
-      {/* Conversation list */}
-      <Card className="flex flex-col overflow-hidden">
-        <CardHeader className="border-b">
-          <Button onClick={startNewChat} className="w-full" size="sm">
-            <Plus className="h-4 w-4 mr-2" />
-            {t('ai.chat.newConversation')}
-          </Button>
-        </CardHeader>
-        <div className="flex-1 overflow-y-auto p-2 space-y-1 scrollbar-thin">
-          {conversations.length === 0 ? (
-            <p className="text-xs text-muted-foreground text-center py-4">
-              {t('ai.chat.emptyConversations')}
-            </p>
-          ) : (
-            conversations.map((c) => (
-              <ConversationItem
-                key={c.id}
-                conv={c}
-                active={c.id === activeId}
-                pending={c.id === pendingConvId && isFetchingConvs}
-                onClick={() => setActiveId(c.id)}
-                onDelete={() => deleteMutation.mutate(c.id)}
-              />
-            ))
-          )}
-        </div>
+    <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-4 h-[calc(100vh-8rem)] relative">
+      {/* Desktop sidebar (RG-033): visible on md+ as the left grid
+          column. On mobile this is replaced by the drawer below. */}
+      <Card className="hidden md:flex md:flex-col overflow-hidden">
+        <SidebarContents
+          conversations={conversations}
+          activeId={activeId}
+          pendingConvId={pendingConvId}
+          isFetchingConvs={isFetchingConvs}
+          onSelect={selectConversation}
+          onNewChat={startNewChat}
+          onDelete={(id) => deleteMutation.mutate(id)}
+          t={t}
+        />
       </Card>
 
-      {/* Active conversation */}
+      {/* Mobile drawer (RG-033): only mounts when open AND on mobile.
+          Click backdrop or tap a conversation to dismiss. ESC also
+          closes (handled by the dialog div below — we listen for it
+          inline since this isn't a real <dialog> element). */}
+      {drawerOpen && (
+        <div className="md:hidden fixed inset-0 z-50 flex">
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={() => setDrawerOpen(false)}
+            aria-hidden="true"
+          />
+          <Card
+            role="dialog"
+            aria-modal="true"
+            aria-label={t('ai.chat.conversationHistory')}
+            className="relative w-72 max-w-[85vw] h-full flex flex-col animate-in slide-in-from-left"
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setDrawerOpen(false);
+            }}
+          >
+            <div className="flex items-center justify-between border-b p-2">
+              <span className="text-sm font-medium px-2">
+                {t('ai.chat.conversationHistory')}
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => setDrawerOpen(false)}
+                aria-label={t('common.close')}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <SidebarContents
+              conversations={conversations}
+              activeId={activeId}
+              pendingConvId={pendingConvId}
+              isFetchingConvs={isFetchingConvs}
+              onSelect={selectConversation}
+              onNewChat={startNewChat}
+              onDelete={(id) => deleteMutation.mutate(id)}
+              t={t}
+            />
+          </Card>
+        </div>
+      )}
+
+      {/* Active conversation — full width on mobile (drawer overlays
+          the rest of the screen), right column on desktop. The
+          hamburger icon in the header opens the drawer on mobile. */}
       <Card className="flex flex-col overflow-hidden">
         {!activeId ? (
           <EmptyState
             onSend={(p) => handleSend(p, null)}
             disabled={submitInFlight}
+            onOpenDrawer={() => setDrawerOpen(true)}
           />
         ) : (
           <>
-            <CardHeader className="border-b flex flex-row items-center justify-between">
-              <CardTitle className="text-base truncate">
+            <CardHeader className="border-b flex flex-row items-center gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="md:hidden"
+                onClick={() => setDrawerOpen(true)}
+                aria-label={t('ai.chat.openHistory')}
+              >
+                <Menu className="h-5 w-5" />
+              </Button>
+              <CardTitle className="text-base truncate flex-1">
                 {activeConv?.title ?? t('ai.chat.untitled')}
               </CardTitle>
             </CardHeader>
@@ -318,7 +392,7 @@ export function AiChatPage() {
   );
 }
 
-function EmptyState({ onSend, disabled }: { onSend: (msg: string) => void; disabled: boolean }) {
+function EmptyState({ onSend, disabled, onOpenDrawer }: { onSend: (msg: string) => void; disabled: boolean; onOpenDrawer: () => void }) {
   const { t } = useTranslation();
   const examples = [
     t('ai.chat.examplePrompts.topCustomers'),
@@ -341,6 +415,10 @@ function EmptyState({ onSend, disabled }: { onSend: (msg: string) => void; disab
   // (no double-send), but the spinner + bot-anchored bubble give
   // the user visual confirmation that the request is being
   // processed and the active-conversation view is about to swap in.
+  //
+  // 2026-07-03 (RG-033): mobile drawer trigger in the header. The
+  // Menu icon is `md:hidden` — on desktop the conversation list is
+  // already visible in the grid, so the icon would be redundant.
   const [input, setInput] = useState('');
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -351,6 +429,19 @@ function EmptyState({ onSend, disabled }: { onSend: (msg: string) => void; disab
   }
   return (
     <div className="flex-1 flex flex-col">
+      <div className="md:hidden flex items-center justify-between border-b px-2 py-2">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={onOpenDrawer}
+          aria-label={t('ai.chat.openHistory')}
+        >
+          <Menu className="h-5 w-5" />
+        </Button>
+        <span className="text-sm font-medium">{t('ai.chat.title')}</span>
+        <div className="w-9" />
+      </div>
       <div className="flex-1 flex flex-col items-center justify-center p-8 text-center overflow-y-auto">
         <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">
           <Sparkles className="h-8 w-8 text-primary" />
@@ -406,6 +497,60 @@ function EmptyState({ onSend, disabled }: { onSend: (msg: string) => void; disab
         </Button>
       </form>
     </div>
+  );
+}
+
+// SidebarContents (RG-033) — extracted from the inline JSX so it can
+// be reused by BOTH the desktop left-column Card AND the mobile
+// drawer body. The "New conversation" button + scrollable conversation
+// list live here; the wrapping chrome (Card, close button, backdrop)
+// is the caller's responsibility.
+function SidebarContents({
+  conversations,
+  activeId,
+  pendingConvId,
+  isFetchingConvs,
+  onSelect,
+  onNewChat,
+  onDelete,
+  t,
+}: {
+  conversations: ConversationSummary[];
+  activeId: string | null;
+  pendingConvId: string | null;
+  isFetchingConvs: boolean;
+  onSelect: (id: string) => void;
+  onNewChat: () => void;
+  onDelete: (id: string) => void;
+  t: ReturnType<typeof useTranslation>['t'];
+}) {
+  return (
+    <>
+      <CardHeader className="border-b">
+        <Button onClick={onNewChat} className="w-full" size="sm">
+          <Plus className="h-4 w-4 mr-2" />
+          {t('ai.chat.newConversation')}
+        </Button>
+      </CardHeader>
+      <div className="flex-1 overflow-y-auto p-2 space-y-1 scrollbar-thin">
+        {conversations.length === 0 ? (
+          <p className="text-xs text-muted-foreground text-center py-4">
+            {t('ai.chat.emptyConversations')}
+          </p>
+        ) : (
+          conversations.map((c) => (
+            <ConversationItem
+              key={c.id}
+              conv={c}
+              active={c.id === activeId}
+              pending={c.id === pendingConvId && isFetchingConvs}
+              onClick={() => onSelect(c.id)}
+              onDelete={() => onDelete(c.id)}
+            />
+          ))
+        )}
+      </div>
+    </>
   );
 }
 
