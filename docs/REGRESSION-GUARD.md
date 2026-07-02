@@ -1572,3 +1572,31 @@ if (literals?.length) throw new Error(`literal i18n keys rendered: ${literals.jo
 - `apps/web/src/i18n/__tests__/catalog-completeness.test.ts` — 6 tests confirm the new `settings.pipelines.*`, `settings.audit.*`, and `common.countDeals_*` keys exist in all three locales with identical key sets.
 
 **Lesson:** when shipping i18n in waves (per-page), keep a running list of "pages that haven't been touched yet" and add a regression test that fails if a NEW page is added without a corresponding catalog update. The `i18n-smoke.mjs` page list is that mechanism — adding `/settings/pipelines` to the list was the moment this gap was forced open.
+
+## RG-031-AI-CHAT-EMPTYSTATE-NO-SPINNER — first message from EmptyState had no loading indicator
+
+**Symptom:** When the user lands on `/ai` with no active conversation (the `EmptyState` view) and types + sends a message, the buttons go `disabled` and the page sits visually frozen for several seconds before the first SSE `token` event arrives. From the user's perspective: "looks dead." The active-conversation view (`/ai` with an active id) DID show a `<Loader2 />` + "thinking" indicator at lines 280-285 — but that indicator lives inside the active-conversation JSX, not the EmptyState JSX.
+
+**Root cause:** `apps/web/src/pages/ai-chat.tsx` `EmptyState` component (lines 321-394) handled the `disabled` prop only by greying out the example chips + submit button. It rendered no thinking indicator of its own. So when `setSubmitInFlight(true)` flipped `disabled` to true at the start of `handleSend`, the EmptyState had no UI signal that work was happening — and the page would not swap to the active-conversation view until the backend's `done` event created the row and re-queried the conversation list (multiple round-trips).
+
+**Fix (2026-07-03):**
+1. Added a thinking indicator inside `EmptyState` itself, gated by `disabled`:
+   ```tsx
+   {disabled && (
+     <div
+       className="mt-6 flex items-center gap-2 text-sm text-muted-foreground"
+       data-testid="empty-state-thinking"
+     >
+       <Loader2 className="h-4 w-4 animate-spin" />
+       {t('ai.chat.thinking')}
+     </div>
+   )}
+   ```
+   The translation key `ai.chat.thinking` already exists (used by the active-conversation path); no catalog change needed.
+2. Comment block above the indicator explains why both paths now show it (no double-send, visual confirmation that the active-conversation view is about to swap in).
+
+**Pinned by:**
+- `apps/web/src/pages/ai-chat.tsx` — `data-testid="empty-state-thinking"` is a stable selector. A Playwright probe can grep for it after `await emptyInput.fill(...); await page.locator('button[type="submit"]').first().click();` and assert `waitFor({ state: 'visible', timeout: 5000 })`.
+- Manual probe at `/tmp/pw-test/probe-empty-state-spinner.mjs` (transient) — clicks the sidebar "New Chat" button to enter EmptyState, sends a message, asserts the spinner is visible within 5s. PASS as of 2026-07-03.
+
+**Lesson:** "Both branches must render the same loading state" is a pairing invariant — any time one branch of a conditional view (here, `!activeId` vs. `activeId`) shows a transient loading indicator, the OTHER branch must show it too, even if the user is about to swap views. The fix had no behaviour change beyond UX feedback — the SSE pipeline, message persistence, and conversation-swap are unchanged.

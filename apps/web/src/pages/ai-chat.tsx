@@ -332,6 +332,15 @@ function EmptyState({ onSend, disabled }: { onSend: (msg: string) => void; disab
   // Shift+Enter for newline) and submits with `activeId = null`,
   // so the `done` event from the backend will swap this view out
   // for the freshly-created conversation.
+  //
+  // 2026-07-02 (RG-031): when `disabled` flips to true (i.e. a
+  // submit is in flight from this EmptyState), show the same
+  // "thinking" indicator the active-conversation view uses, so the
+  // user isn't staring at a disabled empty page for several seconds
+  // before the first SSE token lands. The disabled buttons stay
+  // (no double-send), but the spinner + bot-anchored bubble give
+  // the user visual confirmation that the request is being
+  // processed and the active-conversation view is about to swap in.
   const [input, setInput] = useState('');
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -363,6 +372,15 @@ function EmptyState({ onSend, disabled }: { onSend: (msg: string) => void; disab
             </button>
           ))}
         </div>
+        {disabled && (
+          <div
+            className="mt-6 flex items-center gap-2 text-sm text-muted-foreground"
+            data-testid="empty-state-thinking"
+          >
+            <Loader2 className="h-4 w-4 animate-spin" />
+            {t('ai.chat.thinking')}
+          </div>
+        )}
       </div>
       <form
         onSubmit={handleSubmit}
